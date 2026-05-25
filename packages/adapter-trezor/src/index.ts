@@ -18,3 +18,7 @@ export {
 } from './identity.ts';
 export { TrezorEcdsaKAuthWitnessProvider, type TrezorProviderOptions } from './provider.ts';
 export type { TrezorSignedIdentity, TrezorTransport } from './transport.ts';
+export {
+  type TrezorlibSubprocessOptions,
+  TrezorlibSubprocessTransport,
+} from './trezorlib-subprocess-transport.ts';

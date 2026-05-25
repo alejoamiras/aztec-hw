@@ -23,16 +23,24 @@ import {
   buildAztecIdentity,
   serializeIdentity,
   TrezorEcdsaKAuthWitnessProvider,
+  TrezorlibSubprocessTransport,
+  type TrezorTransport,
 } from '@aztec-hwwallet-poc/adapter-trezor';
 import { Fr } from '@aztec-hwwallet-poc/core';
 import { FakeTrezorTransport } from './fake-transport.ts';
 
 const ACCOUNT_INDEX = 0;
+const USE_REAL = process.env.AZTEC_HW_TRANSPORT === 'trezorlib';
+const TREZOR_PATH = process.env.TREZOR_PATH;
 
 async function main() {
-  console.log('Aztec HW-wallet PoC — Phase A demo (Trezor-faithful fake transport)\n');
+  console.log(
+    `Aztec HW-wallet PoC — Phase A demo (${USE_REAL ? 'REAL trezorlib subprocess' : 'fake transport'})\n`,
+  );
 
-  const transport = new FakeTrezorTransport();
+  const transport: TrezorTransport = USE_REAL
+    ? new TrezorlibSubprocessTransport({ trezorPath: TREZOR_PATH })
+    : new FakeTrezorTransport();
   const provider = new TrezorEcdsaKAuthWitnessProvider(transport, {
     accountIndex: ACCOUNT_INDEX,
   });
@@ -79,11 +87,20 @@ async function main() {
 
   console.log('\n--- Phase A demo passed ---');
   console.log("Adapter pipeline verified against Aztec's own TS verifier.");
-  console.log('Round-trip: Trezor-faithful wire → adapter → AuthWitness → Aztec verifier.');
   console.log(
-    '\nNext: swap FakeTrezorTransport for a real transport against trezor-firmware emulator',
+    `Transport: ${USE_REAL ? 'trezorlib subprocess (real device or emulator)' : 'fake transport (in-process)'}.`,
   );
-  console.log('(via trezorlib bridge OR @trezor/transport + @trezor/protobuf JS client).');
+  if (!USE_REAL) {
+    console.log('\nTo run against the real trezor-firmware emulator:');
+    console.log('  1. scripts/trezor-bridge/setup.sh    (one-time venv install)');
+    console.log('  2. start the emulator on udp:127.0.0.1:21324');
+    console.log('  3. AZTEC_HW_TRANSPORT=trezorlib bun run --cwd apps/demo start');
+  }
+
+  // Cleanly close the real transport so the subprocess exits.
+  if (typeof (transport as { close?: () => Promise<void> }).close === 'function') {
+    await (transport as { close: () => Promise<void> }).close();
+  }
 }
 
 main().catch((e) => {

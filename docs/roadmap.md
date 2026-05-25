@@ -1,16 +1,22 @@
 # Roadmap
 
-## Phase A — Trezor blind-sign internal demo (current)
+## Phase A — Trezor blind-sign internal demo (in progress)
 
 **Target**: a signed Aztec `outer_hash` from the Trezor emulator that the Aztec `EcdsaKAccount` in-circuit verifier accepts end-to-end.
 
 - [x] Project scaffolding (Bun + Biome + Husky + workspaces + bunfig)
-- [ ] `packages/core` — shared types: `CallIntent`, `AuthWitnessFromIntent` interface extension (Option A shape)
-- [ ] `packages/adapter-trezor` — `TrezorEcdsaKAuthWitnessProvider` skeleton
-- [ ] Trezor emulator integration (`@trezor/connect` or transport-level fallback)
-- [ ] `apps/demo` — CLI: connect emulator, derive Aztec address from device pubkey, sign synthetic `outer_hash`, verify locally
+- [x] `packages/core` — shared types: `CallIntent`, `AuthWitnessFromIntent` interface extension (Option A shape); ECDSA helpers
+- [x] `packages/adapter-trezor` — `TrezorEcdsaKAuthWitnessProvider` against the `IdentityType` protobuf SignIdentity API
+- [x] `apps/demo` — CLI proves the adapter pipeline round-trips through Aztec's TS verifier with a Trezor-faithful fake transport
+- [x] Codex review of scaffolding + adapter (lessons captured in `implementations-plan/hw-wallet-poc-v0/lessons/`)
+- [x] Real transport via Python `trezorlib` subprocess bridge — `TrezorlibSubprocessTransport`
+- [x] GitHub Actions CI (lint + typecheck + test + actionlint)
+- [ ] Run demo against real `trezor-firmware` emulator → M0b green for Trezor + Path A K1
 - [ ] M0a baseline verification (`e2e_account_contracts.test.ts` from `aztec-packages` green locally)
-- [ ] M0b for Trezor + Path A K1 — real-emulator signature passes Aztec verifier end-to-end
+
+## Phase A.7 — Pure-JS transport (after Phase A ships)
+
+Replace the Python subprocess with a `@trezor/transport` + `@trezor/protobuf` JS client. Removes the Python dep; lets the adapter run in browser-extension contexts. Higher engineering cost — codex called it the "lowest JS-only escape hatch" — but cleaner production end-state.
 
 ## Phase B — Aztec SDK extension + on-device manifest
 
