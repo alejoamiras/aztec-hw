@@ -16,6 +16,13 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/adapter-trezor": {
+      "name": "@aztec-hwwallet-poc/adapter-trezor",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aztec-hwwallet-poc/core": "workspace:*",
+      },
+    },
     "packages/core": {
       "name": "@aztec-hwwallet-poc/core",
       "version": "0.0.1",
@@ -91,6 +98,8 @@
     "@aws-sdk/xml-builder": ["@aws-sdk/xml-builder@3.972.24", "", { "dependencies": { "@nodable/entities": "2.1.0", "@smithy/types": "^4.14.1", "fast-xml-parser": "5.7.3", "tslib": "^2.6.2" } }, "sha512-V8z5YcDPfsvzrBlj0xR1vhRtocblhYbqdreCJB/voGd4Sr5zjNAeWxexbnqVtskTJe0vFb5KMqbSL++ePl+zRw=="],
 
     "@aws/lambda-invoke-store": ["@aws/lambda-invoke-store@0.2.4", "", {}, "sha512-iY8yvjE0y651BixKNPgmv1WrQc+GZ142sb0z4gYnChDDY2YqI4P/jsSopBWrKfAt7LOJAkOXt7rC/hms+WclQQ=="],
+
+    "@aztec-hwwallet-poc/adapter-trezor": ["@aztec-hwwallet-poc/adapter-trezor@workspace:packages/adapter-trezor"],
 
     "@aztec-hwwallet-poc/core": ["@aztec-hwwallet-poc/core@workspace:packages/core"],
 

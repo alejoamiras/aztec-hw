@@ -1,0 +1,17 @@
+{
+  "name": "@aztec-hwwallet-poc/adapter-trezor",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Trezor hardware-wallet adapter for Aztec. Implements AuthWitnessProvider for EcdsaKAccount via SLIP-0013 SignIdentity (works against the trezor-firmware emulator).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aztec-hwwallet-poc/core": "workspace:*"
+  }
+}
