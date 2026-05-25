@@ -2,7 +2,9 @@
 
 Hardware-wallet signing for [Aztec Network](https://aztec.network/) — proof-of-concept implementation.
 
-> **Status**: Phase A. Trezor adapter against the Trezor emulator, blind-sign internal demo.
+> **Status**: Phase A working in-process. Adapter pipeline (Trezor wire format → AuthWitness)
+> verifies under Aztec's reference verifier. Real `trezorlib` subprocess transport scaffolded,
+> awaiting M0b round-trip against the `trezor-firmware` emulator. See [`HANDOFF.md`](HANDOFF.md).
 >
 > **Research basis**: companion repo at `../aztec-hardware-wallet/` — see [`architectures/poc-recommendation.md`](../aztec-hardware-wallet/architectures/poc-recommendation.md) for the sequenced plan and [`architectures/08-decision-matrix.md`](../aztec-hardware-wallet/architectures/08-decision-matrix.md) for the rationale.
 
@@ -10,8 +12,13 @@ Hardware-wallet signing for [Aztec Network](https://aztec.network/) — proof-of
 
 ```bash
 bun install
-bun run test:all
+bun run test:all       # lint + typecheck + 26 unit tests
+bun run --cwd apps/demo start    # end-to-end demo against fake transport
 ```
+
+Headline demo output (fake transport): `Aztec K1 verifier (raw outer_hash.to_be_bytes() as msg): OK ✓`
+
+To run against a real Trezor (emulator or device), see [`docs/setup-trezor-emulator.md`](docs/setup-trezor-emulator.md).
 
 ## Layout
 
