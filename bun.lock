@@ -16,6 +16,15 @@
         "typescript": "^6.0.3",
       },
     },
+    "apps/demo": {
+      "name": "@aztec-hwwallet-poc/demo",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aztec-hwwallet-poc/adapter-trezor": "workspace:*",
+        "@aztec-hwwallet-poc/core": "workspace:*",
+        "@aztec/foundation": "^4.2.1",
+      },
+    },
     "packages/adapter-trezor": {
       "name": "@aztec-hwwallet-poc/adapter-trezor",
       "version": "0.0.1",
@@ -102,6 +111,8 @@
     "@aztec-hwwallet-poc/adapter-trezor": ["@aztec-hwwallet-poc/adapter-trezor@workspace:packages/adapter-trezor"],
 
     "@aztec-hwwallet-poc/core": ["@aztec-hwwallet-poc/core@workspace:packages/core"],
+
+    "@aztec-hwwallet-poc/demo": ["@aztec-hwwallet-poc/demo@workspace:apps/demo"],
 
     "@aztec/aztec.js": ["@aztec/aztec.js@4.2.1", "", { "dependencies": { "@aztec/constants": "4.2.1", "@aztec/entrypoints": "4.2.1", "@aztec/ethereum": "4.2.1", "@aztec/foundation": "4.2.1", "@aztec/l1-artifacts": "4.2.1", "@aztec/protocol-contracts": "4.2.1", "@aztec/stdlib": "4.2.1", "axios": "^1.13.5", "tslib": "^2.4.0", "viem": "npm:@aztec/viem@2.38.2", "zod": "^3.23.8" } }, "sha512-YXduQzwYxW/tPA0sSNC8ZKi9Mgsnc7GItvO06ghcDW7tFtFFAsJEQDqnfMfBRaHruDJW8p8bKTZ6PDYNaVVk1g=="],
 
