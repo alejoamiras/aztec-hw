@@ -114,22 +114,32 @@ CI does the same in `.github/workflows/ci.yml`.
 
 ## Git state
 
-9 commits, lowest-to-highest:
+10 commits, lowest-to-highest:
 
 ```
 d17f31c chore: scaffold PoC project per my-stack
 52ce71d feat(core): shared types + ECDSA helpers + Option A interface shape
 ea9e0d7 feat(adapter-trezor): signidentity-based provider skeleton + slip-0013 identity
-bac9576 chore: gitignore tsbuildinfo
+bac9576 chore: gitignore tsbuildinfo (accidentally committed)
 e47ab3f feat(demo): phase-A CLI proves adapter round-trips through aztec's verifier
 f5125d2 refactor(adapter-trezor): pivot to IdentityType + compressed pubkey per codex review
 525d291 ci: add github actions workflow
 0d7982b feat(adapter-trezor): real transport via python trezorlib subprocess bridge
-(... possibly one more for codex-review-2 lessons)
+d18c894 docs: add HANDOFF.md + update README with status
+19a8042 fix(adapter-trezor): apply codex review #2 fixes to bridge transport
 ```
+
+(`git log --oneline` may show one more for the plan.md addition.)
 
 No remote configured. Push to a new GitHub repo when ready:
 
 ```bash
 gh repo create aztec-hardware-wallet-poc --private --source=. --push
 ```
+
+## Reviews captured
+
+- `implementations-plan/hw-wallet-poc-v0/lessons/phase-A-codex-review-1.md` — adapter architecture, 8 findings, all applied (commit `f5125d2`).
+- `implementations-plan/hw-wallet-poc-v0/lessons/phase-A-pivot-after-codex.md` — before/after table for review 1.
+- `implementations-plan/hw-wallet-poc-v0/lessons/phase-A-bridge-codex-review-2.md` — bridge transport, 3 findings, all applied (commit `19a8042`).
+- `implementations-plan/hw-wallet-poc-v0/plan.md` — post-hoc plan summary tying everything together.
