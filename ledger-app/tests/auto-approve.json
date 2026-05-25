@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "regexp": ".*[Ss]ign.*",
+      "actions": [
+        ["button", 1, true],
+        ["button", 2, true],
+        ["button", 1, false],
+        ["button", 2, false]
+      ]
+    },
+    {
+      "regexp": ".*",
+      "actions": [["button", 2, true], ["button", 2, false]]
+    }
+  ]
+}

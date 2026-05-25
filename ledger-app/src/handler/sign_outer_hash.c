@@ -95,9 +95,11 @@ int handler_sign_outer_hash(buffer_t *cdata) {
  * Performs the actual ECDSA signature + low-S normalization + duplicate-check, then sends the response.
  */
 int sign_outer_hash_after_approval(void) {
-    // 1) Device-side SHA-256 of outer_hash
+    // 1) Device-side SHA-256 of outer_hash.
+    //    `cx_hash_sha256` returns the digest length (32) on success — NOT a cx_err_t.
     uint8_t digest[32];
-    if (cx_hash_sha256(G_context.sign_info.outer_hash, AZTEC_OUTER_HASH_LEN, digest, sizeof(digest)) != CX_OK) {
+    size_t digest_len = cx_hash_sha256(G_context.sign_info.outer_hash, AZTEC_OUTER_HASH_LEN, digest, sizeof(digest));
+    if (digest_len != 32) {
         explicit_bzero(&G_context, sizeof(G_context));
         return io_send_sw(SWO_UNKNOWN);
     }

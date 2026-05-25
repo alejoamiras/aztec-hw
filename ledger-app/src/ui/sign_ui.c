@@ -7,6 +7,7 @@
  */
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "os.h"
@@ -19,20 +20,28 @@
 #include "../sw.h"
 #include "../handler/sign_outer_hash.h"
 
-#define BANNER_TEXT "Aztec authorization\nINTERNAL — DO NOT SHIP"
+#define BANNER_TEXT "Aztec authorization"
+#define WARNING_TEXT "INTERNAL build - do NOT use to sign real Aztec calls."
+
+/**
+ * Pick the right glyph for the active target. Nano screens are tiny — the 64px
+ * icon won't fit; use the 14px one. Stax/Flex/Apex use larger glyphs.
+ */
+#if defined(TARGET_NANOX) || defined(TARGET_NANOS2)
+#define REVIEW_ICON C_app_aztec_14px
+#elif defined(TARGET_STAX) || defined(TARGET_FLEX)
+#define REVIEW_ICON C_app_aztec_64px
+#elif defined(TARGET_APEX_P)
+#define REVIEW_ICON C_app_aztec_48px
+#else
+#define REVIEW_ICON C_app_aztec_64px
+#endif
 
 static char g_path_str[80];
 static char g_hash_hex[2 * 32 + 1];
 
-static const nbgl_contentTagValue_t g_review_pairs[] = {
-    {.item = "Path", .value = g_path_str},
-    {.item = "outer_hash", .value = g_hash_hex},
-};
-
-static const nbgl_contentTagValueList_t g_review_list = {
-    .pairs = g_review_pairs,
-    .nbPairs = 2,
-};
+static nbgl_contentTagValue_t g_review_pairs[2];
+static nbgl_contentTagValueList_t g_review_list;
 
 static void on_review_choice(bool confirm) {
     if (confirm) {
@@ -69,29 +78,31 @@ int ui_display_blind_sign(void) {
     format_bip32_path(g_path_str, sizeof(g_path_str));
     format_hash_hex(g_hash_hex, sizeof(g_hash_hex), G_context.sign_info.outer_hash, 32);
 
-    nbgl_useCaseReview(TYPE_OPERATION,
-                       &g_review_list,
-                       &C_app_aztec_64px,
-                       BANNER_TEXT,
-                       NULL,
-                       "Sign Aztec outer_hash",
-                       on_review_choice);
+    memset(&g_review_pairs, 0, sizeof(g_review_pairs));
+    g_review_pairs[0].item = "Path";
+    g_review_pairs[0].value = g_path_str;
+    g_review_pairs[1].item = "outer_hash";
+    g_review_pairs[1].value = g_hash_hex;
+
+    memset(&g_review_list, 0, sizeof(g_review_list));
+    g_review_list.pairs = g_review_pairs;
+    g_review_list.nbPairs = 2;
+    g_review_list.smallCaseForValue = false;
+    g_review_list.wrapping = true;
+
+    nbgl_useCaseReviewBlindSigning(TYPE_TRANSACTION,
+                                   &g_review_list,
+                                   &REVIEW_ICON,
+                                   BANNER_TEXT,
+                                   WARNING_TEXT,
+                                   "Sign Aztec outer_hash?",
+                                   NULL,
+                                   on_review_choice);
     return 0;
 }
 
 int ui_display_pubkey(void) {
-    // Minimal confirmation — show path, accept/reject.
-    format_bip32_path(g_path_str, sizeof(g_path_str));
-    // Reuse the review pair list with just the path entry.
-    static const nbgl_contentTagValue_t pubkey_pair = {.item = "Path", .value = g_path_str};
-    static const nbgl_contentTagValueList_t pubkey_list = {.pairs = &pubkey_pair, .nbPairs = 1};
-
-    nbgl_useCaseReview(TYPE_OPERATION,
-                       &pubkey_list,
-                       &C_app_aztec_64px,
-                       "Aztec public key",
-                       NULL,
-                       "Approve key display",
-                       on_review_choice);
+    // L2 baseline does not gate pubkey export behind a UI confirmation. L4
+    // adds an opt-in display flow. For now, this is unreachable.
     return 0;
 }

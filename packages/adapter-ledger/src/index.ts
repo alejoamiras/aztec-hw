@@ -24,4 +24,17 @@ export {
   type StatusWord,
   SW,
 } from './apdu.ts';
+export {
+  LedgerProvider,
+  type LedgerPublicKey,
+  type LedgerSignature,
+  type SignOuterHashOptions,
+  type VersionInfo,
+} from './provider.ts';
+export {
+  type AutoConfirmContext,
+  type ButtonId,
+  SpeculosTransport,
+  type SpeculosTransportOptions,
+} from './speculos-transport.ts';
 export type { ApduRequest, ApduResponse, LedgerTransport } from './transport.ts';
