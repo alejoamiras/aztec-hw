@@ -1,0 +1,2 @@
+session: 019e5fda-4ae6-78d2-b81d-7444671409a9
+dir: /var/folders/p9/5vbplm5s6p5bjy78gdqnh0500000gn/T/codex-11qXB6GD
