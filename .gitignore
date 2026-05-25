@@ -26,3 +26,6 @@ coverage/
 .e2e-state/
 playwright-report/
 test-results/
+
+# TS incremental build artifacts
+*.tsbuildinfo
