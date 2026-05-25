@@ -11,7 +11,7 @@
 - [x] Codex review of scaffolding + adapter (lessons captured in `implementations-plan/hw-wallet-poc-v0/lessons/`)
 - [x] Real transport via Python `trezorlib` subprocess bridge — `TrezorlibSubprocessTransport`
 - [x] GitHub Actions CI (lint + typecheck + test + actionlint)
-- [ ] Run demo against real `trezor-firmware` emulator → M0b green for Trezor + Path A K1
+- [x] **M0b green** — demo runs against real `trezor-firmware` emulator (T2T1 in Docker via `trezor-user-env`), signature verifies through Aztec's TS `Ecdsa.verifySignature`. See [`lessons/phase-A-real-emulator-roundtrip.md`](../implementations-plan/hw-wallet-poc-v0/lessons/phase-A-real-emulator-roundtrip.md).
 - [ ] M0a baseline verification (`e2e_account_contracts.test.ts` from `aztec-packages` green locally)
 
 ## Phase A.7 — Pure-JS transport (after Phase A ships)

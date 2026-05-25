@@ -1,7 +1,8 @@
 # Handoff — Phase A status + next session
 
-> Snapshot at 2026-05-25 after an autonomous build session. 9 commits, all green:
-> lint + typecheck + 26 unit tests + actionlint + shellcheck pass locally.
+> Snapshot at 2026-05-25 after an autonomous build session.
+> **🎉 M0b green**: signature from a real `trezor-firmware` emulator verifies through Aztec's reference ECDSA verifier.
+> 12+ commits, all checks pass locally.
 
 ## What works right now
 
@@ -55,28 +56,24 @@ This runs against an in-process Trezor-faithful fake transport that mimics the r
 
 ## Next session — pick up here
 
-### 1. Run the real bridge against an emulator (M0b for Trezor + Path A K1)
+### 1. Re-run the M0b emulator round-trip (✅ already done once)
 
 ```bash
 # One-time:
-scripts/trezor-bridge/setup.sh    # already done if you see scripts/trezor-bridge/venv/
+scripts/trezor-bridge/setup.sh                            # venv with trezorlib
+docker pull ghcr.io/trezor/trezor-user-env:latest         # ~5.25 GB
 
-# Start the emulator (Docker is fastest if available):
-# (See docs/setup-trezor-emulator.md for build-from-source path.)
-# Expected emulator endpoint: udp:127.0.0.1:21324
+# Each run:
+docker run -d --rm --name aztec-trezor-emu \
+  -p 21324:21324/udp -p 21325:21325 -p 21326:21326 -p 9001:9001 \
+  ghcr.io/trezor/trezor-user-env:latest
 
-# Then:
-AZTEC_HW_TRANSPORT=trezorlib bun run --cwd apps/demo start
+scripts/trezor-bridge/venv/bin/python scripts/trezor-bridge/start-emulator.py
+scripts/trezor-bridge/venv/bin/python scripts/trezor-bridge/auto-confirm.py &
+TREZOR_PATH=bridge:1 AZTEC_HW_TRANSPORT=trezorlib bun run --cwd apps/demo start
 ```
 
-Expected output: same as the fake-transport flow, but signed by the actual emulator.
-
-If the verify is `OK ✓`, M0b for Trezor + ECDSA-K1 is green and Phase A's headline goal is done.
-
-If it fails, the most likely culprits (codex's hypothesis is in `lessons/phase-A-bridge-codex-review-2.md` — file landed mid-session):
-- Identity field encoding mismatch (empty-string-vs-None)
-- `challenge_hidden` length / format
-- Signature wire-format assumption (marker byte position)
+Last verified output: `Aztec K1 verifier (raw outer_hash.to_be_bytes() as msg): OK ✓`. Full play-by-play in [`lessons/phase-A-real-emulator-roundtrip.md`](implementations-plan/hw-wallet-poc-v0/lessons/phase-A-real-emulator-roundtrip.md).
 
 ### 2. Phase 0 — M0a baseline locally
 

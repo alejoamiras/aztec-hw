@@ -38,8 +38,15 @@ async function main() {
     `Aztec HW-wallet PoC — Phase A demo (${USE_REAL ? 'REAL trezorlib subprocess' : 'fake transport'})\n`,
   );
 
+  // When running via `bun run --cwd apps/demo start`, process.cwd() is apps/demo.
+  // Resolve to the repo root so the bridge paths land in the right place.
+  const REPO_ROOT = new URL('../../..', import.meta.url).pathname;
   const transport: TrezorTransport = USE_REAL
-    ? new TrezorlibSubprocessTransport({ trezorPath: TREZOR_PATH })
+    ? new TrezorlibSubprocessTransport({
+        bridgePath: `${REPO_ROOT}/scripts/trezor-bridge/bridge.py`,
+        pythonPath: `${REPO_ROOT}/scripts/trezor-bridge/venv/bin/python`,
+        trezorPath: TREZOR_PATH,
+      })
     : new FakeTrezorTransport();
   const provider = new TrezorEcdsaKAuthWitnessProvider(transport, {
     accountIndex: ACCOUNT_INDEX,
@@ -48,22 +55,23 @@ async function main() {
   const identity = buildAztecIdentity({ accountIndex: ACCOUNT_INDEX });
   console.log(`Identity wire form: ${serializeIdentity(identity)}\n`);
 
-  // 1) Probe-sign to fetch the device's pubkey (no separate GetPublicKey API exists
-  //    for SLIP-0013; codex finding #3).
-  const { x, y } = await provider.getPublicKeyXY();
-  console.log('Device public key (64B for EcdsaKAccount constructor):');
-  console.log(`  x = 0x${Buffer.from(x).toString('hex')}`);
-  console.log(`  y = 0x${Buffer.from(y).toString('hex')}\n`);
-
-  // 2) Synthesize a deterministic outer_hash (in production: comes from Aztec entrypoint
-  //    after Poseidon-hashing the tx call stack).
+  // 1) Synthesize a deterministic outer_hash (in production: comes from Aztec entrypoint
+  //    after Poseidon-hashing the tx call stack). The real Trezor firmware rejects all-zero
+  //    challenge_hidden so we use a non-zero scalar from the start.
   const outerHashBytes = Buffer.from('00'.repeat(28) + '00000539', 'hex'); // 0x539 = 1337
   const outerHash = Fr.fromBuffer(outerHashBytes);
   console.log(`Synthetic outer_hash: 0x${Buffer.from(outerHash.toBuffer()).toString('hex')}\n`);
 
-  // 3) Adapter computes preimage (sha256(outer_hash.to_be_bytes())), signs via transport,
+  // 2) Adapter computes preimage (sha256(outer_hash.to_be_bytes())), signs via transport,
   //    strips the 0x00 marker, low-s normalizes, packs as AuthWitness.
+  //    This single call also populates the pubkey cache (SignIdentity returns it as a side
+  //    effect) so we don't need to issue a separate probe sign.
   const aw = await provider.createAuthWit(outerHash);
+
+  const { x, y } = await provider.getPublicKeyXY(); // reads from the cache, no second sign
+  console.log('Device public key (64B for EcdsaKAccount constructor):');
+  console.log(`  x = 0x${Buffer.from(x).toString('hex')}`);
+  console.log(`  y = 0x${Buffer.from(y).toString('hex')}\n`);
   const sigBytes = Uint8Array.from(aw.witness.map((fr) => Number(fr.toBigInt())));
   console.log(`AuthWitness signature (r||s, 64B): 0x${Buffer.from(sigBytes).toString('hex')}\n`);
 
