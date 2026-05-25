@@ -1,0 +1,47 @@
+{
+  "name": "aztec-hardware-wallet-poc",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Hardware-wallet signing PoC for Aztec Network. Trezor research + Ledger production target.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "lint": "biome check . && sort-package-json --check package.json packages/*/package.json apps/*/package.json",
+    "lint:actions": "actionlint",
+    "lint:all": "bun run lint && bun run lint:actions",
+    "lint:fix": "biome check --write . && sort-package-json package.json packages/*/package.json apps/*/package.json",
+    "lint:shell": "shellcheck scripts/*.sh",
+    "prepare": "husky",
+    "test": "bun test",
+    "test:all": "bun run lint && bun test",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "biome check --write"
+    ],
+    "*.sh": [
+      "shellcheck"
+    ],
+    ".github/workflows/*.yml": [
+      "actionlint"
+    ],
+    "**/package.json": [
+      "sort-package-json"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
+    "@commitlint/types": "^21.0.1",
+    "@types/bun": "^1.3.14",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "sort-package-json": "^3.6.1",
+    "typescript": "^6.0.3"
+  }
+}

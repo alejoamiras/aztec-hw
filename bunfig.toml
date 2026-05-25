@@ -1,0 +1,12 @@
+[install]
+# 7-day min-age — blocks fresh npm publishes for supply-chain protection.
+# Catches incidents like the Ledger Connect Kit drainer (Dec 14, 2023, live ~5h)
+# and the @tanstack/* worm (May 11, 2026, 42 packages in 6 minutes).
+# To bypass for a specific package (CVE-mitigation only), add to minimumReleaseAgeExcludes,
+# install, then follow-up PR removes the exclusion.
+minimumReleaseAge = 604800
+# minimumReleaseAgeExcludes = []
+
+[install.lockfile]
+# Local dev allows lockfile updates. CI uses `bun install --frozen-lockfile`.
+frozen = false
