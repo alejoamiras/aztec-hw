@@ -25,12 +25,38 @@ Adopt codex's **streaming state-machine** (better than my single-shot single-APD
 | `0x02` | `GET_CAPS` | — | feature bitmask (`R1`, `CLEAR_SIGN`, `GRUMPKIN`) | L2 |
 | `0x03` | `GET_PUBLIC_KEY` | `az_key_path_t` | curve-specific pubkey + chain code | L2 (K1) → L5 (Grumpkin) |
 | `0x04` | `SIGN_OUTER_HASH` | `az_key_path_t, outer_hash[32]` | sig (curve-specific layout) | L2 (K1) → L5 (Schnorr) |
-| `0x05` | `BEGIN_AUTHWIT` | `az_manifest_header_t` | session_id | L4 |
-| `0x06` | `APPEND_CALL` | `session_id, az_call_t` | ack | L4 |
-| `0x07` | `FINALIZE_AND_SIGN` | `session_id` | sig (after on-device hash recompute + display + user approval) | L4 |
-| `0x08` | `ABORT` | `session_id` | ack (zeros session) | L4 |
+| `0x05` | `BEGIN_AUTHWIT` | `az_manifest_header_t` | ack | L4 |
+| `0x06` | `APPEND_CALL` | `az_call_t` | ack | L4 |
+| `0x07` | `FINALIZE_AND_SIGN` | — | sig (after on-device hash recompute + display + user approval) | L4 |
+| `0x08` | `ABORT` | — | ack (zeros session) | L4 |
 
-**Opinionated rule (codex)**: `SIGN_OUTER_HASH` accepts only a canonical 32-byte `outer_hash`. The device itself computes `sha256(outer_hash)` before calling native ECDSA. Removes the avoidable host-side footgun where a malicious host could pre-hash with the wrong domain separator.
+**Session state** (final critique §3): Ledger apps are single-threaded with one in-flight context. **No `session_id` in the wire format**. Session state lives in app globals; zero on every error / reject / abort / non-`0x9000` exit.
+
+**Opinionated rule (codex)**: `SIGN_OUTER_HASH` accepts only a canonical 32-byte `outer_hash`. The device itself computes `sha256(outer_hash)` before signing. Removes the avoidable host-side footgun where a malicious host could pre-hash with the wrong domain separator.
+
+### Exact ECDSA call for L2 K1 (final critique §1)
+
+```c
+// device receives outer_hash[32] from APDU body
+uint8_t digest[32];
+cx_hash_sha256(outer_hash, 32, digest, 32);     // device-side SHA-256
+
+uint8_t r_buf[32], s_buf[32];
+uint32_t info = 0;
+cx_ecdsa_sign_rs_no_throw(
+    &priv_k1,
+    CX_RND_RFC6979,          // deterministic nonce
+    CX_SHA256,               // hashID, used internally by RFC6979 nonce derivation
+    digest, 32,              // 32-byte input digest
+    r_buf, s_buf,            // 32-byte BE output buffers
+    &info);
+// `info` bit `CX_ECCINFO_PARITY_ODD` signals high-s parity.
+// BOLOS does NOT document low-S as guaranteed — device-side normalization required.
+```
+
+**Adapter wiring**: the host MUST send raw `outer_hash` bytes (32 B), NOT use `packages/core/src/ecdsa.ts:ecdsaPreimage` (that pre-hashes on the host — correct for Trezor, wrong here).
+
+**Low-S** (final critique §10): BOLOS does not promise low-S. After the call we check `s > n/2` and conditionally compute `s = n - s` before serializing. Alternative: explicit conformance test at first-boot pinned to target firmware versions.
 
 ### Request struct sketches (codex)
 
@@ -63,7 +89,7 @@ typedef struct __attribute__((packed)) {
 32-byte field encodings throughout — slightly larger than packed selectors but eliminates widening/endianness bugs when reproducing `EncodedAppEntrypointCalls.hash()` (`yarn-project/entrypoints/src/encoding.ts`).
 
 ### Return formats
-- K1 / R1: `r ‖ s` (64B), low-s normalized (BOLOS handles via `cx_ecdsa_sign_no_throw` with appropriate flags).
+- K1 / R1: `r ‖ s` (64B), **device-side low-s normalized** (BOLOS doesn't guarantee — see ECDSA snippet above).
 - Grumpkin Schnorr: `s ‖ e` (64B), matching `barretenberg/cpp/src/barretenberg/crypto/schnorr/schnorr.hpp`.
 
 ### Derivation strategy (consolidated)
@@ -71,15 +97,16 @@ typedef struct __attribute__((packed)) {
 Codex's point won: support **both** schemes in-app with a feature flag, default to SLIP-44 for production.
 
 - `path_scheme = 1` → SLIP-0013 mode: mirrors Trezor's `gpg://aztec/account/{i}` → `m/13'/h0/h1/h2/h3`. Compatibility/migration lane.
-- `path_scheme = 2` → SLIP-44: `m/44'/{aztec_coin}'/{account}'/0/0`. Production default. Use `1666` as PoC placeholder; Foundation registers a real coin type as separate work.
+- `path_scheme = 2` → SLIP-44: `m/44'/AZTEC_COIN_TYPE'/{account}'/0/0`. Production default.
+- **Don't hardcode the coin type** (final critique §4). Expose as a build-time symbol `AZTEC_COIN_TYPE` (Makefile `-DAZTEC_COIN_TYPE=$(value)` on the C side; `process.env.AZTEC_COIN_TYPE` or a build-time constant on the TS side). PoC default: `1666` (unused on SatoshiLabs registry as of May 2026 — *unverified — research target*) but explicitly labelled as a placeholder pending real registration.
 
 ### Per-device UI strategy
 
 | Device | Display | Strategy |
 |---|---|---|
-| Stax / Flex (color touchscreen) | first-class | One summary page (chain/consumer/call-count) + one page per non-padding call + risk banners. `nbgl_useCaseReview` flow. |
+| Stax / Flex (color touchscreen) | first-class | One summary page (chain/consumer/call-count) + one page per non-padding call + risk banners. `nbgl_useCaseReview` flow. UX-first target for L4/L6. |
 | Nano X (128×64 OLED, BLE) | multi-page | Abbreviated `consumer`, `chain`, `calls`, per-call `target+selector+flags`. |
-| Nano S+ (128×32 mono) | terse | Same as Nano X with tighter copy. **L5 may not fit Nano S+ memory** — see §5. |
+| Nano S+ (128×32 mono) | terse | Same as Nano X with tighter copy. **The L5 crypto sizing gate** (see §5) — Stax/Flex don't escape it. |
 
 **Hard UI rule (codex)**: L2 must always say "Blind sign" on the confirmation screen. L4 may say "Clear sign" only after the device has cryptographically recomputed `outer_hash`. Aligns with upstream H4 (no public blind-sign release).
 
@@ -130,15 +157,34 @@ These live in `field_impl_generic.hpp` and `field_impl.hpp`. Write a compact 4-l
 ### Extra hardening
 - Reject invalid points + subgroup mismatches at load time
 - Zero secrets aggressively (`explicit_bzero`-equivalent)
-- **Self-verify Schnorr signatures on-device before returning them** (defends fault attacks on `s` or `e`)
+- **Duplicate critical sig-byte checks before return** — NOT a full self-verify (final critique §8). A full on-device verify introduces variable-base `pk * e` scalar mul, broadening the arithmetic surface we worked to narrow. Compute the final `s`/`e` bytes twice and compare; fail closed on mismatch. Only add full verify if we consciously accept the extra code path + audit surface.
 - Add host-side dudect-style timing harnesses for the pure-C field/EC code pre-audit
+- **Concrete fault-injection rules (final critique §9)**:
+  - Clear session state on every non-`0x9000` exit
+  - Zeroize secrets on every reject/error path
+  - Duplicate final serialized `r/s` (K1) or `s/e` (Schnorr) byte checks before returning
+  - Fail closed on any parse / count / version mismatch
+  - Don't promise app-level glitch-detection-hardware patterns to auditors — they care more about software consistency checks + minimized custom-crypto surface
+
+### Pedersen — exact static requirement (final critique §7)
+
+For Schnorr challenge generation `pedersen_hash::hash({R.x, pk.x, pk.y})` the semantic requirement is:
+- **3 generators** from `DEFAULT_DOMAIN_SEPARATOR`
+- **1 `pedersen_hash_length` generator**
+- **Total: 4 points** baked in for the challenge path.
+
+The "8 default + 1 length" figure is correct as the precomputed-cache size, but only 4 are semantically required for our Schnorr use case.
 
 ### Audit budget — gating
 ~$15–30k USD + 4–12 weeks calendar for a Ledger-approved auditor. **Foundation budget approval is a prerequisite to merging L5 to main**. L2 + L4 may be auditable on a lighter pass (no custom EC); ship audits incrementally.
 
 ## 5. Memory budget per device
 
-**Codex's key correction to my §5**: Nano S+ is the determining ceiling for L5, not Stax. Stax/Flex solve a UI problem, not a crypto-memory problem. Design L5 to fit Nano S+ or admit L5 doesn't ship broadly.
+**Resolved §2/§5 contradiction (final critique §6)**:
+- **Nano S+ = L5 crypto sizing gate**. If L5 doesn't fit Nano S+, explicitly document "L5 ships on Nano X / Stax / Flex only".
+- **Stax/Flex = L4/L6 UX-first targets**. They solve the clear-signing display problem; they do NOT solve the crypto-memory problem.
+
+Both statements stand together.
 
 Public SE specs (codex):
 - ST33K1M5C: up to 1536 KB flash / 64 KB RAM — [datasheet](https://www.st.com/en/secure-mcus/st33k1m5c.html)
@@ -166,13 +212,15 @@ Estimated app budget per phase:
 | Phase | Autonomous-feasible | Acceptance criteria |
 |---|---|---|
 | L1 — scaffold | ✓ (already done) | Repo framing + plan committed |
-| L2 — K1 baseline | ✓ (this session) | Builds under `ledger-app-builder-lite`. `GET_PUBLIC_KEY` returns 64B `x ‖ y` for K1. `SIGN_OUTER_HASH` returns low-s `r ‖ s` that verifies via Aztec's K1 verifier. Sideload-only (no Live submission). |
-| L3 — Speculos harness | ✓ (this session) | Python tests via `speculos-pytest` cover: pubkey, blind-sign, rejection cases, golden vectors on `nanosplus` + `nanox`. Speculos = day-to-day test bed; Docker = build substrate. |
+| **L2 — K1 baseline (scope cut per final critique §5)** | ✓ (this session) | **Buildable Ledger app under `ledger-app-builder-lite`. `GET_PUBLIC_KEY` returns 64B `x ‖ y` for K1. `SIGN_OUTER_HASH` returns low-s `r ‖ s`. One smoke test path on Speculos. ONE integration test that injects the device sig into an `AuthWitness` for `EcdsaKAccount` and runs the actual Aztec flow (NOT just `Ecdsa.verifySignature`).** Sideload-only. |
+| L3 — Speculos pytest harness | ✗ next autonomous session | Full pytest harness: pubkey, blind-sign, rejection cases, golden vectors on `nanosplus` + `nanox`. Speculos = day-to-day test bed; Docker = build substrate. |
 | L4 — clear-signing | ⚠ partial unmanned | Device recomputes `EncodedAppEntrypointCalls.hash()` + `computeOuterAuthWitHash()` from streamed call records, rejects mismatches, renders crypto-bound summary. Token-semantic decoding deferred. |
 | L5 — Schnorr-Grumpkin | ✗ multi-week, human review required | Pure-C field backend + fixed-base Grumpkin scalar mul + Pedersen + Schnorr parity with barretenberg test vectors + timing analysis + human audit. |
 | L6 — Ledger Live submission | ✗ vendor + Foundation gated | Audit by approved auditor + Ledger submission review + Clear Signing registry/origin-token compliance. |
 
 **Call**: do not submit L2 to Ledger Live. Sideload for research only; wait for L4.
+
+**L2 acceptance — sharpened (final critique §2)**: the TS `Ecdsa.verifySignature` is necessary but not sufficient. One integration test must inject the device-produced `r||s` into an `AuthWitness` for `EcdsaKAccount` and run the actual Aztec account flow. Without that we can pass the TS verifier and silently fail the real account path.
 
 ## 7. Security & adversarial considerations
 
@@ -326,7 +374,18 @@ implementations-plan/hw-wallet-poc-ledger/
 | Per-phase acceptance criteria (build artifact + verifier parity) | both | Aligned upfront |
 | Audit budget gating L5 merge | both | Codex more explicit about phasing |
 
-### Top-3 consolidated opinionated stands
+### Top-3 consolidated opinionated stands (post-critique)
 1. **Ship L2 sideload-only** — never to Ledger Live. Public release waits for L4 clear-signing (upstream H4).
-2. **Support both derivation schemes from day one** (SLIP-13 + SLIP-44), but default production users to SLIP-44 once a real Aztec coin type is registered. Use placeholder `1666` for the PoC.
-3. **L5 = narrow constant-time C port** with barretenberg as the oracle (not as a code import). Fixed-base secret-scalar paths only. Design for Nano S+ memory — Stax/Flex don't solve a crypto-memory problem.
+2. **Support both derivation schemes** (SLIP-13 + SLIP-44) but default production to SLIP-44 once a real Aztec coin type is registered. Use a build-time `AZTEC_COIN_TYPE` symbol — **never a baked-in number** that could collide with a future registration.
+3. **L5 = narrow constant-time C port** with barretenberg as the oracle (not as a code import). Fixed-base secret-scalar paths only. **Nano S+ = the crypto sizing gate; Stax/Flex don't escape it.**
+
+### Final-critique revisions applied (Approve with revisions verdict)
+- §2: dropped `session_id` from APDUs; session state in app globals only.
+- §2: pinned exact L2 ECDSA call (`cx_hash_sha256` + `cx_ecdsa_sign_rs_no_throw(..., CX_RND_RFC6979, CX_SHA256, ...)`).
+- §2: device-side low-S normalization required (BOLOS doesn't guarantee).
+- §2 (derivation): symbolic `AZTEC_COIN_TYPE` build-time override; no hardcoded number.
+- §4: "duplicate sig-byte checks before return" instead of full on-device self-verify (narrower surface).
+- §4: explicit fault-injection rules list.
+- §4: Pedersen exact requirement = 4 generators (3 default + 1 length), not 9.
+- §5: Nano S+ as L5 crypto gate; Stax/Flex as UX targets — both statements coexist.
+- §6: L2 acceptance now requires Aztec `EcdsaKAccount` integration test; full L3 Speculos pytest harness moved out of first autonomous session.
