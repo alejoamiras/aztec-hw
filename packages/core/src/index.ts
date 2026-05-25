@@ -10,7 +10,11 @@
 
 export type { AuthWitnessProvider, ChainInfo } from '@aztec/entrypoints/interfaces';
 export { Fr } from '@aztec/foundation/curves/bn254';
-export { AuthWitness, computeOuterAuthWitHash } from '@aztec/stdlib/auth-witness';
+export {
+  AuthWitness,
+  computeInnerAuthWitHash,
+  computeOuterAuthWitHash,
+} from '@aztec/stdlib/auth-witness';
 export { AztecAddress } from '@aztec/stdlib/aztec-address';
 export * from './ecdsa.ts';
 export * from './intent.ts';

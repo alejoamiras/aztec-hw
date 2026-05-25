@@ -21,12 +21,13 @@
 import { Ecdsa, EcdsaSignature } from '@aztec/foundation/crypto/ecdsa';
 import {
   buildAztecIdentity,
+  formatIntentForDevice,
   serializeIdentity,
   TrezorEcdsaKAuthWitnessProvider,
   TrezorlibSubprocessTransport,
   type TrezorTransport,
 } from '@aztec-hwwallet-poc/adapter-trezor';
-import { Fr } from '@aztec-hwwallet-poc/core';
+import { AztecAddress, type CallIntent, Fr } from '@aztec-hwwallet-poc/core';
 import { FakeTrezorTransport } from './fake-transport.ts';
 
 const ACCOUNT_INDEX = 0;
@@ -55,23 +56,53 @@ async function main() {
   const identity = buildAztecIdentity({ accountIndex: ACCOUNT_INDEX });
   console.log(`Identity wire form: ${serializeIdentity(identity)}\n`);
 
-  // 1) Synthesize a deterministic outer_hash (in production: comes from Aztec entrypoint
-  //    after Poseidon-hashing the tx call stack). The real Trezor firmware rejects all-zero
-  //    challenge_hidden so we use a non-zero scalar from the start.
-  const outerHashBytes = Buffer.from('00'.repeat(28) + '00000539', 'hex'); // 0x539 = 1337
-  const outerHash = Fr.fromBuffer(outerHashBytes);
-  console.log(`Synthetic outer_hash: 0x${Buffer.from(outerHash.toBuffer()).toString('hex')}\n`);
+  // 1) Build a structured CallIntent — Phase B's host-side clear-signing input.
+  //    The labels feed into the on-device confirmation screen; the calls feed into
+  //    the outer_hash computation (computeInnerAuthWitHash → computeOuterAuthWitHash).
+  const usdcContract = AztecAddress.fromBigInt(0xaabbccddee001122n);
+  const recipient = AztecAddress.fromBigInt(0xabcdabcdabcdabcd_dead1234dead1234n);
+  const accountConsumer = AztecAddress.fromBigInt(0xacc0_fac11_be3f_000111n);
+  const intent: CallIntent = {
+    consumer: accountConsumer,
+    chainInfo: { chainId: new Fr(1n), version: new Fr(1n) },
+    calls: [
+      {
+        contractAddress: usdcContract,
+        selector: new Fr(0xa9059cbbn), // ERC-20 transfer selector for narrative; not load-bearing
+        args: [
+          new Fr(recipient.toBigInt()),
+          new Fr(1_000_000n), // 1.0 USDC (6 decimals)
+        ],
+        isPadding: false,
+      },
+    ],
+    labels: {
+      actionClass: 'transfer',
+      amount: 1_000_000n,
+      amountDecimals: 6,
+      tokenSymbol: 'USDC',
+      recipient: '0xabcdabcd…dead1234',
+      contractLabel: 'USDC',
+    },
+  };
 
-  // 2) Adapter computes preimage (sha256(outer_hash.to_be_bytes())), signs via transport,
-  //    strips the 0x00 marker, low-s normalizes, packs as AuthWitness.
-  //    This single call also populates the pubkey cache (SignIdentity returns it as a side
-  //    effect) so we don't need to issue a separate probe sign.
-  const aw = await provider.createAuthWit(outerHash);
+  console.log('--- Intent visual (what the device will display) ---');
+  console.log(formatIntentForDevice(intent));
+  console.log('---');
 
-  const { x, y } = await provider.getPublicKeyXY(); // reads from the cache, no second sign
-  console.log('Device public key (64B for EcdsaKAccount constructor):');
+  // 2) Adapter computes outer_hash from intent, formats the visual, signs via transport.
+  //    This is Phase B.1: decorative clear-signing. The device DISPLAYS the intent fields,
+  //    but does NOT itself recompute the hash — that's Phase B.2 (Poseidon2 on firmware).
+  const aw = await provider.createAuthWitFromIntent(intent);
+
+  const { x, y } = await provider.getPublicKeyXY(); // reads from cache, no second sign
+  console.log('\nDevice public key (64B for EcdsaKAccount constructor):');
   console.log(`  x = 0x${Buffer.from(x).toString('hex')}`);
   console.log(`  y = 0x${Buffer.from(y).toString('hex')}\n`);
+
+  const outerHash = aw.requestHash;
+  const outerHashBytes = outerHash.toBuffer();
+  console.log(`Derived outer_hash: 0x${Buffer.from(outerHashBytes).toString('hex')}`);
   const sigBytes = Uint8Array.from(aw.witness.map((fr) => Number(fr.toBigInt())));
   console.log(`AuthWitness signature (r||s, 64B): 0x${Buffer.from(sigBytes).toString('hex')}\n`);
 

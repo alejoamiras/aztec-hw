@@ -16,6 +16,7 @@ export {
   parseAccountIndex,
   serializeIdentity,
 } from './identity.ts';
+export { computeOuterHashForIntent, formatIntentForDevice } from './intent-utils.ts';
 export { TrezorEcdsaKAuthWitnessProvider, type TrezorProviderOptions } from './provider.ts';
 export type { TrezorSignedIdentity, TrezorTransport } from './transport.ts';
 export {

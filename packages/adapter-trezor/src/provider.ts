@@ -19,14 +19,17 @@
 import {
   AuthWitness,
   type AuthWitnessProvider,
+  type CallIntent,
   ecdsaPreimage,
   Fr,
+  type IntentAuthWitnessProvider,
   normalizeLowS,
   packEcdsaSignature,
   SCALAR_BYTE_LENGTH,
 } from '@aztec-hwwallet-poc/core';
 import { Point } from '@noble/secp256k1';
 import { buildAztecIdentity, type IdentityType } from './identity.ts';
+import { computeOuterHashForIntent, formatIntentForDevice } from './intent-utils.ts';
 import type { TrezorTransport } from './transport.ts';
 
 const COMPRESSED_PUBKEY_LENGTH = 33;
@@ -39,7 +42,7 @@ export interface TrezorProviderOptions {
   readonly visualBanner?: string;
 }
 
-export class TrezorEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
+export class TrezorEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvider {
   private cachedXY?: { x: Uint8Array; y: Uint8Array };
   private readonly identity: IdentityType;
   private readonly visualBanner: string;
@@ -77,32 +80,59 @@ export class TrezorEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
   async createAuthWit(messageHash: Fr | Buffer): Promise<AuthWitness> {
     const outerHash = messageHash instanceof Fr ? messageHash : Fr.fromBuffer(messageHash);
     const challengeHidden = ecdsaPreimage(outerHash);
+    const visual = this.buildBlindSignVisual(challengeHidden);
+    return this.signAndWrap(outerHash, challengeHidden, visual);
+  }
 
-    const signed = await this.transport.signIdentity({
-      identity: this.identity,
-      ecdsaCurve: 'secp256k1',
-      challengeHidden,
-      challengeVisual: this.buildVisualBanner(challengeHidden),
-    });
-
-    // Cache pubkey if we hadn't seen it yet (free since SignIdentity always returns it).
-    if (!this.cachedXY) {
-      this.cachedXY = decompressPubkey(signed.compressedPublicKey);
-    }
-
-    const { r, s } = unpackTrezorSecp256k1Signature(signed.signature);
-    const sNormalized = normalizeLowS(s, 'secp256k1');
-    const sigBytes = packEcdsaSignature(r, sNormalized);
-    return new AuthWitness(outerHash, Array.from(sigBytes));
+  /**
+   * **Phase B.1 — decorative clear-signing.** Accept a structured `CallIntent`, derive
+   * `outer_hash` from it host-side, render a human-readable summary into `challenge_visual`
+   * so the device confirmation screen shows what the user is authorizing.
+   *
+   * IMPORTANT: this is **decorative only**. The device does not yet recompute
+   * `outer_hash` from the displayed fields — a malicious host could in principle show
+   * benign visual text while signing a malicious digest. For internal demos this is a
+   * real UX upgrade over blind-sign; for public release we need Poseidon2 on-device
+   * (Phase B.2, firmware-side work) before this becomes security-grade.
+   */
+  async createAuthWitFromIntent(intent: CallIntent): Promise<AuthWitness> {
+    const outerHash = await computeOuterHashForIntent(intent);
+    const challengeHidden = ecdsaPreimage(outerHash);
+    const visual = this.buildIntentVisual(intent);
+    return this.signAndWrap(outerHash, challengeHidden, visual);
   }
 
   async close(): Promise<void> {
     await this.transport.close?.();
   }
 
-  private buildVisualBanner(digest: Uint8Array): string {
+  private async signAndWrap(
+    outerHash: Fr,
+    challengeHidden: Uint8Array,
+    challengeVisual: string,
+  ): Promise<AuthWitness> {
+    const signed = await this.transport.signIdentity({
+      identity: this.identity,
+      ecdsaCurve: 'secp256k1',
+      challengeHidden,
+      challengeVisual,
+    });
+    if (!this.cachedXY) {
+      this.cachedXY = decompressPubkey(signed.compressedPublicKey);
+    }
+    const { r, s } = unpackTrezorSecp256k1Signature(signed.signature);
+    const sNormalized = normalizeLowS(s, 'secp256k1');
+    const sigBytes = packEcdsaSignature(r, sNormalized);
+    return new AuthWitness(outerHash, Array.from(sigBytes));
+  }
+
+  private buildBlindSignVisual(digest: Uint8Array): string {
     const truncatedHex = Buffer.from(digest.slice(0, 6)).toString('hex');
     return `${this.visualBanner}\nDigest: 0x${truncatedHex}…`;
+  }
+
+  private buildIntentVisual(intent: CallIntent): string {
+    return `${this.visualBanner}\n${formatIntentForDevice(intent)}`;
   }
 }
 
