@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aztec-hwwallet-poc/core": "workspace:*"
+    "@aztec-hwwallet-poc/core": "workspace:*",
+    "@noble/secp256k1": "^3.1.0"
   }
 }

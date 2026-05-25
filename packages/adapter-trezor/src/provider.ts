@@ -1,14 +1,17 @@
 /**
  * Trezor `AuthWitnessProvider` implementation for Aztec's `EcdsaKAccount`.
  *
- * Phase A: blind-sign. The device sees only the `sha256(outer_hash.to_be_bytes())`
- * digest in `challenge_hidden` — no human-meaningful tx summary on screen. Acceptable
- * for INTERNAL research demos only (see `architectures/02-clear-signing-interface.md`).
- * `challengeVisual` is set to a terse "Aztec authorization (INTERNAL — DO NOT SHIP)"
- * banner plus a truncated hex of the digest, so the user can at least eyeball that
- * the host hasn't substituted a different request — but this is decorative without
- * cryptographic binding.
+ * Architecture per codex review:
+ *   - `SignIdentity` is the only viable lower-level path; stock `requestLogin` hides
+ *     `ecdsaCurveName`. Adapter is built around explicit `IdentityType` protobuf shape.
+ *   - `proto='gpg'` mandatory: only `gpg` mode signs `challenge_hidden` directly. Other
+ *     protos fall back to Bitcoin message-signing semantics that Aztec wouldn't accept.
+ *   - No separate GetPublicKey — pubkey comes back from `SignIdentity` as 33B compressed.
+ *     Adapter caches it across calls and decompresses to 64B `x || y` for Aztec.
+ *   - Marker byte (signature[0]) is `0x00` for gpg/ssh sigtypes — strip and ignore.
  *
+ * Phase A: blind-sign. Device sees only `sha256(outer_hash.to_be_bytes())` digest.
+ * `challenge_visual` is set to an explicit "INTERNAL — DO NOT SHIP" banner.
  * Phase B will implement `IntentAuthWitnessProvider` so the device reconstructs the
  * Aztec call stack from a `CallIntent` and refuses to sign on hash mismatch.
  */
@@ -22,120 +25,130 @@ import {
   packEcdsaSignature,
   SCALAR_BYTE_LENGTH,
 } from '@aztec-hwwallet-poc/core';
-import { buildAztecIdentity } from './identity.ts';
+import { Point } from '@noble/secp256k1';
+import { buildAztecIdentity, type IdentityType } from './identity.ts';
 import type { TrezorTransport } from './transport.ts';
 
-/** Length of the Trezor secp256k1 signature wire format = `marker(1) || r(32) || s(32)` = 65 bytes. */
-const TREZOR_SECP256K1_SIG_BYTE_LENGTH = 65;
+const COMPRESSED_PUBKEY_LENGTH = 33;
+const TREZOR_SIG_BYTE_LENGTH = 65; // header(1) || r(32) || s(32)
 
 export interface TrezorProviderOptions {
-  /** Account index (0, 1, 2, …) — selects which Aztec signing key on the device. */
+  /** Account index (0, 1, …) — embedded in IdentityType `path` field. */
   readonly accountIndex: number;
-  /**
-   * Optional override for the `challenge_visual` text shown on-device.
-   * Default: terse "Aztec authorization (INTERNAL — DO NOT SHIP)" + truncated digest.
-   * Phase B / production: replaced by structured intent display.
-   */
+  /** Override `challenge_visual` banner. Default: explicit INTERNAL warning. */
   readonly visualBanner?: string;
 }
 
 export class TrezorEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
-  private cachedPublicKey?: Uint8Array;
-  private readonly identity: string;
+  private cachedXY?: { x: Uint8Array; y: Uint8Array };
+  private readonly identity: IdentityType;
   private readonly visualBanner: string;
 
   constructor(
     private readonly transport: TrezorTransport,
     options: TrezorProviderOptions,
   ) {
-    this.identity = buildAztecIdentity(options.accountIndex);
+    this.identity = buildAztecIdentity({ accountIndex: options.accountIndex });
     this.visualBanner = options.visualBanner ?? 'Aztec authorization (INTERNAL — DO NOT SHIP)';
-  }
-
-  /**
-   * Fetch the device's secp256k1 public key — used at account-contract deployment
-   * time as the `EcdsaKAccount` constructor arg (`signing_pub_key_x`, `signing_pub_key_y`).
-   *
-   * Returns the **uncompressed** 65-byte form `0x04 || X(32) || Y(32)`.
-   * Aztec's `EcdsaKAccount` constructor splits this into `[X(32)]` + `[Y(32)]` args.
-   */
-  async getPublicKey(): Promise<Uint8Array> {
-    if (this.cachedPublicKey) return this.cachedPublicKey;
-    const pk = await this.transport.getPublicKey(this.identity, 'secp256k1');
-    if (pk.bytes.length !== 65 || pk.bytes[0] !== 0x04) {
-      throw new Error(
-        `Unexpected public-key format: expected 65-byte uncompressed (0x04 || X || Y), got ${pk.bytes.length} bytes with prefix 0x${pk.bytes[0]?.toString(16) ?? 'undef'}`,
-      );
-    }
-    this.cachedPublicKey = pk.bytes;
-    return pk.bytes;
   }
 
   /**
    * Aztec `EcdsaKAccount` constructor args:
    *   `[signing_pub_key.x.to_be_bytes::<32>(), signing_pub_key.y.to_be_bytes::<32>()]`.
    *
-   * Returns `{ x, y }` ready to splat into the constructor.
+   * Forces a single `SignIdentity` round-trip (with a deterministic dummy digest) to
+   * fetch the pubkey from the device. Result is cached for subsequent createAuthWit calls.
    */
   async getPublicKeyXY(): Promise<{ x: Uint8Array; y: Uint8Array }> {
-    const pk = await this.getPublicKey();
-    // Skip the 0x04 prefix.
-    return {
-      x: pk.slice(1, 1 + SCALAR_BYTE_LENGTH),
-      y: pk.slice(1 + SCALAR_BYTE_LENGTH, 1 + 2 * SCALAR_BYTE_LENGTH),
-    };
+    if (this.cachedXY) return this.cachedXY;
+    // No standalone get-pubkey API for SLIP-0013 — perform a probe sign to populate the cache.
+    // The actual signature is discarded; we only need the returned compressedPublicKey.
+    const probeDigest = new Uint8Array(SCALAR_BYTE_LENGTH); // 32 zero bytes
+    const signed = await this.transport.signIdentity({
+      identity: this.identity,
+      ecdsaCurve: 'secp256k1',
+      challengeHidden: probeDigest,
+      challengeVisual: `${this.visualBanner}\n(initial public-key fetch)`,
+    });
+    this.cachedXY = decompressPubkey(signed.compressedPublicKey);
+    return this.cachedXY;
   }
 
   async createAuthWit(messageHash: Fr | Buffer): Promise<AuthWitness> {
     const outerHash = messageHash instanceof Fr ? messageHash : Fr.fromBuffer(messageHash);
     const challengeHidden = ecdsaPreimage(outerHash);
 
-    const visual = buildVisualBanner(this.visualBanner, challengeHidden);
     const signed = await this.transport.signIdentity({
       identity: this.identity,
       ecdsaCurve: 'secp256k1',
       challengeHidden,
-      challengeVisual: visual,
+      challengeVisual: this.buildVisualBanner(challengeHidden),
     });
+
+    // Cache pubkey if we hadn't seen it yet (free since SignIdentity always returns it).
+    if (!this.cachedXY) {
+      this.cachedXY = decompressPubkey(signed.compressedPublicKey);
+    }
 
     const { r, s } = unpackTrezorSecp256k1Signature(signed.signature);
     const sNormalized = normalizeLowS(s, 'secp256k1');
     const sigBytes = packEcdsaSignature(r, sNormalized);
-
-    // AuthWitness witness is a flat array of bytes-as-numbers (Fr | number).
     return new AuthWitness(outerHash, Array.from(sigBytes));
   }
 
   async close(): Promise<void> {
     await this.transport.close?.();
   }
+
+  private buildVisualBanner(digest: Uint8Array): string {
+    const truncatedHex = Buffer.from(digest.slice(0, 6)).toString('hex');
+    return `${this.visualBanner}\nDigest: 0x${truncatedHex}…`;
+  }
 }
 
 /**
- * Strip Trezor's wire-format signature into raw `(r, s)`.
+ * Strip the Trezor `SignIdentity` wire-format signature into raw `(r, s)`.
  *
- * Trezor's `SignIdentity` secp256k1 output is `marker_byte(1) || r(32) || s(32)`:
- * the leading marker byte (`0x1f + recovery_id`) is Ethereum-style recovery info
- * Aztec doesn't consume.
+ * Wire: `header(1) || r(32) || s(32)` = 65 bytes. For `gpg`/`ssh` sigtypes `header`
+ * is overwritten with `0x00` by `sign_identity.py` (codex finding #5). We ignore it.
  */
-function unpackTrezorSecp256k1Signature(raw: Uint8Array): {
-  marker: number;
-  r: Uint8Array;
-  s: Uint8Array;
-} {
-  if (raw.length !== TREZOR_SECP256K1_SIG_BYTE_LENGTH) {
+function unpackTrezorSecp256k1Signature(raw: Uint8Array): { r: Uint8Array; s: Uint8Array } {
+  if (raw.length !== TREZOR_SIG_BYTE_LENGTH) {
     throw new Error(
-      `Unexpected Trezor signature length: expected ${TREZOR_SECP256K1_SIG_BYTE_LENGTH} bytes (marker || r || s), got ${raw.length}`,
+      `Unexpected Trezor signature length: expected ${TREZOR_SIG_BYTE_LENGTH} (header || r || s), got ${raw.length}`,
     );
   }
-  // biome-ignore lint/style/noNonNullAssertion: length check above guarantees byte 0 exists
-  const marker = raw[0]!;
-  const r = raw.slice(1, 1 + SCALAR_BYTE_LENGTH);
-  const s = raw.slice(1 + SCALAR_BYTE_LENGTH, 1 + 2 * SCALAR_BYTE_LENGTH);
-  return { marker, r, s };
+  return {
+    r: raw.slice(1, 1 + SCALAR_BYTE_LENGTH),
+    s: raw.slice(1 + SCALAR_BYTE_LENGTH, 1 + 2 * SCALAR_BYTE_LENGTH),
+  };
 }
 
-function buildVisualBanner(banner: string, digest: Uint8Array): string {
-  const truncatedHex = Buffer.from(digest.slice(0, 6)).toString('hex');
-  return `${banner}\nDigest: 0x${truncatedHex}…`;
+/**
+ * Decompress a 33-byte compressed secp256k1 public key (`02/03 || X(32)`) to 64 bytes
+ * `X || Y` — the shape Aztec's `EcdsaKAccount` constructor expects.
+ */
+function decompressPubkey(compressed: Uint8Array): { x: Uint8Array; y: Uint8Array } {
+  if (compressed.length !== COMPRESSED_PUBKEY_LENGTH) {
+    throw new Error(
+      `Compressed pubkey must be ${COMPRESSED_PUBKEY_LENGTH} bytes (02/03 || X), got ${compressed.length}`,
+    );
+  }
+  const prefix = compressed[0];
+  if (prefix !== 0x02 && prefix !== 0x03) {
+    throw new Error(
+      `Compressed pubkey prefix must be 0x02 or 0x03, got 0x${prefix?.toString(16) ?? 'undef'}`,
+    );
+  }
+  const point = Point.fromBytes(compressed);
+  const uncompressed = point.toBytes(false); // 65 bytes: 0x04 || X || Y
+  if (uncompressed.length !== 65 || uncompressed[0] !== 0x04) {
+    throw new Error(
+      `noble returned non-standard uncompressed pubkey (length ${uncompressed.length}, prefix 0x${uncompressed[0]?.toString(16) ?? 'undef'})`,
+    );
+  }
+  return {
+    x: uncompressed.slice(1, 1 + SCALAR_BYTE_LENGTH),
+    y: uncompressed.slice(1 + SCALAR_BYTE_LENGTH, 1 + 2 * SCALAR_BYTE_LENGTH),
+  };
 }

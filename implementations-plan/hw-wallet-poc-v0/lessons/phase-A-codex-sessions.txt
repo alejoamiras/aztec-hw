@@ -1,0 +1,2 @@
+session_id: 019e5ed4-d8c8-7371-ab81-b1b06a4ba4a1
+codex_dir: /var/folders/p9/5vbplm5s6p5bjy78gdqnh0500000gn/T/codex-AiaKbyas
