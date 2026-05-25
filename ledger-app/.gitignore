@@ -1,0 +1,10 @@
+bin/
+debug/
+build/
+*.o
+*.elf
+*.hex
+*.apdu
+*.sha256
+*.map
+*.asm

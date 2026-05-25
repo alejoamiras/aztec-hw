@@ -1,0 +1,8 @@
+[app]
+build_directory = "./"
+sdk = "C"
+devices = ["nanox", "nanos+", "stax", "flex"]
+
+# Compilation use_cases (development-only; production builds don't use these).
+[use_cases]
+debug = "DEBUG=1"
