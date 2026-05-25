@@ -1,0 +1,20 @@
+{
+  "name": "@aztec-hwwallet-poc/core",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared types for the Aztec HW-wallet PoC. Extends AuthWitnessProvider with createAuthWitFromIntent (Option A from clear-signing design).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aztec/aztec.js": "^4.2.1",
+    "@aztec/entrypoints": "^4.2.1",
+    "@aztec/foundation": "^4.2.1",
+    "@aztec/stdlib": "^4.2.1"
+  }
+}
