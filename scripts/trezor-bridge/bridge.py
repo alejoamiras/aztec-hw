@@ -123,10 +123,11 @@ def main() -> int:
                 sys.stdout.flush()
                 continue
 
-            if client is None:
-                client = _connect()
-
             try:
+                # _connect() is inside the try so transport errors (wrong path, no device,
+                # uninitialized emulator) surface as JSON, not as a silent child exit.
+                if client is None:
+                    client = _connect()
                 resp = _handle(client, req)
             except Exception as exc:  # noqa: BLE001 — surface bridge errors as JSON to TS side
                 resp = {

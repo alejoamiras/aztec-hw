@@ -94,7 +94,8 @@ export class TrezorlibSubprocessTransport implements TrezorTransport {
     };
     const resp = await this.call<SignIdentityResponse | ErrorResponse>(proc, req);
     if (!resp.ok) {
-      throw new Error(`trezorlib bridge: ${resp.error}`);
+      const tb = resp.traceback ? `\n\nPython traceback:\n${resp.traceback}` : '';
+      throw new Error(`trezorlib bridge: ${resp.error}${tb}`);
     }
     const compressed = hexToBytes(resp.compressed_public_key_hex);
     const signature = hexToBytes(resp.signature_hex);
@@ -108,16 +109,29 @@ export class TrezorlibSubprocessTransport implements TrezorTransport {
   }
 
   async close(): Promise<void> {
-    if (!this.proc) return;
-    this.proc.stdin.end();
-    return new Promise((res) => {
-      // biome-ignore lint/style/noNonNullAssertion: just checked above
-      this.proc!.once('exit', () => res());
-      setTimeout(() => {
-        this.proc?.kill();
+    const proc = this.proc;
+    if (!proc) return;
+    this.proc = undefined; // clear immediately so repeated close() calls are idempotent
+    proc.stdin.end();
+    await new Promise<void>((res) => {
+      let settled = false;
+      const onExit = () => {
+        if (settled) return;
+        settled = true;
         res();
+      };
+      proc.once('exit', onExit);
+      setTimeout(() => {
+        if (settled) return;
+        proc.kill();
+        onExit();
       }, 2000);
     });
+    // Drain any pending resolvers with a cleanup error so callers don't hang.
+    for (const resolver of this.pendingResolvers) {
+      resolver(JSON.stringify({ ok: false, error: 'bridge closed' }));
+    }
+    this.pendingResolvers = [];
   }
 
   private ensureStarted(): BridgeProc {
@@ -138,19 +152,32 @@ export class TrezorlibSubprocessTransport implements TrezorTransport {
       stdio: ['pipe', 'pipe', 'inherit'],
       env,
     });
+    let spawnError: Error | undefined;
     proc.on('error', (err) => {
-      throw new Error(`trezorlib bridge spawn failed: ${err.message}`);
+      // Cache the error rather than throwing — this listener runs on the EventEmitter and
+      // an uncaught throw here propagates to the Node default handler.
+      spawnError = new Error(`trezorlib bridge spawn failed: ${err.message}`);
+      // Drain any pending resolvers with the spawn error.
+      for (const resolver of this.pendingResolvers) {
+        resolver(JSON.stringify({ ok: false, error: spawnError.message }));
+      }
+      this.pendingResolvers = [];
+      this.proc = undefined;
     });
     proc.on('exit', (code, signal) => {
-      if (code !== 0 && code !== null) {
-        // Drain any pending resolvers with a failure response.
+      // Drain pending resolvers on ANY abnormal exit, including signal-only termination.
+      if ((code !== 0 && code !== null) || signal !== null) {
         for (const resolver of this.pendingResolvers) {
           resolver(
-            JSON.stringify({ ok: false, error: `bridge exited (code=${code}, signal=${signal})` }),
+            JSON.stringify({
+              ok: false,
+              error: `bridge exited (code=${code}, signal=${signal})`,
+            }),
           );
         }
         this.pendingResolvers = [];
       }
+      this.proc = undefined;
     });
     proc.stdout.on('data', (chunk: Buffer) => {
       this.stdoutBuffer += chunk.toString('utf8');

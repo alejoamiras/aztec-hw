@@ -75,9 +75,20 @@ TREZOR_PATH=usb AZTEC_HW_TRANSPORT=trezorlib bun run --cwd apps/demo start
 
 (or `bridge:` to go through `trezord`, etc. — see `trezorlib.transport.get_transport` for the URI grammar.)
 
-## Limitations of this transport
+## Supported device flows (and explicitly unsupported)
 
-- **Python dependency**. The pure-JS alternative is a `@trezor/transport` + `@trezor/protobuf` client; see roadmap Phase A.7.
-- **Single-process bridge**. One spawn per `TrezorlibSubprocessTransport` instance; the demo reuses one bridge for both the pubkey probe and the real sign.
-- **stderr inherited**. Python tracebacks print to the parent's stderr. Acceptable for the PoC; would be a structured JSON channel for a production adapter.
-- **No PIN / passphrase UI**. The bridge uses `trezorlib.ui.ClickUI` which prompts on the device + CLI for PIN entry. For the emulator with no PIN set, this is transparent.
+| Device flow | Status |
+|---|---|
+| Emulator without PIN/passphrase | ✓ transparent |
+| Trezor Safe 3 / Safe 5 with on-device PIN | ✓ transparent (PIN prompt happens on-device) |
+| Trezor Model T with on-device PIN | ✓ transparent (PIN prompt happens on-device) |
+| Trezor One PIN (host-side matrix prompt) | ✗ unsupported — `ClickUI.get_pin()` would read from the RPC stdin and either hang or eat protocol input |
+| Host-side passphrase entry | ✗ same problem |
+
+If you need broader device coverage, replace `ClickUI()` with a JSON-protocol UI (e.g., a `ScriptUI` that requests PIN over a sidecar channel), or pivot to the pure-JS transport (roadmap Phase A.7). For the Phase-A PoC, emulator + on-device PIN is sufficient.
+
+## Other limitations
+
+- **Python dependency**. The pure-JS alternative is a `@trezor/transport` + `@trezor/protobuf` client; codex estimates 2–4 engineer-days for emulator-only, 1–2 weeks for production-robust.
+- **Two-confirmation flow in the demo**. `provider.getPublicKeyXY()` issues a probe `SignIdentity` to fetch the pubkey before `createAuthWit()` does the real signature. On the emulator both prompts auto-confirm; on a physical device with PIN, expect to confirm twice. (Workaround: call `createAuthWit` first, then read the cached pubkey via `getPublicKeyXY` — one confirmation.)
+- **Initial connection errors are returned as JSON**. Wrong `TREZOR_PATH`, no device present, emulator down — the bridge surfaces these as `{ok: false, error}` with a Python traceback rather than a silent child exit. The TS-side wraps the error + traceback into a single `Error` for the caller.
