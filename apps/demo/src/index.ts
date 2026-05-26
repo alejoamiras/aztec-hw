@@ -89,16 +89,30 @@ async function buildBackend(): Promise<BackendHandle> {
       const provider = new LedgerEcdsaKAuthWitnessProvider(transport, {
         bip32Path: AZTEC_LEDGER_PATH,
         signOptions: {
-          // Auto-confirm the on-device blind-sign flow when run against Speculos.
+          // Auto-confirm the on-device flow when run against Speculos. Page-aware:
+          // walks right until the finishTitle ("Sign Aztec…") is in the event
+          // queue, then both-presses to approve. Handles both L2 blind-sign and
+          // L4 verified-calls page counts without hard-coding.
           autoConfirm: async (ctx) => {
-            await ctx.sleep(500);
+            await ctx.clearEvents();
+            await ctx.sleep(300);
             await ctx.press('both');
-            for (let i = 0; i < 5; i++) {
-              await ctx.sleep(280);
-              await ctx.press('right');
-            }
             await ctx.sleep(280);
-            await ctx.press('both');
+            for (let i = 0; i < 40; i++) {
+              const events = await ctx.getEvents();
+              const recent = events
+                .slice(-8)
+                .map((e) => e.text)
+                .join(' | ');
+              const last = events[events.length - 1]?.text ?? '';
+              if (recent.includes('Sign Aztec') && !last.includes('Reject transaction')) {
+                await ctx.press('both');
+                return;
+              }
+              await ctx.press(last.includes('Reject transaction') ? 'left' : 'right');
+              await ctx.sleep(280);
+            }
+            throw new Error('demo autoConfirm: never reached Approve');
           },
         },
       });
