@@ -10,8 +10,7 @@
  */
 import { type AzCall, type AzManifestHeader, FR_BYTES, INS, SW } from './apdu.ts';
 import { encodeAppendCallBody, encodeBeginAuthwitBody } from './l4-manifest.ts';
-import type { AutoConfirmContext, SpeculosTransport } from './speculos-transport.ts';
-import type { LedgerTransport } from './transport.ts';
+import type { AutoConfirmContext, LedgerTransport } from './transport.ts';
 
 export interface LedgerPublicKey {
   /** Uncompressed secp256k1 X coordinate, 32 BE bytes. */
@@ -106,8 +105,7 @@ export class LedgerProvider {
     if (claimedOuterHash.length !== FR_BYTES) {
       throw new Error(`claimedOuterHash must be 32 bytes, got ${claimedOuterHash.length}`);
     }
-    const transport = this.transport as SpeculosTransport;
-    const r = await transport.send(
+    const r = await this.transport.send(
       { ins: INS.FINALIZE_AND_SIGN, data: claimedOuterHash },
       opts.autoConfirm,
     );
@@ -137,9 +135,7 @@ export class LedgerProvider {
     body.set(pathBytes, 0);
     body.set(outerHash, pathBytes.length);
 
-    // Speculos transports accept an autoConfirm callback as a second arg.
-    const transport = this.transport as SpeculosTransport;
-    const r = await transport.send({ ins: INS.SIGN_OUTER_HASH, data: body }, opts.autoConfirm);
+    const r = await this.transport.send({ ins: INS.SIGN_OUTER_HASH, data: body }, opts.autoConfirm);
     this.requireOk(r.sw, 'SIGN_OUTER_HASH');
     if (r.data.length !== 64) {
       throw new Error(`SIGN_OUTER_HASH: expected 64 bytes (r||s), got ${r.data.length}`);

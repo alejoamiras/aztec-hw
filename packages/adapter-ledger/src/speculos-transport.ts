@@ -12,27 +12,26 @@
  * completes. Without that callback, blocking instructions hang forever.
  */
 import { CLA, type Ins } from './apdu.ts';
-import type { ApduRequest, ApduResponse, LedgerTransport } from './transport.ts';
+import type {
+  ApduRequest,
+  ApduResponse,
+  AutoConfirmContext,
+  LedgerTransport,
+} from './transport.ts';
 
 export type ButtonId = 'left' | 'right' | 'both';
 export type FingerAction = 'press-and-release' | 'press' | 'release';
+
+/* Re-export so existing imports keep working — the canonical home of
+ * AutoConfirmContext is now transport.ts so LedgerTransport.send can name it
+ * without coupling to Speculos. */
+export type { AutoConfirmContext } from './transport.ts';
 
 export interface SpeculosTransportOptions {
   /** Base URL of the Speculos REST API. Defaults to `http://localhost:5000`. */
   readonly baseUrl?: string;
   /** Per-request timeout in ms (does NOT apply during autoConfirm). */
   readonly timeoutMs?: number;
-}
-
-export interface AutoConfirmContext {
-  /** Press a Nano button. */
-  press(button: ButtonId): Promise<void>;
-  /** Convenience: small async sleep. */
-  sleep(ms: number): Promise<void>;
-  /** Drain Speculos's screen-text event queue. Useful before a sequence of presses. */
-  clearEvents(): Promise<void>;
-  /** Fetch all event-stream entries currently buffered on the emulator. */
-  getEvents(): Promise<readonly { text: string }[]>;
 }
 
 export class SpeculosTransport implements LedgerTransport {

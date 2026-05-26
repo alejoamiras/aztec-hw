@@ -43,9 +43,19 @@ export {
   type VersionInfo,
 } from './provider.ts';
 export {
-  type AutoConfirmContext,
   type ButtonId,
   SpeculosTransport,
   type SpeculosTransportOptions,
 } from './speculos-transport.ts';
-export type { ApduRequest, ApduResponse, LedgerTransport } from './transport.ts';
+export type {
+  ApduRequest,
+  ApduResponse,
+  AutoConfirmContext,
+  LedgerTransport,
+} from './transport.ts';
+export {
+  createWebHidTransport,
+  WebHidDeviceDisconnectedError,
+  WebHidLedgerTransport,
+  WebHidNotSupportedError,
+} from './webhid-transport.ts';
