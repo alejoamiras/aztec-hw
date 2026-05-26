@@ -15,9 +15,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
+import { Ecdsa, EcdsaSignature } from '@aztec/foundation/crypto/ecdsa';
 import { Point, verify } from '@noble/secp256k1';
 
-import { SW } from './apdu.ts';
 import { LedgerProvider } from './provider.ts';
 import type { AutoConfirmContext } from './speculos-transport.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
@@ -110,6 +110,28 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
     // `prehash: false` tells noble we already hashed the message (the device
     // signed sha256(outer_hash) directly).
     const ok = verify(sig64, digest, sec1, { prehash: false });
+    expect(ok).toBe(true);
+  });
+
+  /**
+   * L2 acceptance criterion (plan-final.md §6 + §223): the signature must verify
+   * via Aztec's actual `Ecdsa.verifySignature`, which is barretenberg-backed and
+   * exercises the same code path the in-circuit `EcdsaKAccount` verifier runs.
+   */
+  test('SIGN_OUTER_HASH sig verifies under Aztec foundation Ecdsa (in-circuit parity)', async () => {
+    const pk = await provider.getPublicKey(AZTEC_PATH);
+    const pubKeyXY = Buffer.concat([Buffer.from(pk.x), Buffer.from(pk.y)]); // 64-byte x||y, no SEC1 prefix
+    const outerHash = new Uint8Array(32).fill(0x42);
+
+    const sig = await provider.signOuterHash(AZTEC_PATH, outerHash, {
+      autoConfirm: approveReview,
+    });
+
+    // Aztec's EcdsaSignature carries (r, s, v). The device doesn't currently
+    // return v (it's only needed for recovery, not verify); pad with 0.
+    const aztecSig = new EcdsaSignature(Buffer.from(sig.r), Buffer.from(sig.s), Buffer.from([0]));
+    const verifier = new Ecdsa('secp256k1');
+    const ok = await verifier.verifySignature(outerHash, pubKeyXY, aztecSig);
     expect(ok).toBe(true);
   });
 
