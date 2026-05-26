@@ -17,8 +17,6 @@ export interface LedgerPublicKey {
   readonly x: Uint8Array;
   /** Uncompressed secp256k1 Y coordinate, 32 BE bytes. */
   readonly y: Uint8Array;
-  /** BIP-32 chain code, 32 bytes (unused by Aztec but returned for parity). */
-  readonly chainCode: Uint8Array;
 }
 
 export interface LedgerSignature {
@@ -62,13 +60,13 @@ export class LedgerProvider {
     const body = this.encodePath(bip32Path);
     const r = await this.transport.send({ ins: INS.GET_PUBLIC_KEY, data: body });
     this.requireOk(r.sw, 'GET_PUBLIC_KEY');
-    if (r.data.length !== 96) {
-      throw new Error(`GET_PUBLIC_KEY: expected 96 bytes (X||Y||chainCode), got ${r.data.length}`);
+    // Plan-final.md §215: K1 pubkey wire shape is 64B x||y (no chain code).
+    if (r.data.length !== 64) {
+      throw new Error(`GET_PUBLIC_KEY: expected 64 bytes (X||Y), got ${r.data.length}`);
     }
     return {
       x: r.data.slice(0, 32),
       y: r.data.slice(32, 64),
-      chainCode: r.data.slice(64, 96),
     };
   }
 
@@ -98,14 +96,25 @@ export class LedgerProvider {
     };
   }
 
+  /**
+   * Strict BIP-32 path encoder (codex L2 BLOCKER #1).
+   * Refuses zero-length, over-long, non-integer, negative, or out-of-range
+   * components instead of silently coercing with `>>> 0`.
+   */
   private encodePath(path: readonly number[]): Uint8Array {
+    if (path.length === 0) {
+      throw new Error('BIP-32 path must not be empty');
+    }
     if (path.length > 10) {
       throw new Error(`BIP-32 path too long: ${path.length} > 10`);
     }
     const out = new Uint8Array(1 + 4 * path.length);
     out[0] = path.length;
     for (let i = 0; i < path.length; i++) {
-      const v = path[i]! >>> 0;
+      const v = path[i]!;
+      if (!Number.isInteger(v) || v < 0 || v > 0xffff_ffff) {
+        throw new Error(`BIP-32 path component ${i} must be uint32 (got ${String(v)})`);
+      }
       out[1 + 4 * i] = (v >>> 24) & 0xff;
       out[2 + 4 * i] = (v >>> 16) & 0xff;
       out[3 + 4 * i] = (v >>> 8) & 0xff;

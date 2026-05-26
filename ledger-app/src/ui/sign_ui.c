@@ -37,7 +37,10 @@
 #define REVIEW_ICON C_app_aztec_64px
 #endif
 
-static char g_path_str[80];
+// Sized for the maximum BIP-32 path we accept (MAX_BIP32_PATH_LEN=10) at "m" + 10 * "/4294967295'" + NUL
+// = 1 + 10*12 + 1 = 122 bytes. Round up to 160 for safety; truncation is now reported as an error
+// rather than silently shown (codex L2 BLOCKER #1).
+static char g_path_str[160];
 static char g_hash_hex[2 * 32 + 1];
 
 static nbgl_contentTagValue_t g_review_pairs[2];
@@ -51,17 +54,31 @@ static void on_review_choice(bool confirm) {
     }
 }
 
-static void format_bip32_path(char *out, size_t out_len) {
+/**
+ * Format the path. Returns true on success, false if it didn't fit (caller must abort).
+ *
+ * NB: BOLOS's `snprintf` (`os_printf.c`) does NOT support `%lu` by default — the `%l` branch
+ * is guarded by `HAVE_SNPRINTF_FORMAT_LL` and falls through to `-1` otherwise. We use `%u`
+ * with a `(unsigned) v` cast; values are masked to 31 bits before this point so the cast is
+ * lossless on Cortex-M (int is 32-bit).
+ */
+static bool format_bip32_path(char *out, size_t out_len) {
+    if (out_len < 2) return false;
     out[0] = 'm';
+    out[1] = '\0';
     size_t cur = 1;
     for (size_t i = 0; i < G_context.bip32_path_len; i++) {
         const uint32_t p = G_context.bip32_path[i];
         const uint32_t v = p & 0x7FFFFFFFu;
         const char *suffix = (p & 0x80000000u) ? "'" : "";
-        int n = snprintf(out + cur, out_len - cur, "/%lu%s", (unsigned long) v, suffix);
-        if (n < 0 || (size_t) n >= out_len - cur) break;
+        if (cur >= out_len) return false;
+        const size_t avail = out_len - cur;
+        const int n = snprintf(out + cur, avail, "/%u%s", (unsigned) v, suffix);
+        if (n < 0) return false;
+        if ((size_t) n >= avail) return false;
         cur += (size_t) n;
     }
+    return true;
 }
 
 static void format_hash_hex(char *out, size_t out_len, const uint8_t *bytes, size_t bytes_len) {
@@ -75,7 +92,11 @@ static void format_hash_hex(char *out, size_t out_len, const uint8_t *bytes, siz
 }
 
 int ui_display_blind_sign(void) {
-    format_bip32_path(g_path_str, sizeof(g_path_str));
+    // Refuse to sign if we cannot show the user the full path they're authorizing
+    // (codex L2 BLOCKER #1 — no silent UI truncation on security-critical surface).
+    if (!format_bip32_path(g_path_str, sizeof(g_path_str))) {
+        return sign_outer_hash_rejected();
+    }
     format_hash_hex(g_hash_hex, sizeof(g_hash_hex), G_context.sign_info.outer_hash, 32);
 
     memset(&g_review_pairs, 0, sizeof(g_review_pairs));

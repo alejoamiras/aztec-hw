@@ -53,12 +53,23 @@ export interface AzKeyPath {
 }
 
 /**
- * Aztec SLIP-44 coin type. **Build-time override** (final-critique §4): do NOT
- * hardcode a number into executable code; this constant exists so a future
- * SatoshiLabs registration drops in without source changes. PoC placeholder is
- * 1666 (unused on the registry as of May 2026 — `unverified — research target`).
+ * Aztec SLIP-44 coin type — env-driven so the PoC placeholder doesn't bake into
+ * client code (codex L2 MINOR #6 / final-critique §4).
+ *
+ * Override at runtime with `AZTEC_COIN_TYPE=N`; default `1666` is documented as
+ * an unregistered placeholder. The device-side Makefile honours the same name
+ * (`make AZTEC_COIN_TYPE=N`).
  */
-export const AZTEC_COIN_TYPE = 1666;
+export const AZTEC_COIN_TYPE: number = (() => {
+  const raw = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+    ?.env?.AZTEC_COIN_TYPE;
+  if (!raw) return 1666;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0 || n > 0x7fff_ffff) {
+    throw new Error(`AZTEC_COIN_TYPE env must be a uint31, got ${raw}`);
+  }
+  return n;
+})();
 
 export interface AzManifestHeader {
   /** Bumps when the manifest wire layout changes. Device rejects unknown versions. */
@@ -80,15 +91,27 @@ export interface AzCall {
   readonly flags: number;
 }
 
-/** Status words (per ISO 7816-4 convention). */
+/**
+ * Status words mirrored from `ledger-app/src/sw.h`. Aztec-specific codes use the
+ * proprietary 6Fxx range to avoid colliding with the SDK's ISO `SWO_*` constants
+ * (codex L2 MINOR #5 — single source of truth restored).
+ */
 export const SW = {
   OK: 0x9000,
-  CONDITIONS_NOT_SATISFIED: 0x6985, // user rejected on-device
-  WRONG_DATA: 0x6a80, // malformed APDU payload
+  // ISO-standard codes the SDK already emits.
+  CONDITIONS_NOT_SATISFIED: 0x6985, // user rejected on-device / Aztec SW_USER_REJECTED
+  WRONG_DATA_LENGTH: 0x6a87,
+  INCORRECT_P1_P2: 0x6a86,
   INVALID_INS: 0x6d00,
   INVALID_CLA: 0x6e00,
-  HASH_MISMATCH: 0x6a82, // on-device outer_hash didn't match what the host expected
-  UNKNOWN_MANIFEST_VERSION: 0x6a83,
+  UNKNOWN: 0x6f00,
+  // Aztec-specific codes from `ledger-app/src/sw.h`.
+  HASH_MISMATCH: 0x6f01,
+  UNKNOWN_MANIFEST_VERSION: 0x6f02,
+  INVALID_PATH_SCHEME: 0x6f03,
+  INVALID_CURVE_ID: 0x6f04,
+  BIP32_TOO_LONG: 0x6f05,
+  DUP_SIG_MISMATCH: 0x6f06,
 } as const;
 
 export type StatusWord = (typeof SW)[keyof typeof SW];

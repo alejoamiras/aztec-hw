@@ -28,10 +28,14 @@ int handler_get_public_key(buffer_t *cdata, bool display) {
     if (!buffer_read_u8(cdata, &G_context.bip32_path_len)) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
     }
-    if (G_context.bip32_path_len > MAX_BIP32_PATH_LEN) {
-        return io_send_sw(SW_BIP32_TOO_LONG);
+    // BIP-32 path bounds — must be non-empty (codex L2 BLOCKER #1).
+    if (G_context.bip32_path_len == 0 || G_context.bip32_path_len > MAX_BIP32_PATH_LEN) {
+        return io_send_sw(SW_INVALID_PATH_SCHEME);
     }
     if (!buffer_read_bip32_path(cdata, G_context.bip32_path, G_context.bip32_path_len)) {
+        return io_send_sw(SWO_WRONG_DATA_LENGTH);
+    }
+    if (cdata->size != cdata->offset) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
     }
 
@@ -45,12 +49,16 @@ int handler_get_public_key(buffer_t *cdata, bool display) {
         return io_send_sw(error);
     }
 
-    // L2 baseline: ignore `display` — pubkey UI confirmation lands with L4.
-    (void) display;
+    // L2 baseline: `display` mode lands with L4. Reject p1=1 explicitly so the host
+    // can't claim a confirmation that never happened (codex L2 MINOR #7).
+    if (display) {
+        return io_send_sw(SWO_INCORRECT_P1_P2);
+    }
 
-    // Emit X(32) || Y(32) || chain_code(32) — strip the SEC1 0x04 prefix.
-    uint8_t response[96];
+    // Emit X(32) || Y(32) — strip the SEC1 0x04 prefix.
+    // Per plan-final.md §215: K1 pubkey is 64B x||y. Chain code is not needed by Aztec
+    // and was leaking a derivation-fingerprinting surface (codex L2 MAJOR #3).
+    uint8_t response[64];
     memcpy(response, &G_context.pk_info.raw_public_key[1], 64);
-    memcpy(response + 64, G_context.pk_info.chain_code, 32);
     return io_send_response_pointer(response, sizeof(response), SWO_SUCCESS);
 }

@@ -70,11 +70,10 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
     expect(caps).toBe(0x01);
   });
 
-  test('GET_PUBLIC_KEY for Aztec path returns 64-byte uncompressed pubkey + chain code', async () => {
+  test('GET_PUBLIC_KEY for Aztec path returns 64-byte uncompressed pubkey (X||Y)', async () => {
     const pk = await provider.getPublicKey(AZTEC_PATH);
     expect(pk.x.length).toBe(32);
     expect(pk.y.length).toBe(32);
-    expect(pk.chainCode.length).toBe(32);
     // Validate it's on-curve via @noble/secp256k1.
     const sec1 = new Uint8Array(65);
     sec1[0] = 0x04;

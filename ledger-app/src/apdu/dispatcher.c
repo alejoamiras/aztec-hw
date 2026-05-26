@@ -52,7 +52,9 @@ int apdu_dispatcher(const command_t *cmd) {
         }
 
         case INS_GET_PUBLIC_KEY:
-            if (cmd->p1 > 1 || cmd->p2 > 0) {
+            // L2: only p1=0 (no display) supported. p1=1 (display) is reserved for L4
+            // and rejected here — codex L2 MINOR #7 (no advertise-and-discard).
+            if (cmd->p1 != 0 || cmd->p2 != 0) {
                 return io_send_sw(SWO_INCORRECT_P1_P2);
             }
             if (!cmd->data) {
@@ -61,7 +63,7 @@ int apdu_dispatcher(const command_t *cmd) {
             buf.ptr = cmd->data;
             buf.size = cmd->lc;
             buf.offset = 0;
-            return handler_get_public_key(&buf, (bool) cmd->p1);
+            return handler_get_public_key(&buf, false);
 
         case INS_SIGN_OUTER_HASH:
             if (cmd->p1 != 0 || cmd->p2 != 0) {

@@ -75,14 +75,19 @@ int handler_sign_outer_hash(buffer_t *cdata) {
     if (!buffer_read_u8(cdata, &G_context.bip32_path_len)) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
     }
-    if (G_context.bip32_path_len > MAX_BIP32_PATH_LEN) {
-        return io_send_sw(SW_BIP32_TOO_LONG);
+    // BIP-32 path bounds — must be non-empty (defense vs. malformed APDU; codex L2 BLOCKER #1).
+    if (G_context.bip32_path_len == 0 || G_context.bip32_path_len > MAX_BIP32_PATH_LEN) {
+        return io_send_sw(SW_INVALID_PATH_SCHEME);
     }
     if (!buffer_read_bip32_path(cdata, G_context.bip32_path, G_context.bip32_path_len)) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
     }
     // Parse outer_hash (32 bytes BE)
     if (!buffer_read_bytes(cdata, G_context.sign_info.outer_hash, AZTEC_OUTER_HASH_LEN)) {
+        return io_send_sw(SWO_WRONG_DATA_LENGTH);
+    }
+    // Reject trailing bytes — protects against host-side framing bugs / malicious padding.
+    if (cdata->size != cdata->offset) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
     }
 
@@ -114,7 +119,7 @@ int sign_outer_hash_after_approval(void) {
     cx_err_t err = bip32_derive_ecdsa_sign_rs_hash_256(CX_CURVE_256K1,
                                                        G_context.bip32_path,
                                                        G_context.bip32_path_len,
-                                                       CX_RND_RFC6979 | CX_LAST,
+                                                       CX_RND_RFC6979,
                                                        CX_SHA256,
                                                        digest, sizeof(digest),
                                                        r,
@@ -140,7 +145,7 @@ int sign_outer_hash_after_approval(void) {
     err = bip32_derive_ecdsa_sign_rs_hash_256(CX_CURVE_256K1,
                                               G_context.bip32_path,
                                               G_context.bip32_path_len,
-                                              CX_RND_RFC6979 | CX_LAST,
+                                              CX_RND_RFC6979,
                                               CX_SHA256,
                                               digest, sizeof(digest),
                                               r2,
