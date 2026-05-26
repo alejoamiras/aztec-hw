@@ -29,6 +29,7 @@ import {
   type IntentAuthWitnessProvider,
   packEcdsaSignature,
 } from '@aztec-hwwallet-poc/core';
+import { preflightIntent } from './clear_signing_v0/preflight.ts';
 import { buildL4Manifest } from './l4-manifest.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
 import type { LedgerTransport } from './transport.ts';
@@ -82,6 +83,11 @@ export class LedgerEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvide
    * verifier checks. The host is no longer the sole authority on what gets signed.
    */
   async createAuthWitFromIntent(intent: CallIntent): Promise<AuthWitness> {
+    /* Host-side preflight (M5.4): mirrors the device's M5.2 strict-allowlist
+     * gates. Fails fast with a clear TS error instead of burning APDU
+     * round-trips to get an opaque 0x6F0x SW. */
+    preflightIntent(intent);
+
     const manifest = await buildL4Manifest({
       intent,
       bip32Path: this.options.bip32Path,
