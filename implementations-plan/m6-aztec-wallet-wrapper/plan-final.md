@@ -44,7 +44,7 @@ parallel to `BaseWallet`/`EmbeddedWallet`, which we are not.)
 | Quantity | Lives in | Derived how |
 |---|---|---|
 | Master `secret` | Browser (session memory) | `Fr.random()` at session start |
-| `nsk_m` (nullifier hiding key) | Browser | derived from `secret` via SHA-512 |
+| `nhk_m` (nullifier hiding key) | Browser | derived from `secret` via SHA-512 |
 | `ivsk_m` (incoming viewing) | Browser | derived from `secret` |
 | `ovsk_m` (outgoing viewing) | Browser | derived from `secret` |
 | `tsk_m` (tagging) | Browser | derived from `secret` |
@@ -89,7 +89,9 @@ ages badly; a thin subclass with public exports is cleaner:
 ```ts
 export class SessionEmbeddedWallet extends EmbeddedWallet {
   static async createEphemeral(node, opts): Promise<SessionEmbeddedWallet> {
-    // EmbeddedWallet.create(node, { pxe: { ephemeral: true, proverEnabled, ... } })
+    // EmbeddedWallet.create(node, { ephemeral: true, pxe: { proverEnabled, ... } })
+    // ^ `ephemeral` is a TOP-LEVEL EmbeddedWalletOptions flag (not nested under
+    //   pxe). See aztec-packages/yarn-project/wallets/src/embedded/entrypoints/browser.ts:22
   }
   // Public exposure of the bits AztecLedgerSession needs (proveTx, sendTx,
   // simulateViaEntrypoint, registerContract). Implementation: forward to the
@@ -103,14 +105,28 @@ For drip and transfer, bypass `BaseWallet.sendTx` (which hardcodes
 `txNonce: Fr.random()` at `aztec-packages/yarn-project/wallet-sdk/src/base-wallet/base_wallet.ts:180`):
 
 ```ts
-async submitClearSignedIntent(call: FunctionCall): Promise<SubmitResult> {
-  // 1. Build payload via Aztec's standard interaction request.
-  //    Fee call (SponsoredFPC.sponsor_unconditionally) merged in by mergeExecutionPayloads
-  //    per contract_function_interaction.ts:97
-  const interaction = /* contract.methods.X(...) */;
-  const exec = await interaction.request({ fee: { paymentMethod: this.sponsoredFee } });
+// API contract (post codex final critique MAJOR fix):
+//   submitClearSignedIntent accepts an already-fee-merged ExecutionPayload,
+//   NOT a raw FunctionCall. Convenience wrappers (dripUsdc, transferUsdc)
+//   build the payload internally and pass it in. This keeps fee composition
+//   visible at the caller and lets us validate exec.calls.length === 2
+//   (sponsor + app) before pre-signing.
+// API contract (caller-supplied payload). The convenience wrappers
+// (dripUsdc, transferUsdc) build `exec` by calling
+//   contract.methods.X(...).request({ fee: { paymentMethod: this.sponsoredFee } })
+// per aztec-packages/yarn-project/aztec.js/src/contract/contract_function_interaction.ts:97,
+// which produces [sponsor_unconditionally, app_call] in that order.
+async submitClearSignedIntent(exec: ExecutionPayload): Promise<SubmitResult> {
+  // 1. Shape-check the merged payload (single-app-call contract).
+  //    Defensive: protects against future fee strategies that prepend
+  //    more than one call or change order.
+  if (exec.calls.length !== 2) {
+    throw new Error(
+      `submitClearSignedIntent expects [sponsor, app] (2 calls); got ${exec.calls.length}`,
+    );
+  }
 
-  // 2. Pick OUR own txNonce.
+  // 2. Pick OUR own txNonce (bypassing BaseWallet.sendTx's random one).
   const txNonce = Fr.random();
 
   // 3. Build CallIntent matching the merged call list + nonce.
@@ -219,12 +235,19 @@ private dripping reopens private-note scope for zero demo value.
 ### 3.1 SponsoredFPC address — CRITICAL FIX `[orchestrator pre-research]`
 
 The M5 manifest pins SponsoredFPC at `0x254082…1257` (deterministic from
-`SPONSORED_FPC_SALT = 0` = sandbox/local). **Testnet uses a different salt**:
+`SPONSORED_FPC_SALT = 0` = sandbox/local default). **The demo's target
+live-network FPC deployment** uses a different salt:
 `0x2a0f57c183e73d3390f80b6b28e57593d6faea3517eb57604491220173ad2f32`, which
 resolves to **`0x153bddd8249216bd6326f1d5281d61fd8efc091dfc7828378e0399bf2a57ca4f`**.
 
-M6.0 must update the registry to use the testnet address. (Or: parameterize
-the codegen by network — out of v0 scope.)
+(Wording nuance: aztec-packages testnet was deployed without SponsoredFPC
+in genesis; what we're pinning is the *deployed* SponsoredFPC instance the
+demo will actually use on the live network. That's where the salt that
+yields `0x153bddd…ca4f` lives.)
+
+M6.0 must update the registry to use this live-network address. (Or:
+parameterize the codegen by network — out of v0 scope; consequence is
+the sandbox phase drops out of M6.3, see §10.)
 
 ### 3.2 Device-side decoder for DRIP_PUB
 
@@ -297,7 +320,13 @@ export class AztecLedgerSession {
   deployAccount(): Promise<SubmitResult>;
 
   // Pre-sign + frozen-witness submission (§2 recipe).
-  submitClearSignedIntent(call: FunctionCall): Promise<SubmitResult>;
+  // Accepts a FEE-MERGED ExecutionPayload — exactly the shape produced by
+  //   contract.methods.X(...).request({ fee: { paymentMethod: this.sponsoredFee } })
+  // which yields [sponsor_unconditionally, app_call] per
+  //   aztec-packages/yarn-project/aztec.js/src/contract/contract_function_interaction.ts:97
+  // The wrapper asserts `exec.calls.length === 2` (single-app-call contract);
+  // multi-app batches are out of scope for v0.
+  submitClearSignedIntent(exec: ExecutionPayload): Promise<SubmitResult>;
 
   // Convenience wrappers.
   dripUsdc(amount: bigint): Promise<SubmitResult>;
@@ -568,6 +597,18 @@ their localhost Speculos and signs with the emulator's TEST seed. Mitigation:
 Speculos radio button disabled in prod builds via Vite env var; visible
 "Speculos (dev only)" label.
 
+**Trusted RPC endpoint.** The PXE connects to a single chain-data oracle —
+`rpc.testnet.aztec-labs.com` for the demo, or whatever node URL the
+operator configures. A malicious or compromised RPC can lie about chain
+state (fake mined receipts, stale balances, withheld notes). The
+clear-signing pipeline does NOT defend against this: the device only
+authorizes a payload; it does not verify the chain state the host claimed
+when assembling that payload. Mitigation for v0: ship a single hard-coded
+RPC URL in the demo build (no user-supplied override); document that
+production wallets MUST do their own RPC pinning, redundancy, and
+ideally light-client verification. Residual: full host trust for chain
+oracle.
+
 **Frozen-witness drift.** Framework's computed `messageHash` differs from
 what we pre-signed → our provider throws `FrozenWitnessMismatch` loudly.
 Never silently re-sign. **Latent risk** `[opus]`:
@@ -641,8 +682,11 @@ M6.3  FrozenAuthWitnessProvider + AztecLedgerSession     ~2d
       - submitClearSignedIntent (the 9-step recipe)
       - In-flight mutex
       - Contract-metadata fail-closed integration
-      - Local sandbox e2e: deploy + drip + transfer
-        (uses aztec-sandbox; doesn't yet touch testnet)
+      - Unit tests + mock-PXE integration tests only — NO sandbox e2e
+        (the M6.0 registry is pinned to the demo's target live-network
+         SponsoredFPC deployment; aztec-sandbox's salt=0 instance resolves
+         to a different address and would REGISTRY_MISS on the sponsor
+         call. Real chain submission is gated to M6.5 below.)
 
 M6.4  Frontend skeleton                                  ~1.5d
       - apps/demo-browser/ (Vite + React 19 + TS)
@@ -650,11 +694,17 @@ M6.4  Frontend skeleton                                  ~1.5d
       - Vite proxy for Speculos CORS
       - Mock-mode integration test (Playwright optional)
 
-M6.5  Alpha-testnet e2e + video                          ~2d
+M6.5  Alpha-testnet e2e + video                          ~3d (+1d buffer)
       - PXE sync handling (progress UI)
       - Real testnet against rpc.testnet.aztec-labs.com
       - First Speculos, then real Ledger via WebHID
       - Capture screen recording
+      - **Testnet-unavailable fallback** (invoke only if testnet
+        stalls > 1 day): spin up aztec-sandbox locally AND manually
+        deploy a SponsoredFPC at the same salt the M6.0 manifest pinned
+        so the registry still resolves (`scripts/deploy-sandbox-fpc.ts`,
+        write only if invoked). Video record still produced; lessons
+        doc explicitly notes the fallback.
 
 M6.6  Lessons doc                                        ~1d
       - Write up 4 PR suggestions with diffs + before/after
@@ -663,7 +713,9 @@ M6.6  Lessons doc                                        ~1d
 
 M6.7  Codex post-impl review + fix loop                  ~1d
 
-Total: ~10-11 working days (matches opus). Likely slip if testnet flakes.
+Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
+       absorbed from removed M6.3 sandbox e2e). Slip dominated by
+       testnet stability.
 ```
 
 ## 11. Success criteria
@@ -745,7 +797,14 @@ Total: ~10-11 working days (matches opus). Likely slip if testnet flakes.
 | `apps/demo-browser/` (new dir) | both | Don't mutate `apps/demo` (CLI artifact) |
 | Document `account_entrypoint.ts:80` salt regression risk | opus | Defensive: latent upstream-change blast radius |
 | Document PXE sync time concern | opus | UX-critical for the video |
-| Fix SponsoredFPC address to testnet salt | orchestrator pre-research | M5 manifest has sandbox address; testnet differs |
+| Fix SponsoredFPC address to live-network deployment | orchestrator pre-research | M5 manifest has sandbox address; live deployment differs |
+| Drop M6.3 sandbox e2e; go straight to testnet | codex final-critique BLOCKER | Pinning registry to live-network FPC makes sandbox REGISTRY_MISS unless we re-deploy FPC at same salt — kept as M6.5 fallback |
+| `submitClearSignedIntent(exec: ExecutionPayload)` (not `FunctionCall`) | codex final-critique MAJOR | Caller composes fee + app explicitly; wrapper asserts shape; single-app-call contract |
+| Reword §3.1: "live-network FPC deployment" not "testnet uses" | codex final-critique MAJOR | aztec-packages testnet had no SponsoredFPC in genesis; what we pin is the demo's deployed FPC instance |
+| Move `ephemeral: true` to top-level `EmbeddedWalletOptions` | codex final-critique MINOR | It's not under `pxe`; see `wallets/src/embedded/entrypoints/browser.ts:22` |
+| Fix `nsk_m` → `nhk_m` in key table | codex final-critique MINOR | Aztec uses NHK (nullifier hiding key) on the master path |
+| Add explicit RPC-trust paragraph in §8 | codex final-critique MINOR | Chain-oracle trust isn't defended by clear-signing |
+| M6.5 buffer to +1d AND sandbox-with-redeployed-FPC fallback | codex final-critique MINOR | Testnet stability is a known unknown; need a recordable demo path |
 
 ## 15. Status
 
@@ -753,8 +812,9 @@ Total: ~10-11 working days (matches opus). Likely slip if testnet flakes.
 [✓] 0. Clarifying questions (drip+transfer / ephemeral / Speculos+WebHID / PR-shaped lessons)
 [✓] 1. Parallel plans drafted (main + codex + opus)
 [✓] 2. Consolidated → plan-final.md (this file)
-[ ] 3. Final codex critique
-[ ] 4. (Auto-approval pending user check)
+[✓] 3. Final codex critique (session 019e6626 — 1 BLOCKER + 1 MAJOR + 4 MINORs)
+[✓] 3a. Apply codex critique fixes (this commit)
+[▶] 4. Approval gate (surface to user)
 [ ] 5. Implementation (M6.0..M6.7)
 [ ] 6. Codex post-impl review
 [ ] 7. Record video + ship lessons doc
