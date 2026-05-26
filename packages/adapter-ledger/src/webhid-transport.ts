@@ -101,7 +101,11 @@ export class WebHidLedgerTransport implements LedgerTransport {
       throw new Error(`WebHID exchange returned ${response.length} bytes; minimum 2 (status word)`);
     }
     const sw = (response[response.length - 2]! << 8) | response[response.length - 1]!;
-    return { data: response.slice(0, response.length - 2), sw };
+    /* `sw` is a number; ApduResponse['sw'] is the literal union of known
+     * StatusWord codes. The device can in principle return any 0x6Fxx code
+     * we haven't pinned in the TS SW table — caller's `requireOk` covers
+     * the SW.OK check; everything else just propagates the raw value. */
+    return { data: response.slice(0, response.length - 2), sw: sw as ApduResponse['sw'] };
   }
 
   async close(): Promise<void> {

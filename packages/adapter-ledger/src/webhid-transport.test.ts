@@ -71,12 +71,14 @@ describe('WebHidLedgerTransport', () => {
   });
 
   test('splits trailing 2-byte status word', async () => {
+    /* Use a SW that's actually in the typed enum. 0x6985 is
+     * CONDITIONS_NOT_SATISFIED, emitted on user rejection. */
     const { inner } = mockHid({
-      reply: new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x6f, 0x08]),
+      reply: new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x69, 0x85]),
     });
     const t = new WebHidLedgerTransport(inner);
     const res = await t.send({ ins: INS.APPEND_CALL });
-    expect(res.sw).toBe(0x6f08);
+    expect(res.sw).toBe(0x6985);
     expect(Array.from(res.data)).toEqual([0xde, 0xad, 0xbe, 0xef]);
   });
 

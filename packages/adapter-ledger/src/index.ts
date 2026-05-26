@@ -42,6 +42,7 @@ export {
   type SignOuterHashOptions,
   type VersionInfo,
 } from './provider.ts';
+export { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
 export {
   type ButtonId,
   SpeculosTransport,
