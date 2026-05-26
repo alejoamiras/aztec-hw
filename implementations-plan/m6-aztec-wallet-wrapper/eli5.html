@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M6 — AztecLedgerSession + Browser PoC — ELI5</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6a6a6a;
+    --accent: #2563eb;
+    --warn: #c2410c;
+    --code-bg: #f4f4f5;
+  }
+  html, body { background: #fff; color: var(--fg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 760px;
+    margin: 4rem auto;
+    padding: 0 1.5rem;
+  }
+  h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
+  h1 { font-size: 2.2rem; }
+  h2 { font-size: 1.4rem; margin-top: 3rem; padding-bottom: 0.3rem; border-bottom: 1px solid #e5e7eb; }
+  h3 { font-size: 1.1rem; margin-top: 1.8rem; }
+  .lede { color: var(--muted); font-size: 1.1rem; margin-bottom: 2rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.92em; }
+  pre { padding: 0.9rem 1.1rem; overflow-x: auto; }
+  .phase { background: var(--code-bg); padding: 1rem 1.2rem; border-radius: 6px; margin: 1rem 0; }
+  .phase-name { font-weight: 600; color: var(--accent); }
+  .phase-note { color: var(--muted); font-size: 0.95em; }
+  .warn { color: var(--warn); }
+  table { border-collapse: collapse; margin: 1rem 0; width: 100%; }
+  th, td { padding: 0.5rem 0.7rem; border: 1px solid #e5e7eb; text-align: left; font-size: 0.95em; }
+  th { background: #f9fafb; font-weight: 600; }
+  .footer { color: var(--muted); margin-top: 4rem; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<h1>M6 — AztecLedgerSession + Browser PoC</h1>
+<p class="lede">A plain-language walkthrough of the plan to take what we already built (clear-signed signatures from a Ledger) and actually <strong>submit a real transaction on alpha-testnet</strong>, end-to-end, from a browser. <a href="plan-final.md">Full plan</a>.</p>
+
+<h2>The one-line story</h2>
+<p>
+Last week's work made the device sign Aztec transactions with decoded UI ("Transfer 1.5 USDC to alice"). What it didn't do is <em>submit</em> those signatures to the chain — because Aztec's wallet code has three small bugs that make hardware-wallet integration awkward. This arc builds a thin wrapper to work around those bugs <strong>and</strong> writes up the bugs as PR suggestions for the Aztec team.
+</p>
+
+<h2>What you'll see in the demo video</h2>
+<ol>
+  <li>Browser page at <code>localhost:5173</code> with three buttons.</li>
+  <li>Click "Connect" → Ledger (real or Speculos) shows its address screen.</li>
+  <li>Click "Deploy account" → Ledger shows a hex hash, you confirm. Account exists on testnet.</li>
+  <li>Click "Drip 1000 USDC into me" → Ledger shows <strong>"Drip USDC, Amount: 1000.0 USDC, To: you"</strong>. You confirm. 1000 USDC appears in your account.</li>
+  <li>Click "Transfer 100 USDC to alice" → Ledger shows <strong>"Transfer pub→pub USDC, From: you, To: 0xalice…, Amount: 100.0 USDC, Mode: PUBLIC"</strong>. You confirm. 100 USDC arrives at alice.</li>
+  <li>All three txs link to <code>testnet.aztecscan.xyz</code>.</li>
+</ol>
+
+<h2>Which keys go where (the user's question)</h2>
+<table>
+  <tr><th>Key</th><th>Lives in</th><th>Why</th></tr>
+  <tr><td>Master <code>secret</code> (Fr)</td><td>Browser session memory</td><td>Generates the other 4 protocol keys</td></tr>
+  <tr><td>NHK_M (nullifier hiding)</td><td>Browser</td><td>Derived from secret</td></tr>
+  <tr><td>IVSK_M (incoming viewing)</td><td>Browser</td><td>Derived from secret</td></tr>
+  <tr><td>OVSK_M (outgoing viewing)</td><td>Browser</td><td>Derived from secret</td></tr>
+  <tr><td>TSK_M (tagging)</td><td>Browser</td><td>Derived from secret</td></tr>
+  <tr><td>K1 signing key</td><td><strong>Ledger device only</strong></td><td>BIP-32 from device seed</td></tr>
+</table>
+<p>
+So 4 protocol keys derive from one browser-held <code>secret</code>; only the signing key lives on the Ledger. The browser <code>secret</code> dies on page reload (no localStorage, no persistence). The Ledger key never leaves the device, ever.
+</p>
+
+<h2>Why a wrapper at all</h2>
+<p>
+Aztec's <code>wallet.sendTx(...)</code> does this internally:
+</p>
+<ol>
+  <li>Build the call list (sponsor + your transfer)</li>
+  <li>Generate a <strong>random</strong> txNonce</li>
+  <li>Compute outer_hash from (calls + nonce + account info)</li>
+  <li>Ask the provider: <code>createAuthWit(outer_hash)</code> — passing only a 32-byte hash</li>
+  <li>Submit</li>
+</ol>
+<p>
+Step 4 only knows how to ask for a hex hash. It has no concept of "show the user that this is a USDC transfer for 100 to alice." Step 2's random nonce means we can't pre-compute outer_hash to clear-sign.
+</p>
+
+<h3><code>AztecLedgerSession</code> takes control</h3>
+<pre>1. Build the call list ourselves (just like sendTx would)
+2. Pick OUR OWN txNonce (no random surprise)
+3. Compute outer_hash from those exact bytes
+4. Pre-sign via clear-signing → device shows "Transfer 100 USDC..."
+5. Build the tx request manually with our nonce + a "frozen-witness
+   provider" that hands the framework exactly the pre-signed authwit
+6. Submit to PXE</pre>
+
+<h2>Phases</h2>
+
+<div class="phase">
+<div class="phase-name">M6.0 — Manifest extension</div>
+<p>Add Wonderland's Dripper to the on-device registry (one new slot). Also: fix a SponsoredFPC address bug — the M5 manifest pins the local-sandbox address, not the alpha-testnet one. Without this fix every sponsored testnet tx would reject.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M6.1 — WebHID transport + provider refactor</div>
+<p>So the same Ledger code works against Speculos (emulator) and a real device. Also clean up an old type-cast that doesn't work in browsers.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M6.2 — SessionEmbeddedWallet</div>
+<p>Thin subclass of Aztec's <code>EmbeddedWallet</code> (in-browser PXE+prover). Exposes the helpers our wrapper needs without dirty casts.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M6.3 — The wrapper itself</div>
+<p>The <code>AztecLedgerSession</code> class. The clear-signed transfer recipe. The <code>FrozenAuthWitnessProvider</code> (one-shot, hash-asserted — throws loudly on mismatch).</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M6.4 — Frontend</div>
+<p>Three-panel React+Vite app. State machine: idle → connecting → ready → deploying → funded → done. Vite proxy for Speculos CORS. Plain CSS (no Tailwind — overkill for PoC).</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M6.5 — Alpha-testnet end-to-end</div>
+<p>The actual demo run. First with Speculos. Then with a real Ledger via WebHID. Screen-record the flow.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M6.6 — Lessons doc</div>
+<p>Four PR-shaped suggestions for the Aztec team. Each: problem statement (file:line), proposed diff, before/after code, why this is high leverage. Ready to file as GitHub issues.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M6.7 — Codex post-impl review</div>
+<p>Send the diff to codex for adversarial review. Apply BLOCKER/MAJOR fixes.</p>
+</div>
+
+<h2>The four lessons for the Aztec team</h2>
+<ol>
+  <li><strong>Let callers supply <code>txNonce</code> to <code>sendTx</code></strong>. One-line change in <code>base_wallet.ts:180</code>. Unblocks every "pre-sign offline, submit later" pattern — hardware wallets, sponsored relayers, multisigs.</li>
+  <li><strong>Optional <code>createAuthWitFromIntent</code> on <code>AuthWitnessProvider</code></strong>. Lets hardware wallets receive the structured calls instead of just a hash — so they can actually clear-sign without re-implementing entrypoint encoding.</li>
+  <li><strong><code>opts.presignedPayloadAuthWitness</code> on sendTx</strong>. First-class "I already signed this, just use it" path. Mirrors what EVM ecosystems painfully evolved to (Safe, ERC-2771 sponsored relayers).</li>
+  <li><strong>Re-export outer_hash preimage helpers</strong>. <code>computeOuterAuthWitHash</code> and <code>EncodedAppEntrypointCalls</code> are currently framework-internal. Wallet integrators (us, plus everyone after) burn ~5 days re-implementing them and verifying parity. Zero internal change; saves the next integrator the work.</li>
+</ol>
+
+<h2>What's deliberately NOT in M6</h2>
+<ul>
+  <li><strong>Private transfers</strong> — opens private-note scope; reserved for M7.</li>
+  <li><strong>Token approve/spend</strong> — only own-account flows in v0.</li>
+  <li><strong>Multi-call (manifest with &gt;2 calls)</strong> — sponsor + 1 user call is the only shape.</li>
+  <li><strong>Frontend audit hardening</strong> — CSP, SRI, origin pinning. Production concerns.</li>
+  <li><strong>Schnorr-Grumpkin</strong> — still audit-gated, separate L5 effort.</li>
+</ul>
+
+<h2>What can still go wrong (and we're OK with)</h2>
+<ul>
+  <li><strong>Testnet flakes during the recording window</strong> — schedule a buffer day.</li>
+  <li><strong>PXE first-sync can take minutes</strong> on alpha-testnet — we show a progress UI; if it dominates the video runtime we pre-sync off-camera.</li>
+  <li><strong>WebHID + Safari = no</strong> — Chrome/Edge only. Document the requirement.</li>
+  <li><strong>Wonderland redeploys Dripper to the same address</strong> with new code — caught by the M6.0 fail-closed <code>getContractMetadata</code> check.</li>
+</ul>
+
+<div class="footer">
+Generated 2026-05-26 alongside <code>plan-final.md</code>. Edit this file when the plan structure changes meaningfully — but only that. This is reading material for non-devs / cross-team stakeholders; the plan is the source of truth.
+</div>
+
+</body>
+</html>
