@@ -14,4 +14,5 @@
 #define SW_INVALID_CURVE_ID           0x6F04
 #define SW_BIP32_TOO_LONG             0x6F05
 #define SW_DUP_SIG_MISMATCH           0x6F06
+#define SW_NOT_IMPLEMENTED            0x6F07  // INS reserved for a future phase
 #define SW_USER_REJECTED              0x6985

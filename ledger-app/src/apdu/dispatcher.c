@@ -81,7 +81,10 @@ int apdu_dispatcher(const command_t *cmd) {
         case INS_APPEND_CALL:
         case INS_FINALIZE_AND_SIGN:
         case INS_ABORT:
-            return io_send_sw(SWO_INVALID_INS);
+            // Reserved for L4 "verified calls" flow per implementations-plan/.../l4-spec.md.
+            // Distinct from SWO_INVALID_INS so the host can tell "wrong byte" from
+            // "right byte, future feature".
+            return io_send_sw(SW_NOT_IMPLEMENTED);
 
         default:
             return io_send_sw(SWO_INVALID_INS);

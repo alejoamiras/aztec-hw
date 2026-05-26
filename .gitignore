@@ -29,3 +29,4 @@ test-results/
 
 # TS incremental build artifacts
 *.tsbuildinfo
+ledger-app/.git/

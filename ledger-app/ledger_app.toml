@@ -3,7 +3,7 @@
 # Ragger reads the top-level `../ledger_app.toml` for the matrix lookup;
 # this copy stays present for `ledger-app/` to remain a self-describing Ledger
 # project (per Ledger app submission conventions).
-build_directory = "build"
+build_directory = "./"
 sdk = "C"
 devices = ["nanox", "nanos+", "stax", "flex"]
 

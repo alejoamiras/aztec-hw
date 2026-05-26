@@ -42,6 +42,7 @@ class SW(IntEnum):
     INVALID_CURVE_ID = 0x6F04
     BIP32_TOO_LONG = 0x6F05
     DUP_SIG_MISMATCH = 0x6F06
+    NOT_IMPLEMENTED = 0x6F07
 
 
 @dataclass(frozen=True)

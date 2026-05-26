@@ -27,9 +27,15 @@ def test_get_caps_rejects_nonzero_p2(backend):
     assert rapdu.status == SW.INCORRECT_P1_P2
 
 
-def test_l4_instructions_reserved_in_l2_build(backend):
-    """BEGIN_AUTHWIT / APPEND_CALL / FINALIZE_AND_SIGN / ABORT return SW_INVALID_INS on the L2 build."""
+def test_l4_instructions_reserved_with_dedicated_sw(backend):
+    """BEGIN_AUTHWIT / APPEND_CALL / FINALIZE_AND_SIGN / ABORT return SW_NOT_IMPLEMENTED.
+
+    Distinct from SW_INVALID_INS so the host can tell "wrong byte" from
+    "right byte, future feature" (L4 spec freeze).
+    """
     for ins in (Ins.BEGIN_AUTHWIT, Ins.APPEND_CALL, Ins.FINALIZE_AND_SIGN, Ins.ABORT):
         with expect_failure(backend):
             rapdu = backend.exchange(cla=CLA, ins=ins, p1=0, p2=0, data=b"")
-        assert rapdu.status == SW.INVALID_INS, f"INS=0x{ins:02x} should be reserved on L2"
+        assert rapdu.status == SW.NOT_IMPLEMENTED, (
+            f"INS=0x{ins:02x} should return SW_NOT_IMPLEMENTED on L2 (got 0x{rapdu.status:04x})"
+        )

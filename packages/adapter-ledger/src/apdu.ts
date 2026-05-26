@@ -145,6 +145,7 @@ export const SW = {
   INVALID_CURVE_ID: 0x6f04,
   BIP32_TOO_LONG: 0x6f05,
   DUP_SIG_MISMATCH: 0x6f06,
+  NOT_IMPLEMENTED: 0x6f07,
 } as const;
 
 export type StatusWord = (typeof SW)[keyof typeof SW];
