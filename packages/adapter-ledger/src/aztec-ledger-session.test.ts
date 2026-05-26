@@ -28,7 +28,7 @@ function makeSession(): AztecLedgerSession {
   return new AztecLedgerSession(
     deps,
     ADDR,
-    ADDR as unknown as Parameters<typeof AztecLedgerSession>[2],
+    ADDR as unknown as ConstructorParameters<typeof AztecLedgerSession>[2],
   );
 }
 
@@ -50,29 +50,26 @@ describe('AztecLedgerSession (shape + mutex)', () => {
 
   test('in-flight mutex rejects concurrent submissions', async () => {
     const sess = makeSession();
-    /* runRecipe stub throws "wired in M6.3.next" — that resolves the mutex,
-     * so we need to start the first submission and check the second BEFORE
-     * the first rejects. Use a fresh promise we control via the call-count
-     * branch: kick off the first submission (it will hang briefly because
-     * await chains through Promise.resolve), then race a second submission
-     * against the mutex check.
-     *
-     * Cleaner alternative: monkey-patch runRecipe to pause. Skip that and
-     * just rely on microtask ordering: an immediate second call after the
-     * first IS inside the same tick, so this.inflight is set. */
+    /* With an empty `deps` stub, the wired runRecipe will throw when it
+     * tries to call `deps.session.nodeClient.getNodeInfo()` — that error
+     * surfaces asynchronously, which is exactly what we want for the mutex
+     * check: it gives us a window where `this.inflight !== null` is true. */
     const first = sess.submitClearSignedIntent(stubExec(2));
     await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.toThrow(
       /another submission in flight/,
     );
-    /* Drain the first to clean state; the stubbed runRecipe rejects. */
-    await expect(first).rejects.toThrow(/wired in M6.3.next/);
+    /* Drain the first promise so the test completes cleanly. */
+    await expect(first).rejects.toThrow();
   });
 
   test('mutex clears after a failed submission (so next call is accepted)', async () => {
     const sess = makeSession();
-    await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.toThrow(/wired in M6.3.next/);
-    /* Second call should not see "in flight" — it should hit the runRecipe
-     * stub error, proving the mutex was released. */
-    await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.toThrow(/wired in M6.3.next/);
+    /* First call fails inside runRecipe (no real session deps). The mutex
+     * must clear so the second call can proceed past the in-flight guard
+     * and hit the SAME failure (proves mutex released, not stuck). */
+    await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.toThrow();
+    await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.not.toThrow(
+      /another submission in flight/,
+    );
   });
 });

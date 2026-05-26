@@ -29,12 +29,17 @@
  * route through `submitClearSignedIntent`, so they share the mutex.
  */
 import type { AztecAddress, CompleteAddress } from '@aztec/aztec.js/addresses';
-import type { TxHash, TxReceipt } from '@aztec/aztec.js/tx';
-import type { ExecutionPayload } from '@aztec/stdlib/tx';
-import type { Fr } from '@aztec-hwwallet-poc/core';
+import { waitForTx } from '@aztec/aztec.js/node';
+import { DefaultAccountEntrypoint } from '@aztec/entrypoints/account';
+import { Fr } from '@aztec/foundation/curves/bn254';
+import { GasFees, GasSettings } from '@aztec/stdlib/gas';
+import type { ExecutionPayload, TxHash, TxReceipt } from '@aztec/stdlib/tx';
+import type { ChainInfo } from '@aztec-hwwallet-poc/core';
 
 import type { LedgerEcdsaKAccountContract } from './account-contract.ts';
 import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
+import { FrozenAuthWitnessProvider } from './frozen-auth-witness-provider.ts';
+import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
 import type { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
 
 export interface AztecLedgerSessionDeps {
@@ -102,6 +107,37 @@ export class AztecLedgerSession {
   }
 
   /**
+   * Drip 1000 USDC into this Ledger account (sponsored). Wraps the
+   * `Dripper.drip_to_public(USDC, amount)` call with the SponsoredFPC
+   * fee path and submits via the clear-signing recipe.
+   *
+   * Convenience-wrapper status: SIGNATURE-ONLY for v0.5. The frontend
+   * (M6.4) can call `submitClearSignedIntent(exec)` directly with a
+   * pre-built fee-merged ExecutionPayload. Full wrappers land at M6.5
+   * (alpha-testnet e2e) once the in-browser PXE has a contract artifact
+   * loaded for nulo's Dripper.
+   */
+  async dripUsdc(_amount: bigint): Promise<SubmitResult> {
+    throw new Error('AztecLedgerSession.dripUsdc: convenience wrapper lands at M6.5');
+  }
+
+  async transferUsdcPubToPub(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
+    throw new Error('AztecLedgerSession.transferUsdcPubToPub: convenience wrapper lands at M6.5');
+  }
+
+  async transferUsdcPrivToPub(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
+    throw new Error('AztecLedgerSession.transferUsdcPrivToPub: convenience wrapper lands at M6.5');
+  }
+
+  async transferUsdcPubToPriv(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
+    throw new Error('AztecLedgerSession.transferUsdcPubToPriv: convenience wrapper lands at M6.5');
+  }
+
+  async transferUsdcPrivToPriv(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
+    throw new Error('AztecLedgerSession.transferUsdcPrivToPriv: convenience wrapper lands at M6.5');
+  }
+
+  /**
    * The 9-step recipe from plan-final.md §2.
    * Accepts a FEE-MERGED ExecutionPayload — exactly the shape produced by
    *   contract.methods.X(...).request({ fee: { paymentMethod: sponsoredFee } })
@@ -130,26 +166,87 @@ export class AztecLedgerSession {
     }
   }
 
-  private async runRecipe(_exec: ExecutionPayload): Promise<SubmitResult> {
-    /* The recipe wires together the FrozenAuthWitnessProvider + a manual
-     * DefaultAccountEntrypoint dispatch + PXE proveTx+sendTx. The
-     * Aztec-side details (computeOuterAuthWitHash, EncodedAppEntrypointCalls,
-     * the gasSettings shape) need a small amount of glue that I'm staging
-     * in a follow-up commit so this M6.3 split lands testably:
-     *
-     *  1. Build CallIntent from exec.calls + chosen txNonce
-     *  2. ledgerProvider.createAuthWitFromIntent(intent) → AuthWitness + outerHash
-     *  3. new FrozenAuthWitnessProvider(witness, outerHash)
-     *  4. new DefaultAccountEntrypoint(address, frozen)
-     *  5. entrypoint.createTxExecutionRequest(exec, gasSettings, chainInfo,
-     *     { txNonce, cancellable: false, feePaymentMethodOptions: undefined })
-     *  6. session.pxeClient.proveTx(txRequest)
-     *  7. session.pxeClient.sendTx(provenTx)
-     *  8. session.pxeClient.getTxReceipt(...) loop until mined
-     *
-     * Stub throws so the test harness still exercises the in-flight mutex
-     * and shape assertions on the way in.
-     */
-    throw new Error('AztecLedgerSession.runRecipe: wired in M6.3.next');
+  /**
+   * Cached ChainInfo, fetched lazily on first submission. Reused for every
+   * subsequent submission — chainId/version are stable for a given network.
+   */
+  private chainInfoCache: ChainInfo | null = null;
+
+  private async getChainInfo(): Promise<ChainInfo> {
+    if (this.chainInfoCache) return this.chainInfoCache;
+    const nodeInfo = await this.deps.session.nodeClient.getNodeInfo();
+    this.chainInfoCache = {
+      chainId: new Fr(BigInt(nodeInfo.l1ChainId)),
+      version: new Fr(BigInt(nodeInfo.rollupVersion)),
+    };
+    return this.chainInfoCache;
+  }
+
+  /**
+   * 9-step submission recipe (plan-final.md §2). Pre-signs on the Ledger
+   * with full clear-signing UI, then hands the witness to the framework
+   * via FrozenAuthWitnessProvider.
+   */
+  private async runRecipe(exec: ExecutionPayload): Promise<SubmitResult> {
+    const { ledgerProvider, session } = this.deps;
+
+    /* 1. Chain info (replay protection). */
+    const chainInfo = await this.getChainInfo();
+
+    /* 2. Pick OUR own txNonce (bypassing BaseWallet.sendTx's random one
+     *    at base_wallet.ts:180). The witness binds to this nonce via the
+     *    encodedCalls.hash() preimage; framework's createTxExecutionRequest
+     *    must use the same value. */
+    const txNonce = Fr.random();
+
+    /* 3. Project ExecutionPayload → CallIntent (pure function; byte-deterministic
+     *    given the M5 manifest's verbs, see L4.1 host-parity tests). */
+    const intent = projectExecutionPayloadIntoCallIntent(exec, this.address, chainInfo);
+
+    /* 4. Pre-sign via Ledger CLEAR-SIGNING. The device shows decoded
+     *    fields (Transfer 1.5 USDC, From: you, To: 0xabcd…) and
+     *    enforces M5.2 strict-allowlist gates before returning a sig. */
+    const witness = await ledgerProvider.createAuthWitFromIntent(intent);
+
+    /* 5. Wrap in FrozenAuthWitnessProvider — one-shot, hash-asserted.
+     *    The framework's account_entrypoint.ts:131 computes its own
+     *    messageHash and calls this provider's createAuthWit; if there's
+     *    drift between our pre-sign hash and the framework's recompute,
+     *    we throw FrozenWitnessMismatchError rather than handing over
+     *    a witness for the wrong tx. */
+    const frozen = new FrozenAuthWitnessProvider(witness, witness.requestHash);
+
+    /* 6. Build a one-shot DefaultAccountEntrypoint pointed at our
+     *    frozen provider. The framework's normal sendTx path would
+     *    construct the same shape via AccountManager + the registered
+     *    AuthWitnessProvider — we bypass that here because we need
+     *    control over txNonce. */
+    const entrypoint = new DefaultAccountEntrypoint(this.address, frozen);
+
+    /* 7. Construct the tx request with OUR chosen txNonce. GasSettings
+     *    fallback values are fine for sponsored txs — the SponsoredFPC
+     *    absorbs the cost regardless. */
+    const gasSettings = GasSettings.fallback({
+      maxFeesPerGas: new GasFees(0n, 0n),
+    });
+    const txRequest = await entrypoint.createTxExecutionRequest(exec, gasSettings, chainInfo, {
+      cancellable: false,
+      txNonce,
+      feePaymentMethodOptions: undefined as never,
+    });
+
+    /* 8. Prove + send via the session's PXE + AztecNode. The raw PXE v4.2.1
+     *    interface takes `scopes: AztecAddress[]` as a positional 2nd arg
+     *    (pxe.d.ts:201); the wallet-sdk wraps that in an options object. We
+     *    call the raw shape directly here. */
+    const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
+    const tx = await provenTx.toTx();
+    const txHash = tx.getTxHash();
+    await session.nodeClient.sendTx(tx);
+
+    /* 9. Wait for inclusion. waitForTx polls the node's tx-receipts API
+     *    until the tx is mined or rejected. */
+    const receipt = await waitForTx(session.nodeClient, txHash);
+    return { txHash, receipt };
   }
 }
