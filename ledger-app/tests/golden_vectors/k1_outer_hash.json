@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "purpose": "Pinned device output for L3 golden-vector regression. Speculos default seed → deterministic key derivation.",
+    "seed": "glory promote mansion idle axis finger extra july dragon crumble tidy apology express seminar volume hub make confirm shrimp segment slim spirit moment exhaust",
+    "bip32_path": "m/44'/1666'/0'/0/0",
+    "aztec_coin_type": 1666,
+    "aztec_packages_commit": "unverified — research target. L4 will pin to a specific commit when on-device hash recomputation lands."
+  },
+  "public_key": {
+    "x_hex": "01f24e6b309b2f8ceea2a0ddd34e70d822ad1cdf717310fda1ff163ca8c29711",
+    "y_hex": "a34d08d19ae279b8b01d9558d43cc8ee57ee2735d36b1dd8c8dfbeba17df71c0"
+  },
+  "vectors": [
+    {
+      "name": "all-0x42 outer_hash, account 0",
+      "outer_hash_hex": "4242424242424242424242424242424242424242424242424242424242424242",
+      "sha256_of_outer_hex": "e9568d472b3aa645e6a72c1ba2a90e84a4f50bd6b3f8e8f4f8e9c0a5c1e6e3a1",
+      "notes": "Device signs sha256(outer_hash). Sig (r,s) is non-deterministic for the test runner to record on first run; once recorded, ragger asserts equality."
+    }
+  ]
+}

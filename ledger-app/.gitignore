@@ -8,3 +8,7 @@ build/
 *.sha256
 *.map
 *.asm
+.venv/
+tests/elfs/
+__pycache__/
+*.pyc

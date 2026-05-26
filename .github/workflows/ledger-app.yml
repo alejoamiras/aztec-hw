@@ -27,6 +27,7 @@ jobs:
               - 'packages/adapter-ledger/**'
               - '!packages/adapter-ledger/**/*.md'
               - 'packages/core/src/**'
+              - 'ledger_app.toml'
               - 'biome.json'
               - 'package.json'
               - 'bun.lock'
@@ -65,11 +66,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ledger-app-${{ matrix.sdk.name }}
+          # Ship the full `build/<device>/` tree so the ragger pytest job can drop
+          # it back into place (it expects `build/<device>/bin/app.elf`).
           path: |
-            ledger-app/bin/app.elf
-            ledger-app/bin/app.hex
-            ledger-app/bin/app.sha256
-            ledger-app/debug/app.map
+            ledger-app/build/**
+            ledger-app/bin/**
+            ledger-app/debug/**
           if-no-files-found: error
           retention-days: 14
 
@@ -128,3 +130,38 @@ jobs:
       - name: Stop Speculos
         if: always()
         run: docker rm -f speculos-aztec || true
+
+  ragger-tests:
+    name: Ragger pytest (${{ matrix.device.name }})
+    needs: [changes, build]
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        device:
+          - { name: nanosp, artifact: ledger-app-nanosp }
+          - { name: nanox, artifact: ledger-app-nanox }
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.device.artifact }}
+          # Restore under ledger-app/ — preserves the build/<device>/bin/app.elf
+          # tree ragger's find_application expects.
+          path: ledger-app/
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ragger pytest deps
+        run: pip install -r ledger-app/tests/requirements.txt
+
+      - name: Run ragger pytest matrix on ${{ matrix.device.name }}
+        working-directory: ledger-app
+        run: python -m pytest tests/ --device ${{ matrix.device.name }} -v
