@@ -36,6 +36,16 @@ export {
   type LedgerProviderOptions,
 } from './auth-witness-provider.ts';
 export {
+  AztecLedgerSession,
+  type AztecLedgerSessionDeps,
+  type SubmitResult,
+} from './aztec-ledger-session.ts';
+export {
+  FrozenAuthWitnessProvider,
+  FrozenWitnessMismatchError,
+  FrozenWitnessUsedError,
+} from './frozen-auth-witness-provider.ts';
+export {
   LedgerProvider,
   type LedgerPublicKey,
   type LedgerSignature,
