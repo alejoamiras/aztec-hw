@@ -187,8 +187,23 @@ function fmtByteArray(bytes: number[]): string {
 }
 
 function cSymbolLiteral(s: string, maxLen: number): string {
+  /* Codex M5 post-impl MINOR: device-side UI uses `%s` on the symbol buffer,
+   * which means it must be NUL-terminated. Reserve at least one byte for NUL
+   * (so max usable length is `maxLen - 1`) and reject any non-ASCII byte —
+   * the Nano S+ NBGL font is essentially Latin-1, and any UTF-8 multi-byte
+   * inside a fixed-width buffer would either truncate mid-codepoint or
+   * render as substitution characters. */
   const bytes = Buffer.from(s, 'utf8');
-  if (bytes.length > maxLen) throw new Error(`symbol too long: "${s}"`);
+  if (bytes.length >= maxLen) {
+    throw new Error(
+      `symbol "${s}" length ${bytes.length} >= CS_SYMBOL_LEN=${maxLen}; reserve 1 byte for NUL`,
+    );
+  }
+  for (const b of bytes) {
+    if (b < 0x20 || b > 0x7e) {
+      throw new Error(`symbol "${s}" contains non-ASCII byte 0x${b.toString(16)}`);
+    }
+  }
   const padded: number[] = [];
   for (let i = 0; i < maxLen; i++) padded.push(i < bytes.length ? bytes[i]! : 0);
   return fmtByteArray(padded);

@@ -1,24 +1,33 @@
 #!/usr/bin/env bun
 /**
- * Clear-signing v0 demo: drive the Ledger via Speculos through the full
- * clear-signing flow against the user's faucet-deployed USDC on alpha-testnet.
+ * Clear-signing v0 local validation demo.
  *
- * What this script proves end-to-end:
+ * The script DOES NOT touch the alpha-testnet network — it builds a CallIntent
+ * that TARGETS the faucet's deployed USDC contract address + alpha-testnet's
+ * pinned chainId/version, signs via the Ledger clear-signing flow on Speculos,
+ * and locally verifies the resulting signature with Aztec barretenberg
+ * `Ecdsa.verifySignature`. The signed bytes WOULD be accepted on testnet if
+ * submitted, but submission itself requires aztec.js wallet plumbing the
+ * current arc doesn't ship (see `implementations-plan/clear-signing-v0/m5.6-submission-gap.md`).
  *
- *  1. Connect to alpha-testnet via @aztec/aztec.js
- *  2. Boot Speculos (assumed already running at SPECULOS_URL)
- *  3. Compute the device pubkey via GET_PUBLIC_KEY
- *  4. Build a CallIntent for `USDC.transfer_public_to_public(self, alice, amount, 0)`
- *  5. Host-side preflight (mirrors device strict-allowlist)
- *  6. Stream BEGIN_AUTHWIT + APPEND_CALL + FINALIZE_AND_SIGN to the device
- *  7. Auto-confirm the on-device review (Speculos)
- *  8. Receive r ‖ s signature
- *  9. Verify via Aztec barretenberg Ecdsa.verifySignature against the device pubkey
+ * What this script proves locally:
  *
- * Submission to the actual testnet PXE (step 10) requires aztec.js wallet
- * plumbing for externally-supplied AuthWitnesses; that's tracked as a
- * follow-up since the current `wallet.sendTx` path doesn't go through our
- * `createAuthWitFromIntent` extension. See `implementations-plan/clear-signing-v0/`.
+ *  1. Boot Speculos (assumed already running at SPECULOS_URL)
+ *  2. Compute the device pubkey via GET_PUBLIC_KEY
+ *  3. Build a CallIntent for `USDC.transfer_public_to_public(self, alice, amount, 0)`
+ *     targeting the faucet's deployed USDC contract (0x2af7…47c5) with
+ *     alpha-testnet chainId (11_155_111) + rollup version (4_127_419_662)
+ *     pinned per `nulo-2/packages/faucet/src/lib/chain-info.ts:21`
+ *  4. Host-side preflight (mirrors device strict-allowlist)
+ *  5. Stream BEGIN_AUTHWIT + APPEND_CALL + FINALIZE_AND_SIGN to the device
+ *  6. Auto-confirm the on-device review (Speculos)
+ *  7. Receive r ‖ s signature
+ *  8. Verify via Aztec barretenberg Ecdsa.verifySignature against the device pubkey
+ *
+ * Note: `consumer` here is a synthetic stub matching args[0] so the
+ * `from == consumer` strict-allowlist gate passes. A real submission would
+ * derive `consumer` from `account.getCompleteAddress().address` after deploying
+ * a LedgerEcdsaKAccount on testnet.
  *
  * Run:
  *   SPECULOS_URL=http://localhost:5001 bun apps/demo/src/clear-sign-testnet.ts

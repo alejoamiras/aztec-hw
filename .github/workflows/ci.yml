@@ -29,6 +29,9 @@ jobs:
       - name: Biome lint + format check
         run: bun run lint
 
+      - name: Clear-signing v0 manifest cross-check (fail-closed on aztec-standards drift)
+        run: bun run --cwd packages/adapter-ledger gen:clear-signing-v0:check
+
       - name: Typecheck all packages
         run: bunx tsc -b --noEmit packages/core packages/adapter-trezor packages/adapter-ledger apps/demo
 

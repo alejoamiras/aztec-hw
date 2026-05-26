@@ -22,9 +22,12 @@ typedef enum {
 } l4_state_e;
 
 typedef struct {
-    uint8_t args_hash[L4_FR_BYTES];        /* Currently host-claimed; M5.2 will replace this
-                                             * with the device-recomputed value (trusted-session
-                                             * invariant from codex M5 final-review MAJOR #4). */
+    uint8_t args_hash[L4_FR_BYTES];        /* Device-recomputed value, NOT host-claimed.
+                                             * append_call.c overwrites with the result of
+                                             * cs_compute_args_hash after the per-call parity
+                                             * gate (trusted-session invariant, codex M5
+                                             * final-review MAJOR #4). finalize/parity.c only
+                                             * ever consumes this device-authored bytes. */
     uint8_t function_selector[L4_FR_BYTES];
     uint8_t target_address[L4_FR_BYTES];
     uint8_t flags; /* L4_CALL_FLAG_* */

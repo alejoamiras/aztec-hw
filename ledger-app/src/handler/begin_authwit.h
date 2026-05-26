@@ -6,7 +6,7 @@
  * BEGIN_AUTHWIT (INS 0x05) — start a new L4 verified-calls session.
  *
  * Body layout (single APDU, body bytes parsed left-to-right):
- *   uint8_t  manifest_version    // must be L4_MANIFEST_VERSION (=1)
+ *   uint8_t  manifest_version    // must be L4_MANIFEST_VERSION (=2 since M5.1)
  *   uint8_t  curve_id            // must be L4_CURVE_ID_K1 (=1) for L4
  *   uint8_t  path_scheme         // must be L4_PATH_SCHEME_DEFAULT (=0)
  *   uint8_t  bip32_path_len      // L4_MIN_BIP32_PATH..MAX_BIP32_PATH_LEN

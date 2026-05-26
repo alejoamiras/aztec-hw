@@ -18,9 +18,15 @@
  * via `nbgl_useCaseReviewBlindSigning`, not by host text. The "INTERNAL — DO NOT
  * SHIP" banner is baked into the on-device flow.
  *
- * Phase B / L4 — clear signing. Device recomputes Poseidon2 over a streamed call
- * manifest and verifies the host-claimed outer_hash matches. Until then,
- * `createAuthWitFromIntent` is just decorative on the host side.
+ * M5 clear signing (live since the clear-signing-v0 arc): device recomputes
+ * Poseidon2 over a streamed call manifest AND args_hash from raw args (the
+ * trusted-session invariant — host's claimed args_hash never survives past
+ * the APPEND_CALL parity gate), runs a strict-allowlist registry+verb lookup
+ * with `from == consumer` enforced for 4-arg transfers, and renders decoded
+ * FT semantics (amount + recipient + symbol) on-device. `createAuthWitFromIntent`
+ * routes through that path. `createAuthWit(outerHash)` is the legacy L2
+ * blind-sign path, kept available for txs the framework can't route through
+ * the intent surface (account deploys, etc.).
  */
 import {
   AuthWitness,
