@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Clear-Signing v0 — ELI5</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6a6a6a;
+    --accent: #2563eb;
+    --warn: #c2410c;
+    --bg: #ffffff;
+    --code-bg: #f4f4f5;
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 720px;
+    margin: 4rem auto;
+    padding: 0 1.5rem;
+  }
+  h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
+  h1 { font-size: 2.2rem; margin-bottom: 0.2rem; }
+  h2 { font-size: 1.4rem; margin-top: 3rem; padding-bottom: 0.3rem; border-bottom: 1px solid #e5e7eb; }
+  h3 { font-size: 1.1rem; margin-top: 1.8rem; }
+  .lede { color: var(--muted); font-size: 1.1rem; margin-bottom: 2rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.92em; }
+  pre { padding: 0.9rem 1.1rem; overflow-x: auto; }
+  p { margin: 0.7rem 0; }
+  ul { padding-left: 1.5rem; }
+  li { margin: 0.3rem 0; }
+  .phase { background: var(--code-bg); padding: 1rem 1.2rem; border-radius: 6px; margin: 1rem 0; }
+  .phase-name { font-weight: 600; color: var(--accent); }
+  .phase-note { color: var(--muted); font-size: 0.95em; }
+  .warn { color: var(--warn); }
+  .footer { color: var(--muted); margin-top: 4rem; font-size: 0.9em; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1>Clear-Signing v0 — ELI5</h1>
+<p class="lede">A short, plain-language walkthrough of the plan to make the Aztec Ledger app show you <em>what</em> you're signing — not just a hex hash. <a href="plan-final.md">Full plan</a>.</p>
+
+<h2>What we already shipped (L4)</h2>
+<p>
+The Ledger app already does two non-trivial things, as of last week's work:
+</p>
+<ul>
+  <li>It computes Aztec's <code>outer_hash</code> on the device itself, so a malicious host can no longer trick the device into signing a different value than what it shows you.</li>
+  <li>It signs with ECDSA-K1, and the resulting signature is byte-equivalent to what Aztec's in-circuit verifier checks. We proved this against the real <code>barretenberg</code> verifier.</li>
+</ul>
+<p>
+But the screen is still raw hex. The user sees <code>Target 0x2af7…47c5, Selector 0xa9059cbb, Mode PUBLIC</code>. Power-users can verify; nobody else can.
+</p>
+
+<h2>What clear-signing v0 actually does</h2>
+<p>
+The device gets a small built-in library of known Aztec tokens (USDC, ETH from your faucet) and a list of known FT actions (<code>transfer</code>, <code>mint</code>, etc.). When the host streams a transaction, the device:
+</p>
+<ul>
+  <li>recomputes the transaction's args hash from the raw arguments (no more trusting the host's claim),</li>
+  <li>looks up the contract in its built-in registry,</li>
+  <li>looks up the function in its built-in selector table,</li>
+  <li>renders something the user can read: <strong>"Transfer 1.500000 USDC, From: you, To: 0xabcd…ef12"</strong>.</li>
+</ul>
+<p>
+If <em>anything</em> doesn't match — unknown contract, unknown function, wrong number of arguments, wrong privacy mode — the device refuses to sign. No raw fallback inside clear-signing. (You can still blind-sign via the old INS for unusual cases.)
+</p>
+
+<h2>Why strict-allowlist (not graceful fallback)?</h2>
+<p>
+A wallet that says "Unknown contract — signing anyway" trains users to ignore warnings. If the v0 scope is "FT clear-signing", then anything that isn't FT should be a hard "no" so the UX has integrity. When we want more contracts supported, we add them to the manifest and rebuild — which is also when a human reviews them.
+</p>
+<p class="warn"><strong>Important:</strong> the registry is hardcoded at build time. Adding a token means a firmware rebuild and reflash. That's the trust root.</p>
+
+<h2>Phases</h2>
+
+<div class="phase">
+<div class="phase-name">M5.0 — Manifest freeze + codegen</div>
+<p>Write a JSON manifest with the 5 known contracts (USDC, ETH, SponsoredFPC, 2 reserved) and 7 verbs (4 transfer variants + 2 mint variants + sponsor). A script reads this and emits C tables for the device + TS tables for the host. CI fails on drift.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M5.1 — Wire format v2</div>
+<p>The "APPEND_CALL" APDU grows to include raw args alongside the args hash. New protocol version number so old hosts can't accidentally talk to new firmware (or vice versa).</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M5.2 — Device-side parity + strict gates</div>
+<p>Device recomputes args hash from raw args. Rejects if unknown contract, unknown function, arg count off, public/private mismatch, or (for transfers) "from" isn't the user's own account. Three independent recompute passes — same fault-hardening pattern as the existing outer_hash.</p>
+<p class="phase-note">The most important invariant: after this lands, the device never trusts a hash the host claimed — it always recomputes from raw args.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M5.3 — Semantic UI</div>
+<p>Replace the per-call hex display with: "Transfer 1.5 USDC, From: you, To: 0xabc…def". Decimals come from the on-device registry, never from the host. Mint operations show a yellow warning because they're privileged.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M5.4 — Host adapter</div>
+<p>The TypeScript code that builds the transaction now streams raw args too. Unblocks the private-call path (currently rejected). Adds host-side pre-flight checks so obviously-bad requests fail before hitting the device.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M5.5 — Sandbox end-to-end test</div>
+<p>Local Aztec sandbox + Speculos. Deploy a Ledger-backed account. Sign a real private-USDC transfer. Assert it lands. Validates the entire pipeline before we touch a public network.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M5.6 — alpha-testnet (the decisive test)</div>
+<p>Same flow against <code>rpc.testnet.aztec-labs.com</code> with the real deployed USDC. <strong>The success criterion: a private USDC transfer signed by the Ledger via clear-signing gets mined on alpha-testnet</strong>.</p>
+</div>
+
+<div class="phase">
+<div class="phase-name">M5.7 — Codex post-impl review + fixes</div>
+<p>Send the full implementation back to codex for an adversarial review. Apply BLOCKERs and MAJORs.</p>
+</div>
+
+<h2>What this costs (timeline-wise)</h2>
+<p>~12-14 working days. Codex flagged that M5.1+M5.2 are one chunk (you can't separately ship a wire format without the recompute logic), and the testnet work is denser than it looks (note sync, helper-wallet funding, etc.).</p>
+
+<h2>What we're <em>not</em> doing</h2>
+<ul>
+  <li><strong>NFTs</strong> — different ABI shape. Follow-up arc.</li>
+  <li><strong>Arbitrary dApps</strong> — Aztec has no canonical contract registry yet. Trying to fake one would be worse than not having one.</li>
+  <li><strong>Schnorr-Grumpkin</strong> — the "native Aztec sig" arc. Audit-gated, deferred until after this ships.</li>
+  <li><strong>Ledger Live submission</strong> — much higher bar, separate ~$30k effort, not in scope.</li>
+</ul>
+
+<h2>The trust roots, plainly</h2>
+<ul>
+  <li><strong>The Poseidon2 implementation on the device</strong> — already shipped (L4.1), 14/14 parity vs Aztec.</li>
+  <li><strong>The on-device contract registry</strong> — compiled into the firmware. Whoever builds the firmware is trusted to put the right addresses + decimals in.</li>
+  <li><strong>The selector table</strong> — derived from canonical function signatures at codegen time. CI fails if the signatures drift against the pinned <code>aztec-standards</code> package.</li>
+  <li><strong>The signature itself</strong> — ECDSA-K1 from a key the device derives from its seed via BIP-32. The seed is the user's secret.</li>
+</ul>
+<p>
+The thing the user has to trust beyond their own seed: the firmware bytes are what the build pipeline produced, and the build pipeline used the manifest that was reviewed.
+</p>
+
+<h2>Open questions resolved during planning</h2>
+<ul>
+  <li><strong>SponsoredFPC address on testnet?</strong> Deterministic from <code>SPONSORED_FPC_SALT=0</code>: <code>0x254082…1257</code>. Same address on mainnet, testnet, sandbox.</li>
+  <li><strong>Sponsor is public or private?</strong> PRIVATE. Codex caught this — we had it wrong initially. Aztec's <code>SponsoredFeePaymentMethod</code> builds it as a private entrypoint.</li>
+  <li><strong>Who pays for the first deploy?</strong> SponsoredFPC. No external ETH wallet needed for gas.</li>
+  <li><strong>What's "FT"?</strong> Fungible Token. ERC-20-equivalent on Aztec. The aztec-standards Token contract by Wonderland.</li>
+</ul>
+
+<div class="footer">
+Generated 2026-05-26 alongside <code>plan-final.md</code>. Edit this file when the plan structure changes meaningfully — but only that. This is reading material for non-devs; the plan is the source of truth.
+</div>
+
+</body>
+</html>
