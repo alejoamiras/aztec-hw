@@ -1,0 +1,128 @@
+name: Ledger app
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      relevant: ${{ steps.override.outputs.relevant || steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            relevant:
+              - 'ledger-app/**'
+              - '!ledger-app/**/*.md'
+              - 'packages/adapter-ledger/**'
+              - '!packages/adapter-ledger/**/*.md'
+              - 'packages/core/src/**'
+              - 'biome.json'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ledger-app.yml'
+      - name: Override for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        id: override
+        run: echo "relevant=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ledger-app under ledger-app-builder-lite
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Pin builder image by digest later (plan-final.md §7 supply-chain).
+    container:
+      image: ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder-lite:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk:
+          - { name: nanosp, path: /opt/nanosplus-secure-sdk }
+          - { name: nanox, path: /opt/nanox-secure-sdk }
+          - { name: stax, path: /opt/stax-secure-sdk }
+          - { name: flex, path: /opt/flex-secure-sdk }
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build for ${{ matrix.sdk.name }}
+        working-directory: ledger-app
+        run: |
+          make BOLOS_SDK=${{ matrix.sdk.path }}
+          ls -la bin/
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledger-app-${{ matrix.sdk.name }}
+          path: |
+            ledger-app/bin/app.elf
+            ledger-app/bin/app.hex
+            ledger-app/bin/app.sha256
+            ledger-app/debug/app.map
+          if-no-files-found: error
+          retention-days: 14
+
+  speculos-integration:
+    name: Speculos integration tests (nanosp)
+    needs: [changes, build]
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Download nanosp build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ledger-app-nanosp
+          path: ledger-app/bin/
+
+      - name: Start Speculos
+        run: |
+          docker run -d --name speculos-aztec --rm \
+            -p 5001:5000 -p 9999:9999 \
+            -v "${GITHUB_WORKSPACE}/ledger-app/bin:/app" \
+            ghcr.io/ledgerhq/speculos:latest \
+            --display headless --model nanosp \
+            --apdu-port 9999 --api-port 5000 \
+            /app/app.elf
+          # Wait for the API to come up.
+          for i in $(seq 1 20); do
+            if curl -sf -X POST http://localhost:5001/apdu \
+                -H "Content-Type: application/json" \
+                -d '{"data":"E001000000"}' >/dev/null 2>&1; then
+              echo "Speculos ready after ${i}s."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Speculos did not respond on time"
+          docker logs speculos-aztec || true
+          exit 1
+
+      - name: Run adapter-ledger tests against Speculos
+        env:
+          SPECULOS_URL: http://localhost:5001
+        run: bun test packages/adapter-ledger --timeout 180000
+
+      - name: Stop Speculos
+        if: always()
+        run: docker rm -f speculos-aztec || true

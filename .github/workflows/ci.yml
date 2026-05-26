@@ -30,7 +30,7 @@ jobs:
         run: bun run lint
 
       - name: Typecheck all packages
-        run: bunx tsc -b --noEmit packages/core packages/adapter-trezor apps/demo
+        run: bunx tsc -b --noEmit packages/core packages/adapter-trezor packages/adapter-ledger apps/demo
 
       - name: Tests
         run: bun test
