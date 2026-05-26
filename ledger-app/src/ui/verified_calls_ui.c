@@ -1,20 +1,19 @@
 /**
- * Verified-calls NBGL review.
+ * Clear-signing v0 (M5.3): verified-calls NBGL review with decoded FT semantics.
  *
- * Per-call structure is split into three separate tag/value pairs so each pair
- * fits inside Nano NBGL's 3-visible-lines-per-value cap (codex L4 MAJOR #3 — see
- * `lib_nbgl/include/nbgl_use_case.h` `NB_MAX_LINES_IN_REVIEW`):
+ * Per-call rendering driven by the on-device registry + verb decoder. Strict
+ * allowlist already enforced at APPEND_CALL time (M5.2), so by the time we
+ * reach this code every call is guaranteed to:
+ *   - match a registry slot (kind ∈ {TOKEN, SPONSOR})
+ *   - match a verb in CS_VERBS (selector + arg_count + visibility checked)
+ *   - have raw args populated in G_l4_session.calls[i].args
  *
- *   "Call X/N target"   → "0xabcd…1234"
- *   "Call X/N selector" → "0xa9059cbb (2835717307)"
- *   "Call X/N mode"     → "PUBLIC,HIDE_SENDER,STATIC"
+ * UI templates:
+ *   TRANSFER_*  → Action label + From + To + Amount (decimals from registry) + Mode
+ *   MINT_*      → "⚠ MINTER ACTION" warning + Action label + To + Amount
+ *   SPONSOR     → "Sponsor fee (private)" + "Via: testnet FPC"
  *
- * `args_hash` is deliberately omitted — the deep plan §4 marks it as
- * advanced-detail / larger-screen-only, and the outer_hash binds it cryptographically
- * regardless of whether it's displayed.
- *
- * Review subtitle carries the deep-plan §4 raw-values warning so users can't read
- * "Authorize" without seeing the trust caveat (codex L4 MAJOR #2).
+ * The outer_hash pair stays at the tail (defense in depth for paranoid users).
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -30,11 +29,14 @@
 #include "../sw.h"
 #include "../l4/session.h"
 #include "../l4/wire.h"
+#include "../clear_signing_v0/format.h"
+#include "../clear_signing_v0/registry.gen.h"
+#include "../clear_signing_v0/selectors.gen.h"
 #include "../handler/finalize_and_sign.h"
 
 #define REVIEW_TITLE "Authorize Aztec calls"
 #define REVIEW_SUBTITLE \
-    "INTERNAL build. Addresses and selectors are raw, unverified values."
+    "INTERNAL build. Verified against on-device registry."
 
 #if defined(TARGET_NANOX) || defined(TARGET_NANOS2)
 #define REVIEW_ICON_VC C_app_aztec_14px
@@ -46,21 +48,24 @@
 #define REVIEW_ICON_VC C_app_aztec_64px
 #endif
 
-/* Header pairs (Path, Account, Chain, Calls) + per-call × 3 (target/selector/mode)
- * + outer_hash. With L4_MAX_CALLS=5: 4 + 15 + 1 = 20 pairs. */
-#define VC_PAIR_CAPACITY (4u + 3u * L4_MAX_CALLS + 1u)
+/* Worst-case pair count: 4 headers + 5 calls × 5 (TRANSFER) + 1 outer_hash = 30. */
+#define VC_PAIR_CAPACITY 32u
 
+/* Static label/value string pools. RAM cost ~4 KB. */
 static char g_path_str[160];
 static char g_account_str[80];
 static char g_chain_str[80];
 static char g_calls_count_str[16];
-static char g_call_target[L4_MAX_CALLS][32];
-static char g_call_selector[L4_MAX_CALLS][48];
-static char g_call_mode[L4_MAX_CALLS][48];
-static char g_call_label_target[L4_MAX_CALLS][24];
-static char g_call_label_selector[L4_MAX_CALLS][24];
-static char g_call_label_mode[L4_MAX_CALLS][24];
 static char g_outer_str[80];
+
+/* Per-call buffers — 5 max calls × per-pair strings. */
+static char g_call_label[L4_MAX_CALLS][24];           /* "Call 1/3" */
+static char g_call_action[L4_MAX_CALLS][48];          /* "Transfer USDC pub→pub" */
+static char g_call_from[L4_MAX_CALLS][24];            /* truncated address or "you" */
+static char g_call_to[L4_MAX_CALLS][24];
+static char g_call_amount[L4_MAX_CALLS][CS_FORMAT_MAX_LEN + 16]; /* "1.500000 USDC" */
+static char g_call_mode[L4_MAX_CALLS][32];
+static char g_call_via[L4_MAX_CALLS][48];
 
 static nbgl_contentTagValue_t g_pairs[VC_PAIR_CAPACITY];
 static nbgl_contentTagValueList_t g_pair_list;
@@ -75,7 +80,6 @@ static void hex_n(char *out, const uint8_t *bytes, size_t n) {
     out[2 * n] = '\0';
 }
 
-/* "0xABCD…1234" — print first 4 + last 4 bytes of a 32-byte field. */
 static void short_hex_field(char *out, size_t out_len, const uint8_t bytes[32]) {
     if (out_len < 24) {
         out[0] = '\0';
@@ -84,13 +88,12 @@ static void short_hex_field(char *out, size_t out_len, const uint8_t bytes[32]) 
     out[0] = '0';
     out[1] = 'x';
     hex_n(out + 2, bytes, 4);
-    out[10] = '\xE2'; /* … = U+2026 (UTF-8: e2 80 a6) */
+    out[10] = '\xE2'; /* … = U+2026 */
     out[11] = '\x80';
     out[12] = '\xA6';
     hex_n(out + 13, bytes + 28, 4);
 }
 
-/* If high 28 bytes are zero, show "0xXXXXXXXX (N)". Otherwise short_hex. */
 static void fr_as_u32_or_hex(char *out, size_t out_len, const uint8_t bytes[32]) {
     bool fits = true;
     for (int i = 0; i < 28; i++) {
@@ -124,7 +127,6 @@ static bool format_bip32_path(char *out, size_t out_len) {
     return true;
 }
 
-/* Compose mode string from flag bits. Compact for narrow screens. */
 static void format_mode(char *out, size_t out_len, uint8_t flags) {
     bool first = true;
     out[0] = '\0';
@@ -145,12 +147,127 @@ static void format_mode(char *out, size_t out_len, uint8_t flags) {
     }
 }
 
+/* Map verb_id → human-readable action label using the registry's symbol. */
+static void format_action(char *out, size_t out_len, uint8_t verb_id, const char *symbol) {
+    /* ASCII-only labels — nano S+ NBGL font lacks U+2192 (→) and other Unicode
+     * glyphs; non-ASCII falls back to substitution chars on-screen. */
+    const char *base = "Call";
+    switch (verb_id) {
+        case CS_VERB_TRANSFER_PRIV_PUB:  base = "Transfer priv->pub"; break;
+        case CS_VERB_TRANSFER_PRIV_PRIV: base = "Transfer priv->priv"; break;
+        case CS_VERB_TRANSFER_PUB_PRIV:  base = "Transfer pub->priv"; break;
+        case CS_VERB_TRANSFER_PUB_PUB:   base = "Transfer pub->pub"; break;
+        case CS_VERB_MINT_PUB:           base = "Mint public"; break;
+        case CS_VERB_MINT_PRIV:          base = "Mint private"; break;
+        case CS_VERB_SPONSOR:            base = "Sponsor fee"; break;
+        default: break;
+    }
+    if (symbol && symbol[0] != '\0') {
+        snprintf(out, out_len, "%s %s", base, symbol);
+    } else {
+        snprintf(out, out_len, "%s", base);
+    }
+}
+
+/* "you" if the 32B address equals G_l4_session.consumer, else short hex. */
+static void format_from(char *out, size_t out_len, const uint8_t addr[32]) {
+    if (memcmp(addr, G_l4_session.consumer, 32) == 0) {
+        snprintf(out, out_len, "you");
+    } else {
+        short_hex_field(out, out_len, addr);
+    }
+}
+
 static void on_review_choice(bool confirm) {
     if (confirm) {
         finalize_after_approval();
     } else {
         finalize_rejected();
     }
+}
+
+static uint32_t selector_u32_from_be(const uint8_t bytes[L4_FR_BYTES]) {
+    return ((uint32_t)bytes[28] << 24)
+         | ((uint32_t)bytes[29] << 16)
+         | ((uint32_t)bytes[30] << 8)
+         | (uint32_t)bytes[31];
+}
+
+/* Render one call into its slot of the per-call buffers and return how many
+ * tag-value pairs were added. */
+static size_t render_call_pairs(uint8_t i, size_t out_idx) {
+    l4_call_t *c = &G_l4_session.calls[i];
+    const cs_registry_entry_t *reg = cs_registry_lookup(c->target_address);
+    /* M5.2 enforced reg != NULL at APPEND_CALL time; defense-in-depth check. */
+    if (reg == NULL) return 0;
+    uint32_t sel_u32 = selector_u32_from_be(c->function_selector);
+    const cs_verb_entry_t *verb = cs_verb_lookup(reg->kind, sel_u32);
+    if (verb == NULL) return 0;
+
+    /* Call label: "Call 1/3". */
+    snprintf(g_call_label[i], sizeof(g_call_label[i]),
+             "Call %u/%u", (unsigned)(i + 1), (unsigned)G_l4_session.call_count);
+    /* Action: "Transfer USDC pub→pub" / "Mint USDC public" / "Sponsor fee". */
+    format_action(g_call_action[i], sizeof(g_call_action[i]), verb->verb, reg->symbol);
+
+    size_t pairs_added = 0;
+    g_pairs[out_idx + pairs_added].item = g_call_label[i];
+    g_pairs[out_idx + pairs_added].value = g_call_action[i];
+    pairs_added++;
+
+    switch (verb->verb) {
+        case CS_VERB_TRANSFER_PRIV_PUB:
+        case CS_VERB_TRANSFER_PRIV_PRIV:
+        case CS_VERB_TRANSFER_PUB_PRIV:
+        case CS_VERB_TRANSFER_PUB_PUB: {
+            /* args = [from, to, amount, nonce] */
+            format_from(g_call_from[i], sizeof(g_call_from[i]), c->args[0]);
+            short_hex_field(g_call_to[i], sizeof(g_call_to[i]), c->args[1]);
+            char amt[CS_FORMAT_MAX_LEN];
+            if (!cs_format_amount(c->args[2], reg->decimals, amt, sizeof(amt))) {
+                snprintf(amt, sizeof(amt), "?");
+            }
+            snprintf(g_call_amount[i], sizeof(g_call_amount[i]),
+                     "%s %s", amt, reg->symbol);
+            format_mode(g_call_mode[i], sizeof(g_call_mode[i]), c->flags);
+
+            g_pairs[out_idx + pairs_added].item = "From"; g_pairs[out_idx + pairs_added].value = g_call_from[i]; pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "To";   g_pairs[out_idx + pairs_added].value = g_call_to[i];   pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "Amount"; g_pairs[out_idx + pairs_added].value = g_call_amount[i]; pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "Mode"; g_pairs[out_idx + pairs_added].value = g_call_mode[i]; pairs_added++;
+            break;
+        }
+        case CS_VERB_MINT_PUB:
+        case CS_VERB_MINT_PRIV: {
+            /* args = [to, amount] */
+            short_hex_field(g_call_to[i], sizeof(g_call_to[i]), c->args[0]);
+            char amt[CS_FORMAT_MAX_LEN];
+            if (!cs_format_amount(c->args[1], reg->decimals, amt, sizeof(amt))) {
+                snprintf(amt, sizeof(amt), "?");
+            }
+            snprintf(g_call_amount[i], sizeof(g_call_amount[i]),
+                     "%s %s", amt, reg->symbol);
+
+            /* Mint-action warning pair (codex M5 plan §5 + opus suggestion). */
+            g_pairs[out_idx + pairs_added].item = "WARNING";
+            g_pairs[out_idx + pairs_added].value = "MINTER action";
+            pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "To"; g_pairs[out_idx + pairs_added].value = g_call_to[i]; pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "Amount"; g_pairs[out_idx + pairs_added].value = g_call_amount[i]; pairs_added++;
+            break;
+        }
+        case CS_VERB_SPONSOR: {
+            snprintf(g_call_via[i], sizeof(g_call_via[i]),
+                     "Testnet %s", reg->symbol);
+            g_pairs[out_idx + pairs_added].item = "Via";
+            g_pairs[out_idx + pairs_added].value = g_call_via[i];
+            pairs_added++;
+            break;
+        }
+        default:
+            break;
+    }
+    return pairs_added;
 }
 
 int ui_display_verified_calls(void) {
@@ -164,42 +281,13 @@ int ui_display_verified_calls(void) {
     short_hex_field(g_outer_str, sizeof(g_outer_str), G_l4_session.outer_hash);
 
     size_t n_pairs = 0;
-    g_pairs[n_pairs].item = "Path";
-    g_pairs[n_pairs].value = g_path_str;
-    n_pairs++;
-    g_pairs[n_pairs].item = "Account";
-    g_pairs[n_pairs].value = g_account_str;
-    n_pairs++;
-    g_pairs[n_pairs].item = "Chain";
-    g_pairs[n_pairs].value = g_chain_str;
-    n_pairs++;
-    g_pairs[n_pairs].item = "Calls";
-    g_pairs[n_pairs].value = g_calls_count_str;
-    n_pairs++;
+    g_pairs[n_pairs].item = "Path";     g_pairs[n_pairs].value = g_path_str;        n_pairs++;
+    g_pairs[n_pairs].item = "Account";  g_pairs[n_pairs].value = g_account_str;     n_pairs++;
+    g_pairs[n_pairs].item = "Chain";    g_pairs[n_pairs].value = g_chain_str;       n_pairs++;
+    g_pairs[n_pairs].item = "Calls";    g_pairs[n_pairs].value = g_calls_count_str; n_pairs++;
 
-    for (uint8_t i = 0; i < G_l4_session.call_count && n_pairs + 3 <= VC_PAIR_CAPACITY; i++) {
-        l4_call_t *c = &G_l4_session.calls[i];
-
-        snprintf(g_call_label_target[i], sizeof(g_call_label_target[i]),
-                 "Call %u/%u target", (unsigned)(i + 1), (unsigned)G_l4_session.call_count);
-        snprintf(g_call_label_selector[i], sizeof(g_call_label_selector[i]),
-                 "Call %u/%u selector", (unsigned)(i + 1), (unsigned)G_l4_session.call_count);
-        snprintf(g_call_label_mode[i], sizeof(g_call_label_mode[i]),
-                 "Call %u/%u mode", (unsigned)(i + 1), (unsigned)G_l4_session.call_count);
-
-        short_hex_field(g_call_target[i], sizeof(g_call_target[i]), c->target_address);
-        fr_as_u32_or_hex(g_call_selector[i], sizeof(g_call_selector[i]), c->function_selector);
-        format_mode(g_call_mode[i], sizeof(g_call_mode[i]), c->flags);
-
-        g_pairs[n_pairs].item = g_call_label_target[i];
-        g_pairs[n_pairs].value = g_call_target[i];
-        n_pairs++;
-        g_pairs[n_pairs].item = g_call_label_selector[i];
-        g_pairs[n_pairs].value = g_call_selector[i];
-        n_pairs++;
-        g_pairs[n_pairs].item = g_call_label_mode[i];
-        g_pairs[n_pairs].value = g_call_mode[i];
-        n_pairs++;
+    for (uint8_t i = 0; i < G_l4_session.call_count && n_pairs + 5 <= VC_PAIR_CAPACITY; i++) {
+        n_pairs += render_call_pairs(i, n_pairs);
     }
 
     g_pairs[n_pairs].item = "outer_hash";
