@@ -74,16 +74,31 @@ async function approveReview(ctx: AutoConfirmContext): Promise<void> {
   throw new Error('approveReview: never reached the Approve page');
 }
 
+/* Clear-signing v0 strict allowlist (M5.2): the device rejects calls whose
+ * target isn't in the on-device registry OR whose selector doesn't match a
+ * registered verb. The stub here uses the faucet's USDC contract address and
+ * the canonical `transfer_public_to_public` selector (0xc47adea0) so the
+ * device-side gates pass. `consumer` MUST equal `args[0]` (the from address)
+ * per the codex-flagged `from == consumer` invariant. */
+const USDC_ADDRESS =
+  AztecAddress.fromBigInt(0x2af7c3bdd0bee3d825ec40786dc479bfd85f749b45da78a20ddca8ec3e4347c5n);
+const TRANSFER_PUB_PUB_SELECTOR = 0xc47adea0n;
+
 function makeStubIntent(): CallIntent {
+  const consumer = AztecAddress.fromBigInt(0xacc0_dead_beefn);
+  const recipient = AztecAddress.fromBigInt(0xabcd_ef12_3456n);
   return {
-    consumer: AztecAddress.fromBigInt(0xacc0_dead_beefn),
+    consumer,
     chainInfo: { chainId: new Fr(1n), version: new Fr(1n) },
     calls: [
       {
-        contractAddress: AztecAddress.fromBigInt(0xc0_ffee_c0_ffeen),
-        selector: new Fr(0xa9059cbbn),
-        args: [new Fr(0x42n)],
+        contractAddress: USDC_ADDRESS,
+        selector: new Fr(TRANSFER_PUB_PUB_SELECTOR),
+        /* USDC transfer_public_to_public(from, to, amount, nonce). `from`
+         * MUST equal `consumer` for the strict allowlist to accept. */
+        args: [consumer.toField(), recipient.toField(), new Fr(1_000_000n), new Fr(0n)],
         isPadding: false,
+        isPublic: true,
       },
     ],
   };
