@@ -18,4 +18,5 @@ export {
 export { AztecAddress } from '@aztec/stdlib/aztec-address';
 export * from './ecdsa.ts';
 export * from './intent.ts';
+export * from './intent-utils.ts';
 export * from './provider.ts';

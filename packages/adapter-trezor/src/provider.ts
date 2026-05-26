@@ -20,8 +20,10 @@ import {
   AuthWitness,
   type AuthWitnessProvider,
   type CallIntent,
+  computeOuterHashForIntent,
   ecdsaPreimage,
   Fr,
+  formatIntentForDevice,
   type IntentAuthWitnessProvider,
   normalizeLowS,
   packEcdsaSignature,
@@ -29,7 +31,6 @@ import {
 } from '@aztec-hwwallet-poc/core';
 import { Point } from '@noble/secp256k1';
 import { buildAztecIdentity, type IdentityType } from './identity.ts';
-import { computeOuterHashForIntent, formatIntentForDevice } from './intent-utils.ts';
 import type { TrezorTransport } from './transport.ts';
 
 const COMPRESSED_PUBKEY_LENGTH = 33;

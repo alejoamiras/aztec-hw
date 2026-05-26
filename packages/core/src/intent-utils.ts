@@ -16,15 +16,10 @@
  * over blind-signing, not a security-grade authorization channel.
  */
 
-import {
-  type AztecAddress,
-  type CallIntent,
-  computeInnerAuthWitHash,
-  computeOuterAuthWitHash,
-  Fr,
-  type IntentLabels,
-  type StructuredFunctionCall,
-} from '@aztec-hwwallet-poc/core';
+import { Fr } from '@aztec/foundation/curves/bn254';
+import { computeInnerAuthWitHash, computeOuterAuthWitHash } from '@aztec/stdlib/auth-witness';
+import type { AztecAddress } from '@aztec/stdlib/aztec-address';
+import type { CallIntent, IntentLabels, StructuredFunctionCall } from './intent.ts';
 
 /**
  * Derive Aztec's `outer_hash` from a structured intent.

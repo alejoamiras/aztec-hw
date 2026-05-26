@@ -31,6 +31,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@aztec-hwwallet-poc/core": "workspace:*",
+        "@aztec/foundation": "^4.2.1",
         "@noble/secp256k1": "^3.1.0",
       },
     },

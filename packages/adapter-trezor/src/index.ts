@@ -9,6 +9,7 @@
  * Phase B: `IntentAuthWitnessProvider` for clear-signing once the Aztec SDK extension lands.
  */
 
+export { computeOuterHashForIntent, formatIntentForDevice } from '@aztec-hwwallet-poc/core';
 export {
   type AztecIdentityOptions,
   buildAztecIdentity,
@@ -16,7 +17,6 @@ export {
   parseAccountIndex,
   serializeIdentity,
 } from './identity.ts';
-export { computeOuterHashForIntent, formatIntentForDevice } from './intent-utils.ts';
 export { TrezorEcdsaKAuthWitnessProvider, type TrezorProviderOptions } from './provider.ts';
 export type { TrezorSignedIdentity, TrezorTransport } from './transport.ts';
 export {

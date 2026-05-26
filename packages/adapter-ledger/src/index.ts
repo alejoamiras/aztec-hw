@@ -25,6 +25,10 @@ export {
   SW,
 } from './apdu.ts';
 export {
+  LedgerEcdsaKAuthWitnessProvider,
+  type LedgerProviderOptions,
+} from './auth-witness-provider.ts';
+export {
   LedgerProvider,
   type LedgerPublicKey,
   type LedgerSignature,

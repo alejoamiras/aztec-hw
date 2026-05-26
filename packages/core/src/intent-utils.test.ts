@@ -1,14 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  AztecAddress,
-  type CallIntent,
-  Fr,
-  type IntentAuthWitnessProvider,
-  isIntentAuthWitnessProvider,
-} from '@aztec-hwwallet-poc/core';
+import { AztecAddress, type CallIntent, Fr } from '@aztec-hwwallet-poc/core';
 import { computeOuterHashForIntent, formatIntentForDevice } from './intent-utils.ts';
-import { TrezorEcdsaKAuthWitnessProvider } from './provider.ts';
-import type { TrezorTransport } from './transport.ts';
 
 function makeUsdcTransferIntent(): CallIntent {
   const usdc = AztecAddress.fromBigInt(0xaabbccddee001122n);
@@ -114,19 +106,5 @@ describe('computeOuterHashForIntent', () => {
     const a = await computeOuterHashForIntent(intent);
     const b = await computeOuterHashForIntent(padded);
     expect(a.toString()).toBe(b.toString());
-  });
-});
-
-describe('TrezorEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvider', () => {
-  test('is detected by isIntentAuthWitnessProvider', () => {
-    const stubTransport: TrezorTransport = {
-      async signIdentity() {
-        throw new Error('unused in this test');
-      },
-    };
-    const provider: IntentAuthWitnessProvider = new TrezorEcdsaKAuthWitnessProvider(stubTransport, {
-      accountIndex: 0,
-    });
-    expect(isIntentAuthWitnessProvider(provider)).toBe(true);
   });
 });
