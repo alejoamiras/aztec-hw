@@ -55,6 +55,19 @@ int handler_append_call(buffer_t *cdata) {
     if (!buffer_read_u8(cdata, &slot->flags)) return reject(SWO_WRONG_DATA_LENGTH);
     if (slot->flags & ~L4_CALL_FLAG_MASK) return reject(SWO_WRONG_DATA_LENGTH);
 
+    /* Clear-signing v0 wire extension (M5.1): args_count + args[]. */
+    if (!buffer_read_u8(cdata, &slot->args_count)) return reject(SWO_WRONG_DATA_LENGTH);
+    if (slot->args_count > L4_MAX_ARGS) return reject(SW_DECODER_DESYNC);
+
+    /* Zero unused slots first so M5.2's recompute pass sees a deterministic state. */
+    memset(slot->args, 0, sizeof(slot->args));
+    for (uint8_t i = 0; i < slot->args_count; i++) {
+        if (!buffer_read_bytes(cdata, slot->args[i], L4_FR_BYTES)) {
+            return reject(SWO_WRONG_DATA_LENGTH);
+        }
+        if (!l4_fr_is_canonical(slot->args[i])) return reject(SW_HASH_MISMATCH);
+    }
+
     if (cdata->size != cdata->offset) return reject(SWO_WRONG_DATA_LENGTH);
 
     G_l4_session.calls_received++;

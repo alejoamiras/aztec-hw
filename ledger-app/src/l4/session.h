@@ -22,10 +22,20 @@ typedef enum {
 } l4_state_e;
 
 typedef struct {
-    uint8_t args_hash[L4_FR_BYTES];
+    uint8_t args_hash[L4_FR_BYTES];        /* Currently host-claimed; M5.2 will replace this
+                                             * with the device-recomputed value (trusted-session
+                                             * invariant from codex M5 final-review MAJOR #4). */
     uint8_t function_selector[L4_FR_BYTES];
     uint8_t target_address[L4_FR_BYTES];
     uint8_t flags; /* L4_CALL_FLAG_* */
+
+    /* Clear-signing v0: raw args streamed alongside args_hash. Used by:
+     *   - M5.2's device-side args_hash recompute (parity gate)
+     *   - M5.3's decoder (semantic UI rendering)
+     *   - M5.2's three-pass finalize re-derivation from stored raw args
+     * `args_count` ∈ [0, L4_MAX_ARGS]; unused slots are explicitly zeroed. */
+    uint8_t args_count;
+    uint8_t args[L4_MAX_ARGS][L4_FR_BYTES];
 } l4_call_t;
 
 typedef struct {

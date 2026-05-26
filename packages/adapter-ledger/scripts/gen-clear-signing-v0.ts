@@ -237,6 +237,7 @@ const cs_registry_entry_t *cs_registry_lookup(const uint8_t target[32]);
 
   const impl = `/* Generated. DO NOT EDIT. */
 #include "registry.gen.h"
+#include <stddef.h> /* NULL */
 #include <string.h>
 
 const cs_registry_entry_t CS_REGISTRY[CS_REGISTRY_SLOTS] = {
@@ -294,6 +295,7 @@ const cs_verb_entry_t *cs_verb_lookup(uint8_t kind, uint32_t selector_u32);
     .join('\n');
 
   const impl = `/* Generated. DO NOT EDIT. */
+#include <stddef.h> /* NULL */
 #include "selectors.gen.h"
 
 const cs_verb_entry_t CS_VERBS[CS_VERB_COUNT] = {

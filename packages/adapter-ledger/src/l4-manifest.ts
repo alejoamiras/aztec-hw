@@ -20,6 +20,7 @@ import type { AztecAddress } from '@aztec/stdlib/aztec-address';
 import type { CallIntent, StructuredFunctionCall } from '@aztec-hwwallet-poc/core';
 
 import {
+  APP_MAX_ARGS,
   APP_MAX_CALLS,
   type AzCall,
   type AzKeyPath,
@@ -35,6 +36,7 @@ import {
 const SIGNATURE_PAYLOAD = 463525807;
 const AUTHWIT_OUTER = 3283595782;
 const PUBLIC_CALLDATA = 2760353947;
+const FUNCTION_ARGS = 3576554347; /* private-call args_hash separator */
 
 const ZERO_FIELD: Uint8Array = new Uint8Array(FR_BYTES);
 
@@ -55,45 +57,58 @@ async function paddingArgsHash(): Promise<AztecFr> {
   return poseidon2HashWithSeparator([new Fr(0n)], PUBLIC_CALLDATA);
 }
 
-/** Lower a `StructuredFunctionCall` to the on-wire `AzCall`. */
+/** Lower a `StructuredFunctionCall` to the on-wire `AzCall`.
+ *
+ * M5.1: implements both public (`computeCalldataHash([selector, ...args],
+ * PUBLIC_CALLDATA)`) and private (`computeVarArgsHash(args)` with
+ * FUNCTION_ARGS=3576554347, empty-args → Fr.ZERO) paths. Raw args are
+ * streamed alongside args_hash so the device can recompute & verify (M5.2). */
 async function encodeRealCall(call: StructuredFunctionCall): Promise<AzCall> {
-  /* PoC scope: public-call args_hash only — `computeCalldataHash([selector, ...args],
-   * PUBLIC_CALLDATA)`. Private calls use a different path (`fromArgs`) that we haven't
-   * implemented yet; silently accepting `isPublic=false` would produce a host/device-
-   * parity-consistent witness that the in-circuit verifier would still reject, because
-   * the args_hash binding would not match Aztec's encoding.
-   * (codex L4 final-review MAJOR #1: hard-reject until fromArgs lands.) */
   const isPublic = call.isPublic ?? true;
-  if (!isPublic) {
-    throw new Error(
-      'L4 PoC only supports isPublic=true calls; private-call args_hash ' +
-        '(fromArgs / computeVarArgsHash) is not wired yet. Set isPublic=true ' +
-        'or wait for the follow-up patch.',
-    );
+
+  let argsHash: AztecFr;
+  if (isPublic) {
+    argsHash = await poseidon2HashWithSeparator([call.selector, ...call.args], PUBLIC_CALLDATA);
+  } else if (call.args.length === 0) {
+    /* hash.ts:computeVarArgsHash short-circuit. */
+    argsHash = Fr.ZERO;
+  } else {
+    argsHash = await poseidon2HashWithSeparator([...call.args], FUNCTION_ARGS);
   }
 
-  const argsFields: AztecFr[] = [call.selector, ...call.args];
-  const argsHash = await poseidon2HashWithSeparator(argsFields, PUBLIC_CALLDATA);
-
-  let flags = CALL_FLAG.PUBLIC;
+  let flags = 0;
+  if (isPublic) flags |= CALL_FLAG.PUBLIC;
   if (call.hideMsgSender) flags |= CALL_FLAG.HIDE_MSG_SENDER;
   if (call.isStatic) flags |= CALL_FLAG.STATIC;
+
+  if (call.args.length > APP_MAX_ARGS) {
+    throw new Error(
+      `call has ${call.args.length} args; APP_MAX_ARGS=${APP_MAX_ARGS}. ` +
+        `Clear-signing v0 covers only the aztec-standards FT verb set.`,
+    );
+  }
 
   return {
     argsHash: frToBytes(argsHash),
     functionSelectorField: frToBytes(call.selector),
     targetAddressField: addressToFrBytes(call.contractAddress),
     flags,
+    args: call.args.map((f) => frToBytes(f)),
   };
 }
 
 /** Synthesize the canonical padding `AzCall`. Same shape as device-side. */
 async function encodePaddingCall(): Promise<AzCall> {
+  /* Padding's args = [Fr(0)] per `FunctionCall.empty()` in the Aztec stdlib.
+   * Device synthesizes padding internally and never sees these bytes on the
+   * wire (host-only); we keep the field populated for type consistency and
+   * for the inner_hash payload construction below. */
   return {
     argsHash: frToBytes(await paddingArgsHash()),
     functionSelectorField: ZERO_FIELD,
     targetAddressField: ZERO_FIELD,
     flags: CALL_FLAG.PUBLIC,
+    args: [frToBytes(new Fr(0n))],
   };
 }
 
@@ -224,15 +239,32 @@ export function encodeBeginAuthwitBody(header: AzManifestHeader): Uint8Array {
   return out;
 }
 
-/** Serialize one `AzCall` to the wire bytes APPEND_CALL expects (97 bytes). */
+/** Serialize one `AzCall` to the wire bytes APPEND_CALL v2 expects
+ * (98 + args_count * 32 bytes; max 226 with APP_MAX_ARGS=4). */
 export function encodeAppendCallBody(call: AzCall): Uint8Array {
-  const out = new Uint8Array(3 * FR_BYTES + 1);
   if (call.argsHash.length !== FR_BYTES) throw new Error('argsHash must be 32 bytes');
   if (call.functionSelectorField.length !== FR_BYTES) throw new Error('selector must be 32 bytes');
   if (call.targetAddressField.length !== FR_BYTES) throw new Error('target must be 32 bytes');
-  out.set(call.argsHash, 0);
-  out.set(call.functionSelectorField, FR_BYTES);
-  out.set(call.targetAddressField, 2 * FR_BYTES);
-  out[3 * FR_BYTES] = call.flags & 0xff;
+  if (call.args.length > APP_MAX_ARGS) {
+    throw new Error(`call has ${call.args.length} args; APP_MAX_ARGS=${APP_MAX_ARGS}`);
+  }
+  for (const a of call.args) {
+    if (a.length !== FR_BYTES) throw new Error('each arg must be 32 bytes');
+  }
+  const out = new Uint8Array(3 * FR_BYTES + 2 + call.args.length * FR_BYTES);
+  let off = 0;
+  out.set(call.argsHash, off);
+  off += FR_BYTES;
+  out.set(call.functionSelectorField, off);
+  off += FR_BYTES;
+  out.set(call.targetAddressField, off);
+  off += FR_BYTES;
+  out[off++] = call.flags & 0xff;
+  out[off++] = call.args.length & 0xff;
+  for (const a of call.args) {
+    out.set(a, off);
+    off += FR_BYTES;
+  }
+  if (off !== out.length) throw new Error(`encoder size mismatch: ${off} != ${out.length}`);
   return out;
 }

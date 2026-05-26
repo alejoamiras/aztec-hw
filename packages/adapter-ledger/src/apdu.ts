@@ -137,6 +137,8 @@ export interface AzCall {
   readonly targetAddressField: Uint8Array; // 32 B
   /** Bit0 public; bit1 hide_msg_sender; bit2 static. Bit3+ MUST be zero. */
   readonly flags: number;
+  /** Raw Fr args (each 32 B BE). length must be <= APP_MAX_ARGS. M5.1+ wire. */
+  readonly args: readonly Uint8Array[];
 }
 
 /** Call flag bit layout (mirrors `L4_CALL_FLAG_*` in ledger-app/src/l4/wire.h). */
@@ -147,8 +149,14 @@ export const CALL_FLAG = {
 } as const;
 
 export const APP_MAX_CALLS = 5;
-export const MANIFEST_VERSION = 1;
+/** Manifest format version. Bumped to 2 for the clear-signing v0 wire extension
+ * (raw args streamed alongside args_hash). v1 firmware rejects v2 manifests and
+ * vice versa — no compatibility path (codex M5 final-review MAJOR #2). */
+export const MANIFEST_VERSION = 2;
 export const FR_BYTES = 32;
+/** Max number of raw Fr args per APPEND_CALL — fits all aztec-standards FT
+ * verbs (4-arg transfer, 2-arg mint, 0-arg sponsor) inside one 255 B APDU. */
+export const APP_MAX_ARGS = 4;
 
 /**
  * Status words mirrored from `ledger-app/src/sw.h`. Aztec-specific codes use the

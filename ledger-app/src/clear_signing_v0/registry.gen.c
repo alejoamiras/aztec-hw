@@ -1,5 +1,6 @@
 /* Generated. DO NOT EDIT. */
 #include "registry.gen.h"
+#include <stddef.h> /* NULL */
 #include <string.h>
 
 const cs_registry_entry_t CS_REGISTRY[CS_REGISTRY_SLOTS] = {

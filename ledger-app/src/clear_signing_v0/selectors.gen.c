@@ -1,4 +1,5 @@
 /* Generated. DO NOT EDIT. */
+#include <stddef.h> /* NULL */
 #include "selectors.gen.h"
 
 const cs_verb_entry_t CS_VERBS[CS_VERB_COUNT] = {
