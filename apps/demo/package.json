@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aztec-hwwallet-poc/adapter-ledger": "workspace:*",
     "@aztec-hwwallet-poc/adapter-trezor": "workspace:*",
     "@aztec-hwwallet-poc/core": "workspace:*",
     "@aztec/foundation": "^4.2.1",
