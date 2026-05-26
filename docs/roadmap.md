@@ -31,9 +31,18 @@ Replace the Python subprocess with a `@trezor/transport` + `@trezor/protobuf` JS
 
 **Target**: Ledger custom device app on Ledger Live.
 
-- [ ] Custom device app skeleton (raw-digest secp256k1 signing via `cx_ecdsa_sign_rs_no_throw` + `CX_RND_RFC6979`)
-- [ ] On-device manifest verification (Poseidon2)
-- [ ] Ledger Live submission + audit engagement
+Detailed plan in [`../implementations-plan/hw-wallet-poc-ledger/plan-final.md`](../implementations-plan/hw-wallet-poc-ledger/plan-final.md).
+
+- [x] **L1 — scaffold + porting plan + `ledger-app-builder-lite` verified**
+- [x] **L2 — K1 baseline app**: buildable for nanosp/nanox/stax/flex; `GET_PUBLIC_KEY` returns 64B `x ‖ y`; `SIGN_OUTER_HASH` returns low-S `r ‖ s` after device-side `sha256(outer_hash)` + RFC-6979 ECDSA-K1 + fault-injection duplicate-check defense; `nbgl_useCaseReviewBlindSigning` UI with "INTERNAL — DO NOT SHIP" banner
+- [x] **L2b — sig verifies via Aztec barretenberg `Ecdsa.verifySignature`** (same code path the in-circuit `EcdsaKAccount` verifier runs)
+- [x] **Speculos integration harness**: 10/10 passing (`SPECULOS_URL=http://localhost:5001 bun test packages/adapter-ledger`)
+- [x] **Cross-vendor demo CLI**: `AZTEC_HW_TRANSPORT=fake|trezorlib|ledger` swaps backends behind the same `IntentAuthWitnessProvider`
+- [x] **CI workflow** — per-package gate, docker image digests pinned (plan §7), build matrix across all four target SDKs, speculos integration test on nanosp
+- [ ] L3 — full pytest harness (multi-device + golden vectors pinned to aztec-packages commit)
+- [ ] L4 — clear-signing on-device (Poseidon2 port + manifest streaming via BEGIN_AUTHWIT/APPEND_CALL/FINALIZE_AND_SIGN)
+- [ ] L5 — Schnorr-Grumpkin native (multi-week, audit-gated)
+- [ ] L6 — Ledger Live submission + mandatory audit (post-L4, foundation-gated)
 
 ## Decisions log
 
