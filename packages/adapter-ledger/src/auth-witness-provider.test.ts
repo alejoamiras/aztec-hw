@@ -22,15 +22,56 @@ import { SpeculosTransport } from './speculos-transport.ts';
 const SPECULOS_URL = process.env.SPECULOS_URL;
 const AZTEC_PATH = defaultAztecPath(0);
 
+/**
+ * Robust NBGL auto-confirm — works for both L2 blind-sign and L4 verified-calls
+ * regardless of page count. Polls Speculos's event queue after each press to
+ * detect the final approve screen ("Sign…?" / "Authorize…?"), then both-presses
+ * to confirm.
+ */
 async function approveReview(ctx: AutoConfirmContext): Promise<void> {
-  await ctx.sleep(500);
+  /* Heuristic: walk right until the final approve page is in the event queue,
+   * then both-press. The approve page renders the device's `finishTitle`
+   * ("Sign Aztec ...?" for both L2 + L4) — that string is unique to that page
+   * (the review title "Authorize Aztec calls" appears on intro + content
+   * pages too, so it would false-positive on the intro screen). */
+  const APPROVE_HINTS = ['Sign Aztec'];
+  const REJECT_HINT = 'Reject transaction';
+  const PAGE_SETTLE_MS = 280;
+
+  const recentTexts = async (): Promise<string[]> => {
+    const events = await ctx.getEvents();
+    return events.slice(-8).map((e) => e.text);
+  };
+
+  await ctx.clearEvents();
+  await ctx.sleep(PAGE_SETTLE_MS);
+  /* Dismiss any intro/welcome splash. */
   await ctx.press('both');
-  for (let i = 0; i < 5; i++) {
-    await ctx.sleep(280);
-    await ctx.press('right');
+  await ctx.sleep(PAGE_SETTLE_MS);
+
+  for (let i = 0; i < 40; i++) {
+    const texts = await recentTexts();
+    const joined = texts.join(' | ');
+    if (process.env.AZTEC_AUTOCONFIRM_DEBUG) {
+      console.log(`[autoConfirm i=${i}] texts=${JSON.stringify(texts)}`);
+    }
+    const hasApprove = APPROVE_HINTS.some((h) => joined.includes(h));
+    const lastText = texts[texts.length - 1] ?? '';
+    const onReject = lastText.includes(REJECT_HINT);
+
+    if (hasApprove && !onReject) {
+      await ctx.press('both');
+      return;
+    }
+    if (onReject) {
+      /* Overshot — go back to the previous (Approve) page. */
+      await ctx.press('left');
+    } else {
+      await ctx.press('right');
+    }
+    await ctx.sleep(PAGE_SETTLE_MS);
   }
-  await ctx.sleep(280);
-  await ctx.press('both');
+  throw new Error('approveReview: never reached the Approve page');
 }
 
 function makeStubIntent(): CallIntent {
@@ -89,13 +130,27 @@ describe.skipIf(!SPECULOS_URL)('LedgerEcdsaKAuthWitnessProvider — Speculos int
     const verifier = new Ecdsa('secp256k1');
     const ok = await verifier.verifySignature(outerHash.toBuffer(), pubKeyXY, aztecSig);
     expect(ok).toBe(true);
-  });
+  }, 30_000);
 
-  test('createAuthWitFromIntent host-derives outer_hash + signs it', async () => {
+  test('createAuthWitFromIntent — L4 verified-calls flow signs device-recomputed outer_hash', async () => {
     const intent = makeStubIntent();
     const authWit = await provider.createAuthWitFromIntent(intent);
     expect(authWit.witness.length).toBe(64);
-    // The wrapped messageHash should be a non-zero Fr (the host-derived outer_hash).
     expect(authWit.requestHash.toString()).not.toBe(Fr.ZERO.toString());
-  });
+
+    /* The signature MUST verify against the device pubkey for the
+     * device-recomputed outer_hash. If the device had used a different
+     * outer_hash than the host (parity miss), this would fail. */
+    const sigBytes = Uint8Array.from(authWit.witness.map((fr) => Number(fr.toBigInt())));
+    const aztecSig = new EcdsaSignature(
+      Buffer.from(sigBytes.slice(0, 32)),
+      Buffer.from(sigBytes.slice(32, 64)),
+      Buffer.from([0]),
+    );
+    const { x, y } = await provider.getPublicKeyXY();
+    const pubKeyXY = Buffer.concat([Buffer.from(x), Buffer.from(y)]);
+    const verifier = new Ecdsa('secp256k1');
+    const ok = await verifier.verifySignature(authWit.requestHash.toBuffer(), pubKeyXY, aztecSig);
+    expect(ok).toBe(true);
+  }, 60_000);
 });

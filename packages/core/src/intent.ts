@@ -40,6 +40,16 @@ export interface StructuredFunctionCall {
    * to defend against a host hiding extra calls behind padding (T6 adversarial finding).
    */
   readonly isPadding: boolean;
+  /**
+   * Whether the call is a public-execution call (vs. private). Defaults to `true`
+   * (matches `FunctionCall.empty()` and most demo-flow transfers). Devices use this
+   * to set `is_public` in the inner-hash payload.
+   */
+  readonly isPublic?: boolean;
+  /** If `true`, the entrypoint hides `msg.sender` from the call's args. Defaults to `false`. */
+  readonly hideMsgSender?: boolean;
+  /** If `true`, the call is `static` (no state mutation). Defaults to `false`. */
+  readonly isStatic?: boolean;
 }
 
 /** Pre-resolved human-readable fields for on-device display. Host-provided, device-verified. */

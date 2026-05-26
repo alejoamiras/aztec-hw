@@ -8,7 +8,8 @@
  *   - Caller is responsible for wrapping `signOuterHash` into the Aztec
  *     `AuthWitnessProvider` interface (mirrors adapter-trezor).
  */
-import { INS, SW } from './apdu.ts';
+import { type AzCall, type AzManifestHeader, FR_BYTES, INS, SW } from './apdu.ts';
+import { encodeAppendCallBody, encodeBeginAuthwitBody } from './l4-manifest.ts';
 import type { AutoConfirmContext, SpeculosTransport } from './speculos-transport.ts';
 import type { LedgerTransport } from './transport.ts';
 
@@ -71,6 +72,56 @@ export class LedgerProvider {
       x: r.data.slice(0, 32),
       y: r.data.slice(32, 64),
     };
+  }
+
+  /**
+   * L4 BEGIN_AUTHWIT — start a verified-calls session on the device.
+   * Returns when the device has acknowledged the manifest header.
+   */
+  async beginAuthwit(header: AzManifestHeader): Promise<void> {
+    const body = encodeBeginAuthwitBody(header);
+    const r = await this.transport.send({ ins: INS.BEGIN_AUTHWIT, data: body });
+    this.requireOk(r.sw, 'BEGIN_AUTHWIT');
+  }
+
+  /** L4 APPEND_CALL — buffer one real call into the active session. */
+  async appendCall(call: AzCall): Promise<void> {
+    const body = encodeAppendCallBody(call);
+    const r = await this.transport.send({ ins: INS.APPEND_CALL, data: body });
+    this.requireOk(r.sw, 'APPEND_CALL');
+  }
+
+  /**
+   * L4 FINALIZE_AND_SIGN — submit the host-claimed outer_hash, prompt the user
+   * with the verified-calls review UI on-device, and return r ‖ s on approval.
+   *
+   * The host MUST have just called BEGIN_AUTHWIT + N × APPEND_CALL for this
+   * to succeed. Device rejects with `SW_HASH_MISMATCH` if its recompute
+   * doesn't agree with `claimedOuterHash`.
+   */
+  async finalizeAndSign(
+    claimedOuterHash: Uint8Array,
+    opts: SignOuterHashOptions = {},
+  ): Promise<LedgerSignature> {
+    if (claimedOuterHash.length !== FR_BYTES) {
+      throw new Error(`claimedOuterHash must be 32 bytes, got ${claimedOuterHash.length}`);
+    }
+    const transport = this.transport as SpeculosTransport;
+    const r = await transport.send(
+      { ins: INS.FINALIZE_AND_SIGN, data: claimedOuterHash },
+      opts.autoConfirm,
+    );
+    this.requireOk(r.sw, 'FINALIZE_AND_SIGN');
+    if (r.data.length !== 64) {
+      throw new Error(`FINALIZE_AND_SIGN: expected 64 bytes (r||s), got ${r.data.length}`);
+    }
+    return { r: r.data.slice(0, 32), s: r.data.slice(32, 64) };
+  }
+
+  /** L4 ABORT — wipe any in-flight session on the device. Idempotent. */
+  async abortAuthwit(): Promise<void> {
+    const r = await this.transport.send({ ins: INS.ABORT });
+    this.requireOk(r.sw, 'ABORT');
   }
 
   async signOuterHash(

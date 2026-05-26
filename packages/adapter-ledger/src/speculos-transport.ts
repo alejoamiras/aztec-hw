@@ -29,6 +29,10 @@ export interface AutoConfirmContext {
   press(button: ButtonId): Promise<void>;
   /** Convenience: small async sleep. */
   sleep(ms: number): Promise<void>;
+  /** Drain Speculos's screen-text event queue. Useful before a sequence of presses. */
+  clearEvents(): Promise<void>;
+  /** Fetch all event-stream entries currently buffered on the emulator. */
+  getEvents(): Promise<readonly { text: string }[]>;
 }
 
 export class SpeculosTransport implements LedgerTransport {
@@ -56,6 +60,8 @@ export class SpeculosTransport implements LedgerTransport {
       const ctx: AutoConfirmContext = {
         press: (b) => this.pressButton(b),
         sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        clearEvents: () => this.clearEvents(),
+        getEvents: () => this.getEvents(),
       };
       // Fire-and-forget the confirm driver — errors here should not mask the
       // APDU response. Swallow + log if the API rejects (e.g. button endpoint
@@ -96,6 +102,23 @@ export class SpeculosTransport implements LedgerTransport {
     if (!res.ok) {
       throw new Error(`Speculos /button/${button} HTTP ${res.status}`);
     }
+  }
+
+  async clearEvents(): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/events`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!res.ok) throw new Error(`Speculos DELETE /events HTTP ${res.status}`);
+  }
+
+  async getEvents(): Promise<readonly { text: string }[]> {
+    const res = await fetch(`${this.baseUrl}/events`, {
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!res.ok) throw new Error(`Speculos GET /events HTTP ${res.status}`);
+    const body = (await res.json()) as { events: { text: string }[] };
+    return body.events;
   }
 }
 

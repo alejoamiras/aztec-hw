@@ -60,10 +60,11 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
     expect(v).toEqual({ major: 0, minor: 0, patch: 1 });
   });
 
-  test('GET_CAPS advertises CAPS_K1 only on L2 build', async () => {
+  test('GET_CAPS advertises CAPS_K1 | CAPS_CLEAR_SIGN on the L4 build', async () => {
     const caps = await provider.getCaps();
-    // CAPS_K1 = 1 << 0; CAPS_R1 / CAPS_CLEAR_SIGN / CAPS_GRUMPKIN reserved.
-    expect(caps).toBe(0x01);
+    /* L2 baseline advertised K1 (0x01) only. L4 build adds CLEAR_SIGN (0x04)
+     * so the host adapter can switch to the verified-calls streaming path. */
+    expect(caps).toBe(0x05);
   });
 
   test('GET_PUBLIC_KEY for Aztec path returns 64-byte uncompressed pubkey (X||Y)', async () => {

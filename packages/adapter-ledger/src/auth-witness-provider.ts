@@ -25,11 +25,11 @@
 import {
   AuthWitness,
   type CallIntent,
-  computeOuterHashForIntent,
   Fr,
   type IntentAuthWitnessProvider,
   packEcdsaSignature,
 } from '@aztec-hwwallet-poc/core';
+import { buildL4Manifest } from './l4-manifest.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
 import type { LedgerTransport } from './transport.ts';
 
@@ -71,15 +71,38 @@ export class LedgerEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvide
   }
 
   /**
-   * **Phase B.1 decorative clear-signing parity.** Compute `outer_hash` host-side
-   * from a `CallIntent`, then blind-sign on the device. Until L4 ports
-   * on-device Poseidon2, this offers no extra security guarantee beyond
-   * `createAuthWit` — the device still cannot verify the intent matches the
-   * outer_hash it is about to sign.
+   * **L4 verified-calls signing.** Builds the manifest from the intent, streams it
+   * to the device (`BEGIN_AUTHWIT` → `APPEND_CALL` × N), submits the host-claimed
+   * `outer_hash` via `FINALIZE_AND_SIGN`, and returns the signature *only* if the
+   * device's independent recomputation agrees with our claim. Mismatch → device
+   * rejects with `SW_HASH_MISMATCH` (never signs).
+   *
+   * Unlike the prior decorative path (`computeOuterHashForIntent`), this binds
+   * the on-device review screens to the same `outer_hash` that the host's Aztec
+   * verifier checks. The host is no longer the sole authority on what gets signed.
    */
   async createAuthWitFromIntent(intent: CallIntent): Promise<AuthWitness> {
-    const outerHash = await computeOuterHashForIntent(intent);
-    return this.signAndWrap(outerHash);
+    const manifest = await buildL4Manifest({
+      intent,
+      bip32Path: this.options.bip32Path,
+    });
+
+    /* Defensive: if any prior session is dangling on the device, ABORT clears it.
+     * BEGIN_AUTHWIT itself also zeroes state, but a stray APPEND from an aborted
+     * prior call won't be possible after this. Cheap, idempotent. */
+    await this.inner.abortAuthwit();
+
+    await this.inner.beginAuthwit(manifest.header);
+    for (const call of manifest.calls) {
+      await this.inner.appendCall(call);
+    }
+    const sig = await this.inner.finalizeAndSign(
+      manifest.claimedOuterHash,
+      this.options.signOptions ?? {},
+    );
+    const sigBytes = packEcdsaSignature(sig.r, sig.s);
+    const outerHash = Fr.fromBuffer(Buffer.from(manifest.claimedOuterHash));
+    return new AuthWitness(outerHash, Array.from(sigBytes));
   }
 
   private async signAndWrap(outerHash: Fr): Promise<AuthWitness> {

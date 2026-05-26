@@ -37,13 +37,27 @@ export const CURVE_ID = {
 
 export type CurveId = (typeof CURVE_ID)[keyof typeof CURVE_ID];
 
-/** Path-derivation scheme byte. */
+/** Path-derivation scheme byte.
+ *
+ * `DEFAULT (0)` is the only scheme the device honors at L4 — corresponds to
+ * `m/44'/AZTEC_COIN_TYPE'/account'/0/0`. SLIP_0013 and SLIP_44 explicit are
+ * reserved for future hierarchical/multi-key schemes; device rejects them today.
+ */
 export const PATH_SCHEME = {
+  DEFAULT: 0,
   SLIP_0013_AZTEC: 1,
   SLIP_44_AZTEC: 2,
 } as const;
 
 export type PathScheme = (typeof PATH_SCHEME)[keyof typeof PATH_SCHEME];
+
+/** Aztec capability bits returned by GET_CAPS (mirrors `caps_e` in ledger-app/src/types.h). */
+export const CAPS = {
+  K1: 1 << 0,
+  R1: 1 << 1,
+  CLEAR_SIGN: 1 << 2,
+  GRUMPKIN: 1 << 3,
+} as const;
 
 export interface AzKeyPath {
   readonly curveId: CurveId;
@@ -110,7 +124,8 @@ export interface AzManifestHeader {
   readonly key: AzKeyPath;
   readonly consumer: Uint8Array; // 32 B
   readonly chainId: Uint8Array; // 32 B
-  readonly authVersion: Uint8Array; // 32 B
+  /** Aztec `chainInfo.version` — renamed from `authVersion` per L4 deep-plan §2. */
+  readonly protocolVersion: Uint8Array; // 32 B
   readonly txNonce: Uint8Array; // 32 B
   /** Non-padding calls only; device checks ≤ APP_MAX_CALLS = 5. */
   readonly callCount: number;
@@ -120,9 +135,20 @@ export interface AzCall {
   readonly argsHash: Uint8Array; // 32 B
   readonly functionSelectorField: Uint8Array; // 32 B
   readonly targetAddressField: Uint8Array; // 32 B
-  /** Bit0 public; bit1 hide_msg_sender; bit2 static; bit3 padding. */
+  /** Bit0 public; bit1 hide_msg_sender; bit2 static. Bit3+ MUST be zero. */
   readonly flags: number;
 }
+
+/** Call flag bit layout (mirrors `L4_CALL_FLAG_*` in ledger-app/src/l4/wire.h). */
+export const CALL_FLAG = {
+  PUBLIC: 1 << 0,
+  HIDE_MSG_SENDER: 1 << 1,
+  STATIC: 1 << 2,
+} as const;
+
+export const APP_MAX_CALLS = 5;
+export const MANIFEST_VERSION = 1;
+export const FR_BYTES = 32;
 
 /**
  * Status words mirrored from `ledger-app/src/sw.h`. Aztec-specific codes use the

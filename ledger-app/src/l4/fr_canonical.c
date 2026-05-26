@@ -1,0 +1,18 @@
+#include "fr_canonical.h"
+
+/* BN254 Fr p (BE):
+ *   30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001 */
+static const uint8_t FR_P_BE[32] = {
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29,
+    0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58, 0x5d,
+    0x28, 0x33, 0xe8, 0x48, 0x79, 0xb9, 0x70, 0x91,
+    0x43, 0xe1, 0xf5, 0x93, 0xf0, 0x00, 0x00, 0x01,
+};
+
+bool l4_fr_is_canonical(const uint8_t bytes[L4_FR_BYTES]) {
+    for (int i = 0; i < 32; i++) {
+        if (bytes[i] < FR_P_BE[i]) return true;
+        if (bytes[i] > FR_P_BE[i]) return false;
+    }
+    return false; /* exactly equal to p → invalid */
+}

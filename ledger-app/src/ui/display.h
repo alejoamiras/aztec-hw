@@ -22,6 +22,13 @@
 int ui_display_blind_sign(void);
 
 /**
+ * L4 verified-calls review. Renders per-call target / selector / mode plus the
+ * device-recomputed outer_hash. Calls `finalize_after_approval` /
+ * `finalize_rejected` (in `handler/finalize_and_sign.h`) on user choice.
+ */
+int ui_display_verified_calls(void);
+
+/**
  * Optional public-key display flow. L2: simple confirm path → emit response.
  */
 int ui_display_pubkey(void);
