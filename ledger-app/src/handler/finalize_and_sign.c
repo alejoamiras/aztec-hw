@@ -137,9 +137,14 @@ int finalize_after_approval(void) {
         return reject(SW_HASH_MISMATCH);
     }
 
-    /* Sign sha256(outer_hash) via the K1 path. */
+    /* Sign sha256(recheck_outer) — sign the JUST-VALIDATED local value, NOT
+     * the mutable G_l4_session.outer_hash. Defeats a TOCTOU glitch between
+     * the compares above and the sha256/sign calls below: the dup-sig check
+     * cannot catch corruption that happens BEFORE the digest computes, since
+     * both sign calls would consume the same already-corrupted digest.
+     * (codex L4 final-review BLOCKER #1.) */
     uint8_t digest[32];
-    size_t digest_len = cx_hash_sha256(G_l4_session.outer_hash, L4_FR_BYTES, digest, sizeof(digest));
+    size_t digest_len = cx_hash_sha256(recheck_outer, L4_FR_BYTES, digest, sizeof(digest));
     if (digest_len != 32) {
         return reject(SWO_UNKNOWN);
     }

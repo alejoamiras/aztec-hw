@@ -57,18 +57,25 @@ async function paddingArgsHash(): Promise<AztecFr> {
 
 /** Lower a `StructuredFunctionCall` to the on-wire `AzCall`. */
 async function encodeRealCall(call: StructuredFunctionCall): Promise<AzCall> {
-  /* For now we only handle public calls whose `args` we hash via
-   * `computeCalldataHash([selector, ...args], PUBLIC_CALLDATA)`. Private calls
-   * use a different args_hash path (`fromArgs`); they'll be wired in a
-   * follow-up. The PoC demo always uses public transfer calls. */
+  /* PoC scope: public-call args_hash only — `computeCalldataHash([selector, ...args],
+   * PUBLIC_CALLDATA)`. Private calls use a different path (`fromArgs`) that we haven't
+   * implemented yet; silently accepting `isPublic=false` would produce a host/device-
+   * parity-consistent witness that the in-circuit verifier would still reject, because
+   * the args_hash binding would not match Aztec's encoding.
+   * (codex L4 final-review MAJOR #1: hard-reject until fromArgs lands.) */
   const isPublic = call.isPublic ?? true;
-  const argsFields: AztecFr[] = [call.selector, ...call.args];
-  const argsHash = isPublic
-    ? await poseidon2HashWithSeparator(argsFields, PUBLIC_CALLDATA)
-    : await poseidon2HashWithSeparator([...call.args], PUBLIC_CALLDATA); /* TODO: fromArgs path */
+  if (!isPublic) {
+    throw new Error(
+      'L4 PoC only supports isPublic=true calls; private-call args_hash ' +
+        '(fromArgs / computeVarArgsHash) is not wired yet. Set isPublic=true ' +
+        'or wait for the follow-up patch.',
+    );
+  }
 
-  let flags = 0;
-  if (isPublic) flags |= CALL_FLAG.PUBLIC;
+  const argsFields: AztecFr[] = [call.selector, ...call.args];
+  const argsHash = await poseidon2HashWithSeparator(argsFields, PUBLIC_CALLDATA);
+
+  let flags = CALL_FLAG.PUBLIC;
   if (call.hideMsgSender) flags |= CALL_FLAG.HIDE_MSG_SENDER;
   if (call.isStatic) flags |= CALL_FLAG.STATIC;
 
