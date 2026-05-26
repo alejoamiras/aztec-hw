@@ -1,0 +1,128 @@
+{
+  "_comment": "Clear-signing v0 manifest — single source of truth for the on-device contract registry and FT selector table. The codegen script (scripts/gen-clear-signing-v0.ts) reads this file and emits both C tables (ledger-app/src/clear_signing_v0/*.gen.{h,c}) and TS tables (packages/adapter-ledger/src/clear_signing_v0/*.generated.ts). Both must agree.\n\nSecurity model (codex final-review BLOCKER #2): this manifest is the reviewed authority. The codegen script verifies that the pinned @defi-wonderland/aztec-standards artifact and @aztec/noir-contracts.js SponsoredFPC artifact produce the SAME (selector, arg_count, visibility) tuple for every verb. CI fails on shape mismatch.",
+  "_meta": {
+    "version": 1,
+    "aztec_packages_pin": "2770bcb82d40323060c2f9c71aaf293b640efbef",
+    "aztec_standards_npm_pin": "@defi-wonderland/aztec-standards@4.2.0-aztecnr-rc.2",
+    "noir_contracts_js_pin": "see package.json @aztec/noir-contracts.js",
+    "deployments_source_METADATA_ONLY": "../../../nulo-2/packages/faucet/src/contracts/deployments.json (used at codegen-time for human cross-check ONLY; NOT a build dependency — values below are committed)"
+  },
+  "registry": [
+    {
+      "slot": 0,
+      "kind": "TOKEN",
+      "address": "0x2af7c3bdd0bee3d825ec40786dc479bfd85f749b45da78a20ddca8ec3e4347c5",
+      "symbol": "USDC",
+      "decimals": 6
+    },
+    {
+      "slot": 1,
+      "kind": "TOKEN",
+      "address": "0x060e0d2735b8e7d39fabe8c02b46535b33a7d4e685fa7e31e833b2edfdc26224",
+      "symbol": "ETH",
+      "decimals": 18
+    },
+    {
+      "slot": 2,
+      "kind": "SPONSOR",
+      "address": "0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257",
+      "symbol": "FPC",
+      "decimals": 0,
+      "_note": "Deterministic from SPONSORED_FPC_SALT=0; same address on mainnet/testnet/sandbox."
+    },
+    {
+      "slot": 3,
+      "kind": "EMPTY",
+      "address": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "symbol": "",
+      "decimals": 0
+    },
+    {
+      "slot": 4,
+      "kind": "EMPTY",
+      "address": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "symbol": "",
+      "decimals": 0
+    }
+  ],
+  "verbs": [
+    {
+      "verb": "TRANSFER_PRIV_PUB",
+      "kind": "TOKEN",
+      "artifact_source": "TOKEN_CONTRACT",
+      "function_name": "transfer_private_to_public",
+      "expected_selector_u32": "0xd4fcf9f6",
+      "is_public": false,
+      "args": ["from", "to", "amount", "nonce"],
+      "wire_arg_count": 4,
+      "display_name": "Transfer priv→pub"
+    },
+    {
+      "verb": "TRANSFER_PRIV_PRIV",
+      "kind": "TOKEN",
+      "artifact_source": "TOKEN_CONTRACT",
+      "function_name": "transfer_private_to_private",
+      "expected_selector_u32": "0xfe438afc",
+      "is_public": false,
+      "args": ["from", "to", "amount", "nonce"],
+      "wire_arg_count": 4,
+      "display_name": "Transfer priv→priv"
+    },
+    {
+      "verb": "TRANSFER_PUB_PRIV",
+      "kind": "TOKEN",
+      "artifact_source": "TOKEN_CONTRACT",
+      "function_name": "transfer_public_to_private",
+      "expected_selector_u32": "0x0c3d0a8e",
+      "is_public": false,
+      "args": ["from", "to", "amount", "nonce"],
+      "wire_arg_count": 4,
+      "display_name": "Transfer pub→priv"
+    },
+    {
+      "verb": "TRANSFER_PUB_PUB",
+      "kind": "TOKEN",
+      "artifact_source": "TOKEN_CONTRACT",
+      "function_name": "transfer_public_to_public",
+      "expected_selector_u32": "0xc47adea0",
+      "is_public": true,
+      "args": ["from", "to", "amount", "nonce"],
+      "wire_arg_count": 4,
+      "display_name": "Transfer pub→pub"
+    },
+    {
+      "verb": "MINT_PUB",
+      "kind": "TOKEN",
+      "artifact_source": "TOKEN_CONTRACT",
+      "function_name": "mint_to_public",
+      "expected_selector_u32": "0x451b5fae",
+      "is_public": true,
+      "args": ["to", "amount"],
+      "wire_arg_count": 2,
+      "display_name": "Mint public"
+    },
+    {
+      "verb": "MINT_PRIV",
+      "kind": "TOKEN",
+      "artifact_source": "TOKEN_CONTRACT",
+      "function_name": "mint_to_private",
+      "expected_selector_u32": "0x87f0f0a4",
+      "is_public": false,
+      "args": ["to", "amount"],
+      "wire_arg_count": 2,
+      "display_name": "Mint private"
+    },
+    {
+      "verb": "SPONSOR",
+      "kind": "SPONSOR",
+      "artifact_source": "SPONSORED_FPC_CONTRACT",
+      "function_name": "sponsor_unconditionally",
+      "expected_selector_u32": "0x23d77f89",
+      "is_public": false,
+      "args": [],
+      "wire_arg_count": 0,
+      "display_name": "Sponsor fee (private)",
+      "_note": "codex final-review BLOCKER #1: Aztec's SponsoredFeePaymentMethod builds this as a PRIVATE entrypoint (see aztec-packages/yarn-project/aztec.js/src/fee/sponsored_fee_payment.ts:29 sets type to FunctionType.PRIVATE). Empty-args private → args_hash = Fr.ZERO per computeVarArgsHash."
+    }
+  ]
+}

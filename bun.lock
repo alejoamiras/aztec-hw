@@ -38,6 +38,10 @@
         "@aztec/stdlib": "^4.2.1",
         "@noble/secp256k1": "^3.1.0",
       },
+      "devDependencies": {
+        "@aztec/noir-contracts.js": "4.2.1",
+        "@defi-wonderland/aztec-standards": "4.2.0-aztecnr-rc.2",
+      },
     },
     "packages/adapter-trezor": {
       "name": "@aztec-hwwallet-poc/adapter-trezor",
@@ -149,6 +153,8 @@
 
     "@aztec/l1-artifacts": ["@aztec/l1-artifacts@4.2.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-GYRY6+7W2q6QWxRRNlGfsUNfbDxQtf87ibIIXWFvy4fATNb5Zg8/j/lMcHMDHFKrej54WXdBRuH7FzhOqjSUMQ=="],
 
+    "@aztec/noir-contracts.js": ["@aztec/noir-contracts.js@4.2.1", "", { "dependencies": { "@aztec/aztec.js": "4.2.1", "tslib": "^2.4.0" } }, "sha512-58cTlx4wZuwNmbKFL+VY1IDQs7HTrv9a1NcKZJxEeUa7Om/K/qa0XjQxsqtdirVuLaEG4xoK+QlNQxLFaO3WYw=="],
+
     "@aztec/noir-noirc_abi": ["@aztec/noir-noirc_abi@4.2.1", "", { "dependencies": { "@aztec/noir-types": "4.2.1" } }, "sha512-pnl+3encABqkfmxCU4XsBwl1cZZHSj0Cg8qmH9MY5qlijMI0tbzfGtPhJDoCPBu4BMDbtvJZziB6u4kYUhXOAQ=="],
 
     "@aztec/noir-types": ["@aztec/noir-types@4.2.1", "", {}, "sha512-cMbftc+6SmHqudNop2csbZx2PzISF5oe/XYNsIPIvqsqBzJeqIPepSjcccJqjOWYGHhBPiEbx+/IVNv3Rwcm9Q=="],
@@ -230,6 +236,8 @@
     "@crate-crypto/node-eth-kzg-win32-arm64-msvc": ["@crate-crypto/node-eth-kzg-win32-arm64-msvc@0.10.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-tFKv02TG/JYsD4gvV0gTvjLqd09/4g/B37fCPXIuEFzq5LgIuWHu37hhQ6K8eIfoXZOTY3wqqkY1jTXYhs2sTA=="],
 
     "@crate-crypto/node-eth-kzg-win32-x64-msvc": ["@crate-crypto/node-eth-kzg-win32-x64-msvc@0.10.0", "", { "os": "win32", "cpu": "x64" }, "sha512-mYieW1mBesbLFRB2j4LdodpCkwIxZ8ZHZzzwV+MXqapI61B2SbH+FyMYQ5lJYqQeMHCY0ojq5ScW1zZj1uNGjA=="],
+
+    "@defi-wonderland/aztec-standards": ["@defi-wonderland/aztec-standards@4.2.0-aztecnr-rc.2", "", {}, "sha512-IjT/5VwWDM/iKTlhVFLMpF92giwZXlV6GnOtfnrYYd/xd/9sipxPiqqUI2thBg6M7jCFNSn79Sg3movlCdGD0w=="],
 
     "@fastify/busboy": ["@fastify/busboy@2.1.1", "", {}, "sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA=="],
 

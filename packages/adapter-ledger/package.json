@@ -8,6 +8,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "gen:clear-signing-v0": "bun scripts/gen-clear-signing-v0.ts",
+    "gen:clear-signing-v0:check": "bun scripts/gen-clear-signing-v0.ts --check",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
@@ -18,5 +20,9 @@
     "@aztec/foundation": "^4.2.1",
     "@aztec/stdlib": "^4.2.1",
     "@noble/secp256k1": "^3.1.0"
+  },
+  "devDependencies": {
+    "@aztec/noir-contracts.js": "4.2.1",
+    "@defi-wonderland/aztec-standards": "4.2.0-aztecnr-rc.2"
   }
 }
