@@ -30,3 +30,6 @@ test-results/
 # TS incremental build artifacts
 *.tsbuildinfo
 ledger-app/.git/
+
+# Host-side Poseidon2 CLI build artifact (rebuilt by `make`)
+ledger-app/tests/poseidon2_host/poseidon2_cli
