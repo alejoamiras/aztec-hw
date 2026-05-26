@@ -27,9 +27,13 @@ Demo scope (frozen by user):
 - Connect Ledger (Speculos for dev, WebHID for real device)
 - Deploy a Ledger-backed Aztec account (one-time, blind-sign)
 - Drip 1000 USDC into self (clear-signed, sponsored)
-- Transfer 100 USDC to alice (clear-signed, sponsored)
-- **Stretch**: private-to-private transfer (uses TRANSFER_PRIV_PRIV
-  verb already in M5 manifest — wrapper-only work)
+- **All four FT transfer modes exposed** (each clear-signed, sponsored):
+  - public → public (`transfer_public_to_public` / TRANSFER_PUB_PUB)
+  - private → public (`transfer_private_to_public` / TRANSFER_PRIV_PUB)
+  - public → private (`transfer_public_to_private` / TRANSFER_PUB_PRIV)
+  - private → private (`transfer_private_to_private` / TRANSFER_PRIV_PRIV)
+- All four verbs already in the M5 manifest — no codegen / device-firmware
+  work; only wrapper methods + UI buttons. Cut a mode only if M6.5 slips.
 - **Video**: user records; we hand off a working URL + flow checklist
 
 ## 2. Architecture
@@ -341,10 +345,18 @@ export class AztecLedgerSession {
 
   // Convenience wrappers.
   dripUsdc(amount: bigint): Promise<SubmitResult>;
-  transferUsdc(to: AztecAddress, amount: bigint): Promise<SubmitResult>;
 
-  // Public reads (no signing).
+  // All four FT transfer modes (all in M5 manifest; sponsor-merged
+  // payload; clear-signing path for each).
+  transferUsdcPubToPub(to: AztecAddress, amount: bigint): Promise<SubmitResult>;
+  transferUsdcPrivToPub(to: AztecAddress, amount: bigint): Promise<SubmitResult>;
+  transferUsdcPubToPriv(to: AztecAddress, amount: bigint): Promise<SubmitResult>;
+  transferUsdcPrivToPriv(to: AztecAddress, amount: bigint): Promise<SubmitResult>;
+
+  // Public reads (no signing). Private balance reads require notes sync
+  // — exposed for completeness but the UI labels them "may be stale".
   getPublicUsdcBalance(): Promise<bigint>;
+  getPrivateUsdcBalance(): Promise<bigint>;
   getPublicKeyXY(): Promise<{ x: Uint8Array; y: Uint8Array }>;
 
   disconnect(): Promise<void>;
@@ -751,10 +763,11 @@ Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
 6. Existing test suite stays green (74 pass before this arc → at least 74
    after, plus new unit tests for the wrapper + Dripper decoder).
 7. Both device builds clean (nanosp + nanox).
-8. **STRETCH (not blocking)**: private-to-private transfer wrapper
-   (`transferUsdcPrivate`) demoed on top of public flow. Verb already in
-   M5 manifest as TRANSFER_PRIV_PRIV (`transfer_private_to_private`);
-   only the convenience wrapper + UI button are new. Drop if M6.5 slips.
+8. **All four FT transfer modes demoed** (pub→pub, priv→pub, pub→priv,
+   priv→priv). All four verbs are already in the M5 manifest, so cost is
+   wrapper methods + UI buttons. If M6.5 slips, cut modes in this order:
+   priv→priv first (most demanding on notes sync), then pub→priv, then
+   priv→pub. pub→pub is the minimum.
 
 ## 12. Open questions
 
@@ -832,6 +845,7 @@ Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
 | User records the video — we hand off, not capture | user (post-critique) | Removes screen-recording tooling from our scope; we ship a working URL + flow checklist |
 | Reuse nulo's existing Dripper (no redeploy) | user (post-critique) | Already live at 0x172684be…7070 (salt=1337), minter for nulo USDC/ETH; manifest only PINS this address |
 | Private p2p transfer as STRETCH (not blocking M6.5) | user (post-critique) | TRANSFER_PRIV_PRIV verb already in M5 manifest; cost is wrapper method + UI button only; cut if M6.5 slips |
+| Expose ALL 4 FT transfer modes (not just pub→pub + priv→priv) | user (green-light turn) | All 4 verbs already registered in M5 (TRANSFER_PUB_PUB, PRIV_PUB, PUB_PRIV, PRIV_PRIV); marginal cost = 3 wrappers + UI buttons; cut order if slip: priv→priv → pub→priv → priv→pub → pub→pub stays |
 
 ## 15. Status
 
