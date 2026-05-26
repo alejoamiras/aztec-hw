@@ -42,9 +42,10 @@ jobs:
     if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Pin builder image by digest later (plan-final.md §7 supply-chain).
+    # Pinned by digest per plan-final.md §7 supply-chain hardening.
+    # Bump intentionally; do not use :latest in CI.
     container:
-      image: ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder-lite:latest
+      image: ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder-lite@sha256:852e1def30b4b8377120df663ebff91e9fd9b7548ee1fd8c0a3ff74df708a162
     strategy:
       fail-fast: false
       matrix:
@@ -96,11 +97,12 @@ jobs:
           path: ledger-app/bin/
 
       - name: Start Speculos
+        # Pinned by digest per plan-final.md §7 supply-chain hardening.
         run: |
           docker run -d --name speculos-aztec --rm \
             -p 5001:5000 -p 9999:9999 \
             -v "${GITHUB_WORKSPACE}/ledger-app/bin:/app" \
-            ghcr.io/ledgerhq/speculos:latest \
+            ghcr.io/ledgerhq/speculos@sha256:9b414c3bcaecb7638224156d36a702d66af812a0aa59ca203ce7b34cf4d590ca \
             --display headless --model nanosp \
             --apdu-port 9999 --api-port 5000 \
             /app/app.elf
