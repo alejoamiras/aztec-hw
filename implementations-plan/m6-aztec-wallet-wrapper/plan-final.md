@@ -28,7 +28,9 @@ Demo scope (frozen by user):
 - Deploy a Ledger-backed Aztec account (one-time, blind-sign)
 - Drip 1000 USDC into self (clear-signed, sponsored)
 - Transfer 100 USDC to alice (clear-signed, sponsored)
-- 30-90s screen-recorded video as primary deliverable
+- **Stretch**: private-to-private transfer (uses TRANSFER_PRIV_PRIV
+  verb already in M5 manifest — wrapper-only work)
+- **Video**: user records; we hand off a working URL + flow checklist
 
 ## 2. Architecture
 
@@ -197,6 +199,15 @@ user confirms once. **No frozen-witness needed.** [codex M5.7 confirmed this.]
 
 **Only `drip_to_public`. NOT `drip_to_private`.** Codex + opus agree:
 private dripping reopens private-note scope for zero demo value.
+
+**Reuse nulo's existing deployment — NO redeploy.** The Dripper at
+`0x172684be…7070` (salt=1337, deployer=zero) is already live and is the
+declared minter for both nulo USDC (`0x2af7c3bd…47c5`, salt=4242) and
+nulo ETH (`0x060e0d27…6224`, salt=4243). Source of truth:
+`/Users/alejoamiras/Projects/nulo/nulo-2/packages/faucet/src/contracts/deployments.json`.
+M6.0 only PINS these addresses into the device registry; it does not
+deploy anything. If nulo later redeploys to different addresses we need
+a manifest version bump + device-firmware update.
 
 ```jsonc
 // packages/adapter-ledger/clear-signing-v0/manifest.json updates
@@ -694,17 +705,25 @@ M6.4  Frontend skeleton                                  ~1.5d
       - Vite proxy for Speculos CORS
       - Mock-mode integration test (Playwright optional)
 
-M6.5  Alpha-testnet e2e + video                          ~3d (+1d buffer)
+M6.5  Alpha-testnet e2e + hand-off for recording         ~3d (+1d buffer)
       - PXE sync handling (progress UI)
       - Real testnet against rpc.testnet.aztec-labs.com
       - First Speculos, then real Ledger via WebHID
-      - Capture screen recording
+      - End-to-end smoke before hand-off (drip + public transfer)
+      - **STRETCH (only if all above is green ≥ 1d before video)**:
+        expose `transferUsdcPrivate(to, amount)` wrapper using
+        `transfer_private_to_private` (already in M5 manifest as
+        TRANSFER_PRIV_PRIV — no codegen work). Adds a third demo step.
+        Cut if it slips.
+      - **Video capture is handled by the user** — we hand off a
+        working demo URL + a checklist of the three (or four, with
+        stretch) flows to run. No screen-recording tooling on our side.
       - **Testnet-unavailable fallback** (invoke only if testnet
         stalls > 1 day): spin up aztec-sandbox locally AND manually
         deploy a SponsoredFPC at the same salt the M6.0 manifest pinned
         so the registry still resolves (`scripts/deploy-sandbox-fpc.ts`,
-        write only if invoked). Video record still produced; lessons
-        doc explicitly notes the fallback.
+        write only if invoked). Hand-off proceeds; lessons doc notes
+        the fallback.
 
 M6.6  Lessons doc                                        ~1d
       - Write up 4 PR suggestions with diffs + before/after
@@ -727,10 +746,15 @@ Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
 3. Lessons doc: 4 upstream PR-shaped suggestions with file:line citations,
    diffs, before/after code, rationale. Ready to file as GitHub issues.
 4. Codex post-impl review: zero BLOCKER findings.
-5. Demo video (≤90s) captures the full flow end-to-end.
+5. Demo runs reliably enough that the user can hit record once and
+   capture the full flow in a single take. (User handles recording.)
 6. Existing test suite stays green (74 pass before this arc → at least 74
    after, plus new unit tests for the wrapper + Dripper decoder).
 7. Both device builds clean (nanosp + nanox).
+8. **STRETCH (not blocking)**: private-to-private transfer wrapper
+   (`transferUsdcPrivate`) demoed on top of public flow. Verb already in
+   M5 manifest as TRANSFER_PRIV_PRIV (`transfer_private_to_private`);
+   only the convenience wrapper + UI button are new. Drop if M6.5 slips.
 
 ## 12. Open questions
 
@@ -805,6 +829,9 @@ Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
 | Fix `nsk_m` → `nhk_m` in key table | codex final-critique MINOR | Aztec uses NHK (nullifier hiding key) on the master path |
 | Add explicit RPC-trust paragraph in §8 | codex final-critique MINOR | Chain-oracle trust isn't defended by clear-signing |
 | M6.5 buffer to +1d AND sandbox-with-redeployed-FPC fallback | codex final-critique MINOR | Testnet stability is a known unknown; need a recordable demo path |
+| User records the video — we hand off, not capture | user (post-critique) | Removes screen-recording tooling from our scope; we ship a working URL + flow checklist |
+| Reuse nulo's existing Dripper (no redeploy) | user (post-critique) | Already live at 0x172684be…7070 (salt=1337), minter for nulo USDC/ETH; manifest only PINS this address |
+| Private p2p transfer as STRETCH (not blocking M6.5) | user (post-critique) | TRANSFER_PRIV_PRIV verb already in M5 manifest; cost is wrapper method + UI button only; cut if M6.5 slips |
 
 ## 15. Status
 
@@ -817,5 +844,5 @@ Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
 [▶] 4. Approval gate (surface to user)
 [ ] 5. Implementation (M6.0..M6.7)
 [ ] 6. Codex post-impl review
-[ ] 7. Record video + ship lessons doc
+[ ] 7. Hand off demo URL for user-recorded video + ship lessons doc
 ```
