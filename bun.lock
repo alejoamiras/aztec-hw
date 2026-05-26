@@ -4,10 +4,6 @@
   "workspaces": {
     "": {
       "name": "aztec-hardware-wallet-poc",
-      "dependencies": {
-        "@ledgerhq/hw-transport": "^6.35.2",
-        "@ledgerhq/hw-transport-webhid": "^6.35.2",
-      },
       "devDependencies": {
         "@biomejs/biome": "^2.4.15",
         "@commitlint/cli": "^21.0.1",
@@ -40,6 +36,8 @@
         "@aztec/aztec.js": "^4.2.1",
         "@aztec/foundation": "^4.2.1",
         "@aztec/stdlib": "^4.2.1",
+        "@ledgerhq/hw-transport": "^6.35.2",
+        "@ledgerhq/hw-transport-webhid": "^6.35.2",
         "@noble/secp256k1": "^3.1.0",
       },
       "devDependencies": {
