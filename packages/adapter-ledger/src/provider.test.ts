@@ -35,7 +35,7 @@ const AZTEC_PATH = defaultAztecPath(0);
  *   p00 "Blind signing ahead — press both to accept risk"   → both
  *   p01 "Aztec authorization" (intro)                       → right
  *   p02 "INTERNAL build - do NOT ..." (warning)             → right
- *   p03 "Path: m/44'/1666'/0'/0/0"                          → right
+ *   p03 "Path: m/44'/{AZTEC_COIN_TYPE}'/0'/0/0"             → right
  *   p04 "outer_hash (1/2): 4242…"                           → right
  *   p05 "outer_hash (2/2): …4242"                           → right
  *   p06 "Sign Aztec outer_hash?"                            → both ✓

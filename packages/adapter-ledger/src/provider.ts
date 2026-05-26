@@ -53,7 +53,10 @@ export class LedgerProvider {
     if (r.data.length !== 4) {
       throw new Error(`GET_CAPS: expected 4 bytes, got ${r.data.length}`);
     }
-    return (r.data[0]! << 24) | (r.data[1]! << 16) | (r.data[2]! << 8) | r.data[3]!;
+    // `>>> 0` coerces back to unsigned uint32 — JS bitwise OR yields signed int32,
+    // so if a future build sets bit 31 (e.g. CAPS_GRUMPKIN at high bit), the result
+    // would otherwise be negative. Same family of bug as AZTEC_COIN_TYPE_HARDENED.
+    return ((r.data[0]! << 24) | (r.data[1]! << 16) | (r.data[2]! << 8) | r.data[3]!) >>> 0;
   }
 
   async getPublicKey(bip32Path: readonly number[]): Promise<LedgerPublicKey> {

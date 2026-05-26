@@ -84,8 +84,15 @@ export const AZTEC_COIN_TYPE: number = (() => {
  */
 export const AZTEC_COIN_TYPE_HARDENED: number = (0x8000_0000 | AZTEC_COIN_TYPE) >>> 0;
 
-/** Mark a BIP-32 path component as hardened. Returns an unsigned uint32. */
+/**
+ * Mark a BIP-32 path component as hardened. Returns an unsigned uint32.
+ * Validates `index` to a uint31 — silent wrap on bad input would be a footgun
+ * (codex L2 follow-up #2 NIT).
+ */
 export function hardened(index: number): number {
+  if (!Number.isInteger(index) || index < 0 || index > 0x7fff_ffff) {
+    throw new Error(`hardened(): index must be a uint31, got ${index}`);
+  }
   return (0x8000_0000 | index) >>> 0;
 }
 

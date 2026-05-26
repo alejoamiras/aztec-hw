@@ -72,6 +72,12 @@ describe.skipIf(!SPECULOS_URL)(
       expect(Buffer.isBuffer(y)).toBe(true);
       expect(x!.length).toBe(32);
       expect(y!.length).toBe(32);
+
+      // Byte-equality against the device pubkey — proves the constructor args
+      // actually carry the same key the AuthWitness flow will sign under.
+      const pk = await contract.getProvider().getPublicKeyXY();
+      expect(Buffer.from(pk.x).equals(x!)).toBe(true);
+      expect(Buffer.from(pk.y).equals(y!)).toBe(true);
     });
 
     test('getAccount → BaseAccount.createAuthWit drives the real Aztec flow', async () => {
