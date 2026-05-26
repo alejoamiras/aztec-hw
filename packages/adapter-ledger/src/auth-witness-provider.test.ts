@@ -14,13 +14,13 @@ import {
   Fr,
   isIntentAuthWitnessProvider,
 } from '@aztec-hwwallet-poc/core';
-
+import { defaultAztecPath } from './apdu.ts';
 import { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
 import type { AutoConfirmContext } from './speculos-transport.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
-const AZTEC_PATH = [0x8000_002c, 0x8000_0682, 0x8000_0000, 0x0000_0000, 0x0000_0000] as const;
+const AZTEC_PATH = defaultAztecPath(0);
 
 async function approveReview(ctx: AutoConfirmContext): Promise<void> {
   await ctx.sleep(500);

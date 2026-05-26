@@ -1,34 +1,38 @@
 /**
- * L2 sharpened acceptance test (plan-final.md §223 / codex L2 BLOCKER #2).
+ * L2 sharpened acceptance test (plan-final.md §223).
  *
- * Reproduces the `EcdsaKBaseAccountContract.getAuthWitnessProvider()` flow from
- * `aztec-packages/yarn-project/accounts/src/ecdsa/ecdsa_k/account_contract.ts`
- * but swaps the in-memory private key for the Ledger device. Verifies that:
+ * Wires `LedgerEcdsaKAccountContract` into Aztec's real `DefaultAccountContract`
+ * + `BaseAccount` + `DefaultAccountEntrypoint` code path so the test exercises
+ * the actual framework, not a hand-rolled facsimile (codex L2 follow-up MAJOR).
  *
- *   1. The constructor args we'd emit for `EcdsaKAccount`'s Noir constructor
- *      (`[[...x], [...y]]`) match the shape the contract expects.
- *   2. The `AuthWitness` our provider produces has the exact `(outer_hash,
- *      [...r, ...s])` layout the contract's `verify_signature` Noir circuit
- *      reads.
- *   3. The sig verifies under `Ecdsa.verifySignature` — same barretenberg code
- *      path the Noir circuit uses, executed against the same byte-for-byte
- *      witness the contract would receive.
+ * What this covers:
+ *   1. `getInitializationFunctionAndArgs()` returns the same shape Aztec's
+ *      `EcdsaKAccount` Noir constructor expects (`[Buffer x32, Buffer y32]`).
+ *   2. `getAccount(completeAddress)` returns a real `BaseAccount`, and
+ *      `account.createAuthWit(intent, chainInfo)` drives the full path —
+ *      Aztec computes `outer_hash` from the intent + chainInfo internally,
+ *      then calls our `LedgerEcdsaKAuthWitnessProvider` to sign on the device.
+ *   3. The resulting `AuthWitness` carries `[...r, ...s]` exactly as the
+ *      contract's `verify_signature` Noir circuit reads, and the sig verifies
+ *      under Aztec barretenberg `Ecdsa.verifySignature`.
  *
- * What this DOESN'T cover (deferred — needs PXE + deployed account):
+ * What this DOESN'T cover (deferred — L3 / PXE work):
  *   - Running the actual Noir circuit against the witness.
- *   - The entrypoint's `inner_hash` → `outer_hash` derivation in a real tx.
- *   These land with L3 (golden vectors against a pinned aztec-packages commit).
+ *   - Deploying the EcdsaKAccount contract on a sandbox.
  */
 import { describe, expect, test } from 'bun:test';
 import { Ecdsa, EcdsaSignature } from '@aztec/foundation/crypto/ecdsa';
+import { AztecAddress } from '@aztec/stdlib/aztec-address';
+import { CompleteAddress } from '@aztec/stdlib/contract';
 import { Fr } from '@aztec-hwwallet-poc/core';
 
-import { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
+import { LedgerEcdsaKAccountContract } from './account-contract.ts';
+import { defaultAztecPath } from './apdu.ts';
 import type { AutoConfirmContext } from './speculos-transport.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
-const AZTEC_PATH = [0x8000_002c, 0x8000_0682, 0x8000_0000, 0x0000_0000, 0x0000_0000] as const;
+const AZTEC_PATH = defaultAztecPath(0);
 
 async function approveReview(ctx: AutoConfirmContext): Promise<void> {
   await ctx.sleep(500);
@@ -41,78 +45,71 @@ async function approveReview(ctx: AutoConfirmContext): Promise<void> {
   await ctx.press('both');
 }
 
-/**
- * Reproduce `EcdsaKBaseAccountContract.getInitializationFunctionAndArgs`.
- * Returns the Noir constructor args the deployed contract would receive.
- */
-async function buildEcdsaKAccountConstructorArgs(
-  provider: LedgerEcdsaKAuthWitnessProvider,
-): Promise<{
-  constructorName: string;
-  constructorArgs: [number[], number[]];
-}> {
-  const { x, y } = await provider.getPublicKeyXY();
-  return {
-    constructorName: 'constructor',
-    constructorArgs: [Array.from(x), Array.from(y)],
-  };
-}
+describe.skipIf(!SPECULOS_URL)(
+  'EcdsaKAccount real Aztec flow — Ledger replaces in-memory key',
+  () => {
+    const transport = new SpeculosTransport({ baseUrl: SPECULOS_URL ?? 'http://localhost:5000' });
+    const contract = new LedgerEcdsaKAccountContract(transport, {
+      bip32Path: AZTEC_PATH,
+      signOptions: { autoConfirm: approveReview },
+    });
 
-describe.skipIf(!SPECULOS_URL)('EcdsaKAccount flow — Ledger device replaces in-memory key', () => {
-  const transport = new SpeculosTransport({ baseUrl: SPECULOS_URL ?? 'http://localhost:5000' });
-  const provider = new LedgerEcdsaKAuthWitnessProvider(transport, {
-    bip32Path: AZTEC_PATH,
-    signOptions: { autoConfirm: approveReview },
-  });
+    test('getContractArtifact returns the Aztec EcdsaKAccount Noir artifact', async () => {
+      const artifact = await contract.getContractArtifact();
+      expect(artifact.name).toBe('EcdsaKAccount');
+      expect(artifact.functions.length).toBeGreaterThan(0);
+      // The Noir constructor takes ([u8; 32], [u8; 32]).
+      const ctor = artifact.functions.find((f) => f.name === 'constructor');
+      expect(ctor).toBeDefined();
+    });
 
-  test('constructor args match the EcdsaKAccount Noir contract shape ([[...x], [...y]])', async () => {
-    const init = await buildEcdsaKAccountConstructorArgs(provider);
-    expect(init.constructorName).toBe('constructor');
-    expect(init.constructorArgs).toHaveLength(2);
-    const [xArr, yArr] = init.constructorArgs;
-    expect(xArr).toHaveLength(32);
-    expect(yArr).toHaveLength(32);
-    for (const b of xArr) expect(Number.isInteger(b) && b >= 0 && b <= 255).toBe(true);
-    for (const b of yArr) expect(Number.isInteger(b) && b >= 0 && b <= 255).toBe(true);
-  });
+    test('getInitializationFunctionAndArgs binds device pubkey to the contract constructor', async () => {
+      const init = await contract.getInitializationFunctionAndArgs();
+      expect(init.constructorName).toBe('constructor');
+      expect(init.constructorArgs).toHaveLength(2);
+      const [x, y] = init.constructorArgs;
+      expect(Buffer.isBuffer(x)).toBe(true);
+      expect(Buffer.isBuffer(y)).toBe(true);
+      expect(x!.length).toBe(32);
+      expect(y!.length).toBe(32);
+    });
 
-  test('createAuthWit(messageHash) returns AuthWitness in the exact shape the contract reads', async () => {
-    // Pick a 31-byte messageHash so it always fits in BN254's field modulus.
-    const messageHash = new Fr(
-      0x73_6967_6e64_656d_6f31_3233_3435_3637_3839_3061_6263_6465_6630_3132_3334_5556n,
-    );
-    const aw = await provider.createAuthWit(messageHash);
+    test('getAccount → BaseAccount.createAuthWit drives the real Aztec flow', async () => {
+      // CompleteAddress.random() gives a syntactically valid account address +
+      // public keys + partial address. Sufficient for the auth-witness path
+      // since the entrypoint never derefs the on-chain account contract here.
+      const completeAddress = await CompleteAddress.random();
+      const account = contract.getAccount(completeAddress);
 
-    // Exact shape contract reads: `AuthWitness(messageHash, [...r, ...s])`.
-    expect(aw.requestHash.toString()).toBe(messageHash.toString());
-    expect(aw.witness).toHaveLength(64);
-    for (const fr of aw.witness) {
-      // Each witness entry must be a `Field` carrying a u8 (Noir constructor expects [u8; 64]).
-      const v = fr.toBigInt();
-      expect(v >= 0n && v <= 255n).toBe(true);
-    }
-  });
+      // Build an IntentInnerHash: { consumer, innerHash }. Aztec's BaseAccount
+      // computes outer_hash = H(consumer, chainId, version, innerHash) before
+      // delegating to our provider's createAuthWit(outer_hash).
+      const consumer = AztecAddress.fromBigInt(0xacc0_1234n);
+      const innerHash = new Fr(0xc0_ffee_c0_ffee_dead_beefn);
+      const chainInfo = { chainId: new Fr(1n), version: new Fr(1n) };
 
-  test('AuthWitness sig verifies via Aztec barretenberg Ecdsa — same as the in-circuit verifier', async () => {
-    const messageHash = new Fr(
-      0x73_6967_6e64_656d_6f31_3233_3435_3637_3839_3061_6263_6465_6630_3132_3334_5556n,
-    );
-    const aw = await provider.createAuthWit(messageHash);
-    const { x, y } = await provider.getPublicKeyXY();
+      const authWit = await account.createAuthWit({ consumer, innerHash }, chainInfo);
 
-    // Extract r||s exactly as EcdsaKAccount Noir would.
-    const sigBytes = Uint8Array.from(aw.witness.map((fr) => Number(fr.toBigInt())));
-    const sig = new EcdsaSignature(
-      Buffer.from(sigBytes.slice(0, 32)),
-      Buffer.from(sigBytes.slice(32, 64)),
-      Buffer.from([0]), // v unused for verify
-    );
+      // The returned witness is r||s — the same shape EcdsaKAccount Noir reads.
+      expect(authWit.witness).toHaveLength(64);
+      for (const fr of authWit.witness) {
+        const v = fr.toBigInt();
+        expect(v >= 0n && v <= 255n).toBe(true);
+      }
 
-    const pubKeyXY = Buffer.concat([Buffer.from(x), Buffer.from(y)]);
-    // Aztec's Ecdsa expects the RAW message — it sha256-prehashes internally,
-    // mirroring the Noir circuit's `sha256_to_bytes(outer_hash.to_be_bytes::<32>())`.
-    const verifier = new Ecdsa('secp256k1');
-    const ok = await verifier.verifySignature(messageHash.toBuffer(), pubKeyXY, sig);
-    expect(ok).toBe(true);
-  });
-});
+      // Verify against the device's pubkey using Aztec's own Ecdsa class —
+      // the message Aztec signed is `authWit.requestHash` (the outer_hash).
+      const { x, y } = await contract.getProvider().getPublicKeyXY();
+      const pubKeyXY = Buffer.concat([Buffer.from(x), Buffer.from(y)]);
+      const sigBytes = Uint8Array.from(authWit.witness.map((fr) => Number(fr.toBigInt())));
+      const sig = new EcdsaSignature(
+        Buffer.from(sigBytes.slice(0, 32)),
+        Buffer.from(sigBytes.slice(32, 64)),
+        Buffer.from([0]),
+      );
+      const verifier = new Ecdsa('secp256k1');
+      const ok = await verifier.verifySignature(authWit.requestHash.toBuffer(), pubKeyXY, sig);
+      expect(ok).toBe(true);
+    });
+  },
+);

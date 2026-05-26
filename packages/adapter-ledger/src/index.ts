@@ -11,12 +11,19 @@
  */
 
 export {
+  LedgerEcdsaKAccountContract,
+  type LedgerEcdsaKAccountContractOptions,
+} from './account-contract.ts';
+export {
+  AZTEC_COIN_TYPE,
+  AZTEC_COIN_TYPE_HARDENED,
   type AzCall,
   type AzKeyPath,
   type AzManifestHeader,
   CLA,
   CURVE_ID,
   type CurveId,
+  defaultAztecPath,
   INS,
   type Ins,
   PATH_SCHEME,

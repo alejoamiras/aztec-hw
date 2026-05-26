@@ -20,6 +20,8 @@
 
 import { Ecdsa, EcdsaSignature } from '@aztec/foundation/crypto/ecdsa';
 import {
+  AZTEC_COIN_TYPE,
+  defaultAztecPath,
   LedgerEcdsaKAuthWitnessProvider,
   SpeculosTransport,
 } from '@aztec-hwwallet-poc/adapter-ledger';
@@ -46,9 +48,7 @@ const BACKEND = (process.env.AZTEC_HW_TRANSPORT ?? 'fake') as Backend;
 const TREZOR_PATH = process.env.TREZOR_PATH;
 const SPECULOS_URL = process.env.SPECULOS_URL ?? 'http://localhost:5001';
 
-const AZTEC_LEDGER_PATH = [
-  0x8000_002c, 0x8000_0682, 0x8000_0000, 0x0000_0000, 0x0000_0000,
-] as const;
+const AZTEC_LEDGER_PATH = defaultAztecPath(0);
 
 interface BackendHandle {
   readonly name: string;
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     const identity = buildAztecIdentity({ accountIndex: ACCOUNT_INDEX });
     console.log(`Trezor identity wire form: ${serializeIdentity(identity)}\n`);
   } else if (BACKEND === 'ledger') {
-    console.log(`Ledger BIP-32 path: m/44'/1666'/0'/0/0\n`);
+    console.log(`Ledger BIP-32 path: m/44'/${AZTEC_COIN_TYPE}'/0'/0/0\n`);
   }
 
   const intent = buildIntent();

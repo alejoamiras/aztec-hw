@@ -63,13 +63,39 @@ export interface AzKeyPath {
 export const AZTEC_COIN_TYPE: number = (() => {
   const raw = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
     ?.env?.AZTEC_COIN_TYPE;
-  if (!raw) return 1666;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 0 || n > 0x7fff_ffff) {
-    throw new Error(`AZTEC_COIN_TYPE env must be a uint31, got ${raw}`);
+  if (raw === undefined || raw === '') return 1666;
+  // Strict decimal-only — rejects "1666junk", " 1666 ", "0x10", etc.
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new Error(`AZTEC_COIN_TYPE env must be a decimal uint31, got "${raw}"`);
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 0x7fff_ffff) {
+    throw new Error(`AZTEC_COIN_TYPE env must fit in uint31, got "${raw}"`);
   }
   return n;
 })();
+
+/**
+ * Hardened SLIP-44 coin-type path component (`0x8000_0000 | AZTEC_COIN_TYPE`).
+ *
+ * `>>> 0` is the canonical idiom to coerce JS's signed-int32 bitwise result
+ * back to an unsigned uint32 — without it, `0x80000000 | 1666` returns
+ * `-2147481982`, which the strict path encoder correctly rejects.
+ */
+export const AZTEC_COIN_TYPE_HARDENED: number = (0x8000_0000 | AZTEC_COIN_TYPE) >>> 0;
+
+/** Mark a BIP-32 path component as hardened. Returns an unsigned uint32. */
+export function hardened(index: number): number {
+  return (0x8000_0000 | index) >>> 0;
+}
+
+/** Default Aztec BIP-32 path `m/44'/AZTEC_COIN_TYPE'/{account}'/0/0`. */
+export function defaultAztecPath(account = 0): readonly number[] {
+  if (!Number.isInteger(account) || account < 0 || account > 0x7fff_ffff) {
+    throw new Error(`account must be a uint31, got ${account}`);
+  }
+  return [hardened(44), AZTEC_COIN_TYPE_HARDENED, hardened(account), 0x0000_0000, 0x0000_0000];
+}
 
 export interface AzManifestHeader {
   /** Bumps when the manifest wire layout changes. Device rejects unknown versions. */

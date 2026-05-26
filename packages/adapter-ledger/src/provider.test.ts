@@ -17,19 +17,15 @@ import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { Ecdsa, EcdsaSignature } from '@aztec/foundation/crypto/ecdsa';
 import { Point, verify } from '@noble/secp256k1';
-
+import { defaultAztecPath } from './apdu.ts';
 import { LedgerProvider } from './provider.ts';
 import type { AutoConfirmContext } from './speculos-transport.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
-const AZTEC_PATH = [
-  0x8000_002c, // 44'
-  0x8000_0682, // 1666' (Aztec coin-type placeholder)
-  0x8000_0000, // 0'
-  0x0000_0000, // 0
-  0x0000_0000, // 0
-] as const;
+// Single source of truth for the Aztec derivation path — derived from
+// AZTEC_COIN_TYPE so this test honours the env override (codex L2 MINOR #6).
+const AZTEC_PATH = defaultAztecPath(0);
 
 /**
  * Speculos auto-confirm driver for `nbgl_useCaseReviewBlindSigning` on Nano S+.

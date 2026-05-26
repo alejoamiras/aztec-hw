@@ -32,7 +32,10 @@
       "version": "0.0.1",
       "dependencies": {
         "@aztec-hwwallet-poc/core": "workspace:*",
+        "@aztec/accounts": "^4.2.1",
+        "@aztec/aztec.js": "^4.2.1",
         "@aztec/foundation": "^4.2.1",
+        "@aztec/stdlib": "^4.2.1",
         "@noble/secp256k1": "^3.1.0",
       },
     },
@@ -127,6 +130,8 @@
     "@aztec-hwwallet-poc/core": ["@aztec-hwwallet-poc/core@workspace:packages/core"],
 
     "@aztec-hwwallet-poc/demo": ["@aztec-hwwallet-poc/demo@workspace:apps/demo"],
+
+    "@aztec/accounts": ["@aztec/accounts@4.2.1", "", { "dependencies": { "@aztec/aztec.js": "4.2.1", "@aztec/entrypoints": "4.2.1", "@aztec/ethereum": "4.2.1", "@aztec/foundation": "4.2.1", "@aztec/stdlib": "4.2.1", "tslib": "^2.4.0" } }, "sha512-OSaIZR/NxrxX/1hjUS9Uqj7EN4PjYFZ9xCjmf8KZTdF8toJXcKUCk4LWTG/6Slq9jv2qSzVOJjFYdl2RpVfffQ=="],
 
     "@aztec/aztec.js": ["@aztec/aztec.js@4.2.1", "", { "dependencies": { "@aztec/constants": "4.2.1", "@aztec/entrypoints": "4.2.1", "@aztec/ethereum": "4.2.1", "@aztec/foundation": "4.2.1", "@aztec/l1-artifacts": "4.2.1", "@aztec/protocol-contracts": "4.2.1", "@aztec/stdlib": "4.2.1", "axios": "^1.13.5", "tslib": "^2.4.0", "viem": "npm:@aztec/viem@2.38.2", "zod": "^3.23.8" } }, "sha512-YXduQzwYxW/tPA0sSNC8ZKi9Mgsnc7GItvO06ghcDW7tFtFFAsJEQDqnfMfBRaHruDJW8p8bKTZ6PDYNaVVk1g=="],
 

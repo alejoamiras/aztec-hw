@@ -76,8 +76,11 @@ int handler_sign_outer_hash(buffer_t *cdata) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
     }
     // BIP-32 path bounds — must be non-empty (defense vs. malformed APDU; codex L2 BLOCKER #1).
-    if (G_context.bip32_path_len == 0 || G_context.bip32_path_len > MAX_BIP32_PATH_LEN) {
+    if (G_context.bip32_path_len == 0) {
         return io_send_sw(SW_INVALID_PATH_SCHEME);
+    }
+    if (G_context.bip32_path_len > MAX_BIP32_PATH_LEN) {
+        return io_send_sw(SW_BIP32_TOO_LONG);
     }
     if (!buffer_read_bip32_path(cdata, G_context.bip32_path, G_context.bip32_path_len)) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
