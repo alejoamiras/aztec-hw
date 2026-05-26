@@ -25,6 +25,11 @@ const TOKEN_ARTIFACT_PATH = resolve(
   'packages/adapter-ledger/node_modules/@defi-wonderland/aztec-standards/target/token_contract-Token.json',
 );
 
+const DRIPPER_ARTIFACT_PATH = resolve(
+  REPO_ROOT,
+  'packages/adapter-ledger/node_modules/@defi-wonderland/aztec-standards/target/dripper-Dripper.json',
+);
+
 const OUT_C_DIR = resolve(REPO_ROOT, 'ledger-app/src/clear_signing_v0');
 const OUT_TS_DIR = resolve(REPO_ROOT, 'packages/adapter-ledger/src/clear_signing_v0');
 
@@ -32,7 +37,7 @@ const CHECK_MODE = process.argv.includes('--check');
 
 interface RegistryEntry {
   slot: number;
-  kind: 'TOKEN' | 'SPONSOR' | 'EMPTY';
+  kind: 'TOKEN' | 'SPONSOR' | 'DRIPPER' | 'EMPTY';
   address: string;
   symbol: string;
   decimals: number;
@@ -40,14 +45,15 @@ interface RegistryEntry {
 
 interface VerbEntry {
   verb: string;
-  kind: 'TOKEN' | 'SPONSOR';
-  artifact_source: 'TOKEN_CONTRACT' | 'SPONSORED_FPC_CONTRACT';
+  kind: 'TOKEN' | 'SPONSOR' | 'DRIPPER';
+  artifact_source: 'TOKEN_CONTRACT' | 'SPONSORED_FPC_CONTRACT' | 'DRIPPER_CONTRACT';
   function_name: string;
   expected_selector_u32: string;
   is_public: boolean;
   args: string[];
   wire_arg_count: number;
   display_name: string;
+  amount_type?: 'u64' | 'u128' | 'field';
 }
 
 interface Manifest {
@@ -77,6 +83,10 @@ const tokenArtifact = JSON.parse(readFileSync(TOKEN_ARTIFACT_PATH, 'utf-8')) as 
   functions: AbiFunction[];
 };
 
+const dripperArtifact = JSON.parse(readFileSync(DRIPPER_ARTIFACT_PATH, 'utf-8')) as {
+  functions: AbiFunction[];
+};
+
 const sponsoredFpcArtifact = SponsoredFPCContract.artifact as {
   functions: { name: string; parameters: AbiParam[]; custom_attributes?: string[] }[];
 };
@@ -91,6 +101,12 @@ function findArtifactFunction(verb: VerbEntry): {
     const fn = tokenArtifact.functions.find((f) => f.name === verb.function_name);
     if (!fn)
       throw new Error(`[fail-closed] Token artifact missing function: ${verb.function_name}`);
+    return { parameters: fn.abi.parameters, custom_attributes: fn.custom_attributes };
+  }
+  if (verb.artifact_source === 'DRIPPER_CONTRACT') {
+    const fn = dripperArtifact.functions.find((f) => f.name === verb.function_name);
+    if (!fn)
+      throw new Error(`[fail-closed] Dripper artifact missing function: ${verb.function_name}`);
     return { parameters: fn.abi.parameters, custom_attributes: fn.custom_attributes };
   }
   if (verb.artifact_source === 'SPONSORED_FPC_CONTRACT') {
@@ -121,12 +137,12 @@ async function crossCheckVerb(verb: VerbEntry): Promise<void> {
 
   /* Visibility check — fail-closed.
    *
-   * Token artifact: `custom_attributes` carries "abi_private" or "abi_public".
+   * Token + Dripper artifacts: `custom_attributes` carries "abi_private" or "abi_public".
    * SponsoredFPC artifact: no custom_attributes for v0; hardcode the assertion
    * to match `aztec-packages/yarn-project/aztec.js/src/fee/sponsored_fee_payment.ts:29`
    * which builds the call with FunctionType.PRIVATE. */
   const expectedAttr = verb.is_public ? 'abi_public' : 'abi_private';
-  if (verb.artifact_source === 'TOKEN_CONTRACT') {
+  if (verb.artifact_source === 'TOKEN_CONTRACT' || verb.artifact_source === 'DRIPPER_CONTRACT') {
     const attrs = custom_attributes ?? [];
     if (!attrs.includes(expectedAttr)) {
       throw new Error(
@@ -144,7 +160,7 @@ async function crossCheckVerb(verb: VerbEntry): Promise<void> {
 
   /* Wire-arg-count check — fail-closed.
    *
-   * Tokens with PRIVATE entrypoint annotation have a prepended `inputs`
+   * Tokens/Dripper with PRIVATE entrypoint annotation have a prepended `inputs`
    * PrivateContextInputs in their artifact parameters; the user-visible wire
    * args are `parameters.length - 1` in that case. PUBLIC entrypoints have no
    * prepended context param. SponsoredFPC has zero wire args.
@@ -157,10 +173,11 @@ async function crossCheckVerb(verb: VerbEntry): Promise<void> {
   } else if (verb.is_public) {
     expectedWireCount = parameters.length;
   } else {
-    // Private Token entrypoint: artifact prepends `inputs` PrivateContextInputs
+    // Private Token/Dripper entrypoint: artifact prepends `inputs` PrivateContextInputs
+    const ownerLabel = verb.artifact_source === 'TOKEN_CONTRACT' ? 'Token' : 'Dripper';
     if (parameters.length === 0 || parameters[0]?.name !== 'inputs') {
       throw new Error(
-        `[fail-closed] Private Token verb=${verb.verb} expected first artifact param "inputs"; got ${parameters[0]?.name ?? '(none)'}`,
+        `[fail-closed] Private ${ownerLabel} verb=${verb.verb} expected first artifact param "inputs"; got ${parameters[0]?.name ?? '(none)'}`,
       );
     }
     expectedWireCount = parameters.length - 1;
@@ -226,6 +243,7 @@ typedef enum {
     CS_KIND_EMPTY = 0,
     CS_KIND_TOKEN = 1,
     CS_KIND_SPONSOR = 2,
+    CS_KIND_DRIPPER = 3,
 } cs_contract_kind_e;
 
 typedef struct {
@@ -241,9 +259,21 @@ extern const cs_registry_entry_t CS_REGISTRY[CS_REGISTRY_SLOTS];
 /* Returns matching entry pointer (kind != EMPTY) or NULL. */
 const cs_registry_entry_t *cs_registry_lookup(const uint8_t target[32]);
 `;
+  const kindToNum = (k: RegistryEntry['kind']): number => {
+    switch (k) {
+      case 'EMPTY':
+        return 0;
+      case 'TOKEN':
+        return 1;
+      case 'SPONSOR':
+        return 2;
+      case 'DRIPPER':
+        return 3;
+    }
+  };
   const entries = manifest.registry
     .map((e) => {
-      const kindNum = e.kind === 'EMPTY' ? 0 : e.kind === 'TOKEN' ? 1 : 2;
+      const kindNum = kindToNum(e.kind);
       const addrBytes = bytesFromBe32Hex(e.address);
       const sym = cSymbolLiteral(e.symbol, SYMBOL_LEN);
       return `  { /* slot ${e.slot} */ .kind = ${kindNum}, .address = ${fmtByteArray(addrBytes)}, .symbol = ${sym}, .decimals = ${e.decimals}, ._reserved = {0,0,0} },`;
@@ -301,9 +331,19 @@ extern const cs_verb_entry_t CS_VERBS[CS_VERB_COUNT];
 const cs_verb_entry_t *cs_verb_lookup(uint8_t kind, uint32_t selector_u32);
 `;
 
+  const verbKindToNum = (k: VerbEntry['kind']): number => {
+    switch (k) {
+      case 'TOKEN':
+        return 1;
+      case 'SPONSOR':
+        return 2;
+      case 'DRIPPER':
+        return 3;
+    }
+  };
   const entries = manifest.verbs
     .map((v) => {
-      const kindNum = v.kind === 'TOKEN' ? 1 : 2;
+      const kindNum = verbKindToNum(v.kind);
       const sel = v.expected_selector_u32;
       return `  { .selector_u32 = ${sel}u, .kind = ${kindNum}, .verb = CS_VERB_${v.verb}, .is_public = ${v.is_public ? 1 : 0}, .wire_arg_count = ${v.wire_arg_count} },`;
     })
@@ -338,7 +378,7 @@ function emitRegistryTs(): string {
  * Single source of truth: clear-signing-v0/manifest.json
  */
 
-export type CsContractKind = 'EMPTY' | 'TOKEN' | 'SPONSOR';
+export type CsContractKind = 'EMPTY' | 'TOKEN' | 'SPONSOR' | 'DRIPPER';
 
 export interface CsRegistryEntry {
   readonly kind: CsContractKind;
@@ -352,9 +392,8 @@ ${entries}
 ] as const;
 
 export function csRegistryLookup(addressHex: string): CsRegistryEntry | undefined {
-  const normalized = addressHex.toLowerCase().startsWith('0x')
-    ? addressHex.toLowerCase()
-    : '0x' + addressHex.toLowerCase();
+  const lower = addressHex.toLowerCase();
+  const normalized = lower.startsWith('0x') ? lower : \`0x\${lower}\`;
   return CS_REGISTRY.find((e) => e.kind !== 'EMPTY' && e.address.toLowerCase() === normalized);
 }
 `;
@@ -374,7 +413,7 @@ ${manifest.verbs.map((v) => `  | '${v.verb}'`).join('\n')};
 
 export interface CsVerbEntry {
   readonly verb: CsVerb;
-  readonly kind: 'TOKEN' | 'SPONSOR';
+  readonly kind: 'TOKEN' | 'SPONSOR' | 'DRIPPER';
   readonly selector_u32: number;
   readonly is_public: boolean;
   readonly wire_arg_count: number;
@@ -386,7 +425,10 @@ export const CS_VERBS: readonly CsVerbEntry[] = [
 ${entries}
 ] as const;
 
-export function csVerbLookup(kind: 'TOKEN' | 'SPONSOR', selectorU32: number): CsVerbEntry | undefined {
+export function csVerbLookup(
+  kind: 'TOKEN' | 'SPONSOR' | 'DRIPPER',
+  selectorU32: number,
+): CsVerbEntry | undefined {
   return CS_VERBS.find((v) => v.kind === kind && v.selector_u32 === selectorU32);
 }
 `;
@@ -415,12 +457,30 @@ async function main(): Promise<void> {
   ];
 
   if (CHECK_MODE) {
-    /* Drift detector: compare existing files against fresh-generated. */
+    /* Drift detector: compare existing files against fresh-generated.
+     * For TS files, the on-disk version is biome-formatted post-write
+     * (see the format step at the end of main()), so we must pipe the
+     * fresh content through biome to compare apples-to-apples. */
+    const { spawnSync } = await import('node:child_process');
+    const formatStdin = (filePath: string, src: string): string => {
+      const r = spawnSync('bunx', ['biome', 'format', `--stdin-file-path=${filePath}`], {
+        input: src,
+        encoding: 'utf-8',
+        cwd: REPO_ROOT,
+      });
+      if (r.status !== 0) {
+        throw new Error(
+          `biome format --stdin failed for ${filePath}: ${r.stderr ?? '(no stderr)'}`,
+        );
+      }
+      return r.stdout;
+    };
     let drift = false;
     for (const { path, content } of targets) {
+      const expected = path.endsWith('.ts') ? formatStdin(path, content) : content;
       try {
         const existing = readFileSync(path, 'utf-8');
-        if (existing !== content) {
+        if (existing !== expected) {
           console.error(`DRIFT: ${path}`);
           drift = true;
         }
@@ -449,6 +509,20 @@ async function main(): Promise<void> {
   for (const { path, content } of targets) {
     writeFileSync(path, content);
     console.log(`wrote ${path}`);
+  }
+
+  /* Format generated TS files so they match biome's expectations.
+   * C files are not biome-formatted; only .ts outputs need this pass. */
+  const tsTargets = targets.filter((t) => t.path.endsWith('.ts')).map((t) => t.path);
+  if (tsTargets.length > 0) {
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync('bunx', ['biome', 'format', '--write', ...tsTargets], {
+      stdio: 'inherit',
+      cwd: REPO_ROOT,
+    });
+    if (r.status !== 0) {
+      throw new Error('biome format --write failed on generated TS files');
+    }
   }
 }
 

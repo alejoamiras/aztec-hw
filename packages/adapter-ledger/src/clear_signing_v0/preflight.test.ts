@@ -13,10 +13,13 @@ import { PreflightError, preflightIntent } from './preflight.ts';
 
 const USDC =
   AztecAddress.fromBigInt(0x2af7c3bdd0bee3d825ec40786dc479bfd85f749b45da78a20ddca8ec3e4347c5n);
+const DRIPPER =
+  AztecAddress.fromBigInt(0x172684be7d86acff9c0e16b15e3f34647e5c8c26f0838a0872df7f61ddcb7070n);
 const CONSUMER = AztecAddress.fromBigInt(0xacc0_dead_beefn);
 const RECIPIENT = AztecAddress.fromBigInt(0xabcd_ef12_3456n);
 const SEL_TRANSFER_PUB_PUB = new Fr(0xc47adea0n);
 const SEL_MINT_PUB = new Fr(0x451b5fae);
+const SEL_DRIP_PUB = new Fr(0xbe46ea53n);
 
 function callIntent(call: StructuredFunctionCall): CallIntent {
   return {
@@ -130,6 +133,54 @@ describe('preflightIntent', () => {
     );
     expect(decoded.length).toBe(1);
     expect(decoded[0]!.verbEntry.verb).toBe('MINT_PUB');
+  });
+
+  test('accepts DRIP_PUB with TOKEN-kind args[0] (M6.0)', () => {
+    const decoded = preflightIntent(
+      callIntent({
+        contractAddress: DRIPPER,
+        selector: SEL_DRIP_PUB,
+        args: [USDC.toField(), new Fr(1_000_000_000n)],
+        isPadding: false,
+        isPublic: true,
+      }),
+    );
+    expect(decoded.length).toBe(1);
+    expect(decoded[0]!.verbEntry.verb).toBe('DRIP_PUB');
+    expect(decoded[0]!.registryEntry.symbol).toBe('DRIP');
+  });
+
+  test('rejects DRIP_PUB whose args[0] is not a TOKEN slot (SW_REGISTRY_MISS)', () => {
+    expect(() =>
+      preflightIntent(
+        callIntent({
+          contractAddress: DRIPPER,
+          selector: SEL_DRIP_PUB,
+          /* args[0] is an unknown address, not a registered TOKEN */
+          args: [AztecAddress.fromBigInt(0xdeadbeefn).toField(), new Fr(1n)],
+          isPadding: false,
+          isPublic: true,
+        }),
+      ),
+    ).toThrow(/SW_REGISTRY_MISS|not a TOKEN-kind/);
+  });
+
+  test('rejects DRIP_PUB whose args[0] resolves to the SponsoredFPC (kind=SPONSOR)', () => {
+    /* Sponsor is registered but is_token=false; this catches a mistake where
+     * the caller swaps args[0] for the FPC address to trick the device. */
+    const SPONSOR =
+      AztecAddress.fromBigInt(0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257n);
+    expect(() =>
+      preflightIntent(
+        callIntent({
+          contractAddress: DRIPPER,
+          selector: SEL_DRIP_PUB,
+          args: [SPONSOR.toField(), new Fr(1n)],
+          isPadding: false,
+          isPublic: true,
+        }),
+      ),
+    ).toThrow(/SW_REGISTRY_MISS|not a TOKEN-kind/);
   });
 
   test('typed PreflightError carries deviceSwCode + callIndex', () => {

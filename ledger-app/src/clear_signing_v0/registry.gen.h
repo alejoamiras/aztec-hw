@@ -13,6 +13,7 @@ typedef enum {
     CS_KIND_EMPTY = 0,
     CS_KIND_TOKEN = 1,
     CS_KIND_SPONSOR = 2,
+    CS_KIND_DRIPPER = 3,
 } cs_contract_kind_e;
 
 typedef struct {

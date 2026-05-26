@@ -160,7 +160,15 @@ static void format_action(char *out, size_t out_len, uint8_t verb_id, const char
         case CS_VERB_MINT_PUB:           base = "Mint public"; break;
         case CS_VERB_MINT_PRIV:          base = "Mint private"; break;
         case CS_VERB_SPONSOR:            base = "Sponsor fee"; break;
+        case CS_VERB_DRIP_PUB:           base = "Drip public"; break;
         default: break;
+    }
+    /* For DRIP the contract symbol ("DRIP") is the dripper's own marker, not
+     * the token being dripped — the token appears as a separate Token field
+     * looked up from args[0]. Suppress the suffix here to avoid "Drip DRIP". */
+    if (verb_id == CS_VERB_DRIP_PUB) {
+        snprintf(out, out_len, "%s", base);
+        return;
     }
     if (symbol && symbol[0] != '\0') {
         snprintf(out, out_len, "%s %s", base, symbol);
@@ -261,6 +269,37 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
                      "Testnet %s", reg->symbol);
             g_pairs[out_idx + pairs_added].item = "Via";
             g_pairs[out_idx + pairs_added].value = g_call_via[i];
+            pairs_added++;
+            break;
+        }
+        case CS_VERB_DRIP_PUB: {
+            /* args = [token, amount] — token is an AztecAddress in args[0];
+             * amount is u64 in args[1]. The token MUST resolve to a TOKEN-kind
+             * registry slot (append_call.c enforces this fail-closed). Decimals
+             * for amount formatting come from the TOKEN entry, NOT this
+             * DRIPPER slot (Dripper has decimals=0). */
+            const cs_registry_entry_t *tok = cs_registry_lookup(c->args[0]);
+            if (tok == NULL || tok->kind != CS_KIND_TOKEN) {
+                /* Defense-in-depth — should be unreachable post-append_call. */
+                return 0;
+            }
+            char amt[CS_FORMAT_MAX_LEN];
+            if (!cs_format_amount(c->args[1], tok->decimals, amt, sizeof(amt))) {
+                snprintf(amt, sizeof(amt), "?");
+            }
+            snprintf(g_call_amount[i], sizeof(g_call_amount[i]),
+                     "%s %s", amt, tok->symbol);
+            /* "To" mirrors mint/transfer convention — Dripper.drip_to_public
+             * always mints to msg.sender, which is `consumer` for our trusted
+             * session. Surfacing "you" makes the intent unambiguous. */
+            g_pairs[out_idx + pairs_added].item = "Token";
+            g_pairs[out_idx + pairs_added].value = tok->symbol;
+            pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "To";
+            g_pairs[out_idx + pairs_added].value = "you";
+            pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "Amount";
+            g_pairs[out_idx + pairs_added].value = g_call_amount[i];
             pairs_added++;
             break;
         }

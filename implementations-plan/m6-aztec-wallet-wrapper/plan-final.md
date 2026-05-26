@@ -247,22 +247,27 @@ a manifest version bump + device-firmware update.
 }
 ```
 
-### 3.1 SponsoredFPC address — CRITICAL FIX `[orchestrator pre-research]`
+### 3.1 SponsoredFPC address — M5's pin is already correct `[course correction]`
 
-The M5 manifest pins SponsoredFPC at `0x254082…1257` (deterministic from
-`SPONSORED_FPC_SALT = 0` = sandbox/local default). **The demo's target
-live-network FPC deployment** uses a different salt:
-`0x2a0f57c183e73d3390f80b6b28e57593d6faea3517eb57604491220173ad2f32`, which
-resolves to **`0x153bddd8249216bd6326f1d5281d61fd8efc091dfc7828378e0399bf2a57ca4f`**.
+The M5 manifest pins SponsoredFPC at `0x254082…1257`, derived from
+`SPONSORED_FPC_SALT = 0`. Earlier pre-research claimed this was
+"sandbox-only" and that testnet uses a different salt → different
+address. **That claim was wrong.**
 
-(Wording nuance: aztec-packages testnet was deployed without SponsoredFPC
-in genesis; what we're pinning is the *deployed* SponsoredFPC instance the
-demo will actually use on the live network. That's where the salt that
-yields `0x153bddd…ca4f` lives.)
+Verification:
+- `@aztec/constants:7` exports `SPONSORED_FPC_SALT = BigInt(0)` — the
+  protocol-pinned salt, network-independent.
+- Nulo's testnet faucet (`packages/faucet/src/contracts/sponsored-fpc.ts:1`)
+  imports that constant and uses it against `https://rpc.testnet.aztec-labs.com`.
+  The faucet works in production, which means a salt=0 FPC instance is
+  actually deployed on testnet at `0x254082…1257`.
+- The `0x153bddd…ca4f` address from the earlier finding is the
+  accelerator's OWN custom-salt FPC instance (their CI secret
+  `SPONSORED_FPC_SALT`), not anything canonical.
 
-M6.0 must update the registry to use this live-network address. (Or:
-parameterize the codegen by network — out of v0 scope; consequence is
-the sandbox phase drops out of M6.3, see §10.)
+**Consequence**: no FPC-related changes in M6.0. M5's pin is correct for
+both sandbox AND testnet. The phasing conflict that motivated dropping
+M6.3 sandbox e2e dissolves; sandbox is back on the table (see §10).
 
 ### 3.2 Device-side decoder for DRIP_PUB
 
@@ -699,17 +704,15 @@ M6.2  SessionEmbeddedWallet                              ~0.5d
       - Ephemeral PXE flag
       - Unit tests (mocked)
 
-M6.3  FrozenAuthWitnessProvider + AztecLedgerSession     ~2d
+M6.3  FrozenAuthWitnessProvider + AztecLedgerSession     ~2.5d
       - FrozenAuthWitnessProvider (~30 LOC + tests)
       - AztecLedgerSession class
       - submitClearSignedIntent (the 9-step recipe)
       - In-flight mutex
       - Contract-metadata fail-closed integration
-      - Unit tests + mock-PXE integration tests only — NO sandbox e2e
-        (the M6.0 registry is pinned to the demo's target live-network
-         SponsoredFPC deployment; aztec-sandbox's salt=0 instance resolves
-         to a different address and would REGISTRY_MISS on the sponsor
-         call. Real chain submission is gated to M6.5 below.)
+      - Local aztec-sandbox e2e: deploy + drip + 4 transfer modes.
+        (Registry salt=0 FPC is deployed on BOTH sandbox and testnet —
+         see §3.1 course-correction. M5 pin is correct for both.)
 
 M6.4  Frontend skeleton                                  ~1.5d
       - apps/demo-browser/ (Vite + React 19 + TS)
@@ -717,25 +720,18 @@ M6.4  Frontend skeleton                                  ~1.5d
       - Vite proxy for Speculos CORS
       - Mock-mode integration test (Playwright optional)
 
-M6.5  Alpha-testnet e2e + hand-off for recording         ~3d (+1d buffer)
+M6.5  Alpha-testnet e2e + hand-off for recording         ~2d (+1d buffer)
       - PXE sync handling (progress UI)
       - Real testnet against rpc.testnet.aztec-labs.com
       - First Speculos, then real Ledger via WebHID
-      - End-to-end smoke before hand-off (drip + public transfer)
-      - **STRETCH (only if all above is green ≥ 1d before video)**:
-        expose `transferUsdcPrivate(to, amount)` wrapper using
-        `transfer_private_to_private` (already in M5 manifest as
-        TRANSFER_PRIV_PRIV — no codegen work). Adds a third demo step.
-        Cut if it slips.
+      - All 4 transfer modes against testnet (cut order if M6.5 slips:
+        priv→priv → pub→priv → priv→pub; pub→pub stays minimum)
       - **Video capture is handled by the user** — we hand off a
-        working demo URL + a checklist of the three (or four, with
-        stretch) flows to run. No screen-recording tooling on our side.
+        working demo URL + a checklist of the flows to run.
       - **Testnet-unavailable fallback** (invoke only if testnet
-        stalls > 1 day): spin up aztec-sandbox locally AND manually
-        deploy a SponsoredFPC at the same salt the M6.0 manifest pinned
-        so the registry still resolves (`scripts/deploy-sandbox-fpc.ts`,
-        write only if invoked). Hand-off proceeds; lessons doc notes
-        the fallback.
+        stalls > 1 day): point the demo at aztec-sandbox — the M5
+        manifest's salt=0 FPC is deployed on sandbox too. No
+        manual FPC redeploy needed.
 
 M6.6  Lessons doc                                        ~1d
       - Write up 4 PR suggestions with diffs + before/after
@@ -744,9 +740,9 @@ M6.6  Lessons doc                                        ~1d
 
 M6.7  Codex post-impl review + fix loop                  ~1d
 
-Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
-       absorbed from removed M6.3 sandbox e2e). Slip dominated by
-       testnet stability.
+Total: ~10-12 working days (M6.3 sandbox e2e restored; M6.5 trimmed
+       since no FPC redeployment fallback needed). Slip dominated by
+       testnet stability + potential per-transfer-mode debugging.
 ```
 
 ## 11. Success criteria
@@ -836,6 +832,7 @@ Total: ~11-13 working days (was 10-11; +1d for M6.5 buffer, +1d
 | Document PXE sync time concern | opus | UX-critical for the video |
 | Fix SponsoredFPC address to live-network deployment | orchestrator pre-research | M5 manifest has sandbox address; live deployment differs |
 | Drop M6.3 sandbox e2e; go straight to testnet | codex final-critique BLOCKER | Pinning registry to live-network FPC makes sandbox REGISTRY_MISS unless we re-deploy FPC at same salt — kept as M6.5 fallback |
+| **REVERTED**: keep M6.3 sandbox e2e; M5 FPC pin works on both | M6.0 course-correction | @aztec/constants:7 fixes SPONSORED_FPC_SALT=0 protocol-wide; nulo's testnet faucet uses this same salt and works; M5's `0x254082…1257` is correct for sandbox AND testnet — the earlier "swap to live-network" pre-research was wrong (it confused the accelerator's custom-salt instance with the canonical) |
 | `submitClearSignedIntent(exec: ExecutionPayload)` (not `FunctionCall`) | codex final-critique MAJOR | Caller composes fee + app explicitly; wrapper asserts shape; single-app-call contract |
 | Reword §3.1: "live-network FPC deployment" not "testnet uses" | codex final-critique MAJOR | aztec-packages testnet had no SponsoredFPC in genesis; what we pin is the demo's deployed FPC instance |
 | Move `ephemeral: true` to top-level `EmbeddedWalletOptions` | codex final-critique MINOR | It's not under `pxe`; see `wallets/src/embedded/entrypoints/browser.ts:22` |

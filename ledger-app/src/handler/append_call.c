@@ -145,6 +145,18 @@ int handler_append_call(buffer_t *cdata) {
         }
     }
 
+    /* M6.0: DRIP_PUB requires args[0] to resolve to a TOKEN-kind registry slot.
+     * Without this, a malicious host could pass an arbitrary 32-byte token
+     * argument and the UI would display "Drip 1.5 ???" — the user has no
+     * way to verify the token identity on-device. Fail-closed: only
+     * registered tokens can be dripped. */
+    if (verb->verb == CS_VERB_DRIP_PUB) {
+        const cs_registry_entry_t *tok = cs_registry_lookup(slot->args[0]);
+        if (tok == NULL || tok->kind != CS_KIND_TOKEN) {
+            return reject(SW_REGISTRY_MISS);
+        }
+    }
+
     /* --- args_hash recompute (double + cross-check, fault hardening) ------ */
 
     uint8_t device_args_hash_a[L4_FR_BYTES];

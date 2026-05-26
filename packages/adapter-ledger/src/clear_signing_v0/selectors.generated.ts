@@ -7,11 +7,12 @@ export type CsVerb =
   | 'TRANSFER_PUB_PUB'
   | 'MINT_PUB'
   | 'MINT_PRIV'
-  | 'SPONSOR';
+  | 'SPONSOR'
+  | 'DRIP_PUB';
 
 export interface CsVerbEntry {
   readonly verb: CsVerb;
-  readonly kind: 'TOKEN' | 'SPONSOR';
+  readonly kind: 'TOKEN' | 'SPONSOR' | 'DRIPPER';
   readonly selector_u32: number;
   readonly is_public: boolean;
   readonly wire_arg_count: number;
@@ -83,10 +84,19 @@ export const CS_VERBS: readonly CsVerbEntry[] = [
     display_name: 'Sponsor fee (private)',
     args: [],
   },
+  {
+    verb: 'DRIP_PUB',
+    kind: 'DRIPPER',
+    selector_u32: 0xbe46ea53,
+    is_public: true,
+    wire_arg_count: 2,
+    display_name: 'Drip public',
+    args: ['token', 'amount'],
+  },
 ] as const;
 
 export function csVerbLookup(
-  kind: 'TOKEN' | 'SPONSOR',
+  kind: 'TOKEN' | 'SPONSOR' | 'DRIPPER',
   selectorU32: number,
 ): CsVerbEntry | undefined {
   return CS_VERBS.find((v) => v.kind === kind && v.selector_u32 === selectorU32);

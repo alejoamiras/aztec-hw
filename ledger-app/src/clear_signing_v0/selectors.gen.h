@@ -12,7 +12,8 @@ typedef enum {
     CS_VERB_MINT_PUB = 5,
     CS_VERB_MINT_PRIV = 6,
     CS_VERB_SPONSOR = 7,
-    CS_VERB__MAX = 8,
+    CS_VERB_DRIP_PUB = 8,
+    CS_VERB__MAX = 9,
 } cs_verb_e;
 
 typedef struct {
@@ -23,7 +24,7 @@ typedef struct {
     uint8_t  wire_arg_count;      /* expected number of 32B args on the wire */
 } cs_verb_entry_t;
 
-#define CS_VERB_COUNT 7u
+#define CS_VERB_COUNT 8u
 extern const cs_verb_entry_t CS_VERBS[CS_VERB_COUNT];
 
 /* Match a (kind, selector_u32) against the verb table. NULL on miss. */

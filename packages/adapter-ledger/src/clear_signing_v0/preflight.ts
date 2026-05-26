@@ -125,6 +125,34 @@ function preflightCall(
     }
   }
 
+  /* 6. DRIP_PUB: args[0] (the token address) MUST resolve to a TOKEN-kind
+   * registry slot. Mirrors append_call.c's M6.0 check; same SW_REGISTRY_MISS
+   * code on the device. Without this, the device would render
+   * "Drip 1.5 ???" — an unverifiable token identity. */
+  if (verbEntry.verb === 'DRIP_PUB') {
+    const tokenArg = call.args[0];
+    if (!tokenArg) {
+      throw new PreflightError(
+        `call ${index} (DRIP_PUB): missing token arg`,
+        'SW_DECODER_DESYNC',
+        index,
+      );
+    }
+    const tokenHex = `0x${tokenArg.toBuffer().toString('hex').padStart(64, '0')}`;
+    const tokenEntry = csRegistryLookup(tokenHex);
+    if (!tokenEntry || tokenEntry.kind !== 'TOKEN') {
+      const knownTokens = CS_REGISTRY.filter((e) => e.kind === 'TOKEN')
+        .map((e) => `${e.symbol}=${e.address}`)
+        .join(', ');
+      throw new PreflightError(
+        `call ${index} (DRIP_PUB): args[0] (token)=${tokenHex} is not a TOKEN-kind ` +
+          `registry slot (would be SW_REGISTRY_MISS). Known TOKEN slots: ${knownTokens}`,
+        'SW_REGISTRY_MISS',
+        index,
+      );
+    }
+  }
+
   return { call, registryEntry, verbEntry };
 }
 

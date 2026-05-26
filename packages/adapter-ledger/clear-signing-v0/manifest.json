@@ -32,10 +32,11 @@
     },
     {
       "slot": 3,
-      "kind": "EMPTY",
-      "address": "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "symbol": "",
-      "decimals": 0
+      "kind": "DRIPPER",
+      "address": "0x172684be7d86acff9c0e16b15e3f34647e5c8c26f0838a0872df7f61ddcb7070",
+      "symbol": "DRIP",
+      "decimals": 0,
+      "_note": "Nulo's existing Dripper (salt=1337, declared minter for nulo USDC at slot 0 and nulo ETH at slot 1). Source: nulo-2/packages/faucet/src/contracts/deployments.json. No redeploy — reuse only. Decimals=0 because amounts shown to the user are in the TOKEN-arg's decimals, looked up cross-slot at decode time (see DRIP_PUB verb below)."
     },
     {
       "slot": 4,
@@ -123,6 +124,19 @@
       "wire_arg_count": 0,
       "display_name": "Sponsor fee (private)",
       "_note": "codex final-review BLOCKER #1: Aztec's SponsoredFeePaymentMethod builds this as a PRIVATE entrypoint (see aztec-packages/yarn-project/aztec.js/src/fee/sponsored_fee_payment.ts:29 sets type to FunctionType.PRIVATE). Empty-args private → args_hash = Fr.ZERO per computeVarArgsHash."
+    },
+    {
+      "verb": "DRIP_PUB",
+      "kind": "DRIPPER",
+      "artifact_source": "DRIPPER_CONTRACT",
+      "function_name": "drip_to_public",
+      "expected_selector_u32": "0xbe46ea53",
+      "is_public": true,
+      "args": ["token", "amount"],
+      "wire_arg_count": 2,
+      "display_name": "Drip public",
+      "amount_type": "u64",
+      "_note": "M6.0: Dripper.drip_to_public(token: AztecAddress, amount: u64). args[0] MUST be a TOKEN-kind slot in registry (enforced device-side in append_call). The amount is u64 (1 Fr slot, high 24 bytes zero per encoder.ts:24). Decimals for display come from the TOKEN-arg's registry entry (cross-slot lookup); Dripper's own slot has decimals=0. Selector computed via FunctionSelector.fromNameAndParameters from Dripper artifact at codegen-pinned aztec-standards version."
     }
   ]
 }

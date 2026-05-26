@@ -2,7 +2,7 @@
  * Single source of truth: clear-signing-v0/manifest.json
  */
 
-export type CsContractKind = 'EMPTY' | 'TOKEN' | 'SPONSOR';
+export type CsContractKind = 'EMPTY' | 'TOKEN' | 'SPONSOR' | 'DRIPPER';
 
 export interface CsRegistryEntry {
   readonly kind: CsContractKind;
@@ -31,9 +31,9 @@ export const CS_REGISTRY: readonly CsRegistryEntry[] = [
     decimals: 0,
   },
   /* slot 3 */ {
-    kind: 'EMPTY',
-    address: '0x0000000000000000000000000000000000000000000000000000000000000000',
-    symbol: '',
+    kind: 'DRIPPER',
+    address: '0x172684be7d86acff9c0e16b15e3f34647e5c8c26f0838a0872df7f61ddcb7070',
+    symbol: 'DRIP',
     decimals: 0,
   },
   /* slot 4 */ {
@@ -45,8 +45,7 @@ export const CS_REGISTRY: readonly CsRegistryEntry[] = [
 ] as const;
 
 export function csRegistryLookup(addressHex: string): CsRegistryEntry | undefined {
-  const normalized = addressHex.toLowerCase().startsWith('0x')
-    ? addressHex.toLowerCase()
-    : '0x' + addressHex.toLowerCase();
+  const lower = addressHex.toLowerCase();
+  const normalized = lower.startsWith('0x') ? lower : `0x${lower}`;
   return CS_REGISTRY.find((e) => e.kind !== 'EMPTY' && e.address.toLowerCase() === normalized);
 }
