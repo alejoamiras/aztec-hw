@@ -123,11 +123,19 @@ function findArtifactFunction(verb: VerbEntry): {
 async function crossCheckVerb(verb: VerbEntry): Promise<void> {
   const { parameters, custom_attributes } = findArtifactFunction(verb);
 
-  /* Selector check — fail-closed. */
+  /* Selector check — fail-closed.
+   *
+   * Bug 2 (M6.12): The framework's runtime call computes selectors using
+   * the parameter list MINUS the auto-injected `inputs` (PrivateContextInputs).
+   * The raw `target/*.json` artifact INCLUDES `inputs` for private functions,
+   * so prior cross-checks computed a selector that drifted from runtime.
+   * Strip `inputs` for private artifact-source functions to match runtime. */
   const isSponsorPath = verb.artifact_source === 'SPONSORED_FPC_CONTRACT';
+  const selectorParams =
+    !isSponsorPath && !verb.is_public ? parameters.filter((p) => p.name !== 'inputs') : parameters;
   const sel = isSponsorPath
     ? await FunctionSelector.fromSignature(`${verb.function_name}()`) // sponsored_fee_payment.ts:28 uses fromSignature
-    : await FunctionSelector.fromNameAndParameters(verb.function_name, parameters as never);
+    : await FunctionSelector.fromNameAndParameters(verb.function_name, selectorParams as never);
   const selHex = sel.toString();
   if (selHex.toLowerCase() !== verb.expected_selector_u32.toLowerCase()) {
     throw new Error(

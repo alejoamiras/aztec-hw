@@ -98,6 +98,108 @@ main {
   color: var(--accent);
 }
 
+.status-bar-step {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Phase timeline (status-bar) */
+.phase-timeline {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0;
+  margin: 0.45rem 0 0.25rem;
+  list-style: none;
+  padding: 0;
+}
+
+.phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  position: relative;
+}
+
+/* Connector line between phases */
+.phase:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 0.85rem;
+  left: 60%;
+  right: -40%;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+
+.phase-marker {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: var(--card);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  position: relative;
+  z-index: 1;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+
+.phase-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.phase-done .phase-marker {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: var(--bg);
+}
+.phase-done .phase-label {
+  color: var(--ok);
+}
+.phase-done::after {
+  background: var(--ok);
+}
+
+.phase-active .phase-marker {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  animation: phase-pulse 1.4s ease-in-out infinite;
+}
+.phase-active .phase-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.phase-failed .phase-marker {
+  background: var(--err);
+  border-color: var(--err);
+  color: var(--bg);
+}
+.phase-failed .phase-label {
+  color: var(--err);
+}
+
+@keyframes phase-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(124, 92, 255, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(124, 92, 255, 0);
+  }
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;

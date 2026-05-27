@@ -1,17 +1,12 @@
 /**
  * Account panel — Deploy (one-time blind-signed) + Drip (clear-signed).
  *
- * Renders a live step log so the user sees exactly where the flow is:
- * "Building payload…" → "Awaiting clear-signed approval on device…" →
- * "Signature received — building tx request…" → "Proving tx…" →
- * "Submitting tx 0xabcdef…" → "Awaiting inclusion…" → "Tx mined".
- *
- * Deploy disables itself once it succeeds — account deployment is
- * one-shot per session.
+ * Step-log moved up to the StatusBar (single source of truth, M6.14).
+ * This panel only renders the two action buttons + their disable rules:
+ * Deploy is one-shot and self-disables; Drip is gated on Deploy.
  */
 
 import type { SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
-import { useState } from 'react';
 import { type DemoState, type SubmitStep, sessionFromState } from '../state.ts';
 
 interface Props {
@@ -21,7 +16,6 @@ interface Props {
 
 export function AccountPanel({ state, setState }: Props) {
   const session = sessionFromState(state);
-  const [steps, setSteps] = useState<SubmitStep[]>([]);
   const disabled = !session || state.kind === 'connecting' || state.kind === 'submitting';
   const alreadyDeployed = Boolean(session?.deployedTxHash);
 
@@ -31,28 +25,16 @@ export function AccountPanel({ state, setState }: Props) {
   ) {
     if (!session) return;
     const local: SubmitStep[] = [];
-    setSteps([]);
     setState({ kind: 'submitting', session, action: name, steps: local });
     const onStep = (label: string) => {
-      const step = { label, at: performance.now() };
-      local.push(step);
-      setSteps([...local]);
-      /* Mirror the active step into the global state so the top status
-       * bar updates in real time. */
+      local.push({ label, at: performance.now() });
       setState({ kind: 'submitting', session, action: name, steps: [...local] });
     };
     try {
       const result = await fn(onStep);
       const txHash = result.txHash.toString();
-      /* Persist deploy completion onto the session ref so the button
-       * stays disabled across re-renders. */
       if (name === 'deploy') session.deployedTxHash = txHash;
-      setState({
-        kind: 'ready',
-        session,
-        lastSteps: local,
-        lastTxHash: txHash,
-      });
+      setState({ kind: 'ready', session, lastSteps: local, lastTxHash: txHash });
     } catch (e) {
       if (e instanceof Error) {
         console.error('Action failed:', { name: e.name, message: e.message, stack: e.stack });
@@ -114,54 +96,10 @@ export function AccountPanel({ state, setState }: Props) {
                 : 'Deploy the account first.'}
             </span>
           </div>
-          <StepLog state={state} steps={steps} />
         </>
       ) : (
         <div className="status muted">Connect first.</div>
       )}
     </section>
-  );
-}
-
-function StepLog({ state, steps }: { state: DemoState; steps: SubmitStep[] }) {
-  let display: SubmitStep[] = [];
-  let title = '';
-  if (state.kind === 'submitting') {
-    display = state.steps.length > 0 ? state.steps : steps;
-    title = `Active: ${state.action}`;
-  } else if (state.kind === 'error' && state.steps) {
-    display = state.steps;
-    title = 'Last attempt (failed)';
-  } else if (state.kind === 'ready' && state.lastSteps) {
-    display = state.lastSteps;
-    title = state.lastTxHash ? `Last tx: ${state.lastTxHash.slice(0, 14)}…` : 'Last attempt';
-  }
-  if (display.length === 0) return null;
-  const t0 = display[0]?.at ?? 0;
-  const last = display[display.length - 1];
-  const totalMs = last ? Math.round(last.at - t0) : 0;
-  return (
-    <div className="steplog">
-      <div className="steplog-title">
-        {title}
-        {totalMs > 0 && <span className="steplog-total"> · {totalMs}ms total</span>}
-      </div>
-      <ol>
-        {display.map((s, idx) => {
-          const dur = idx > 0 ? Math.round(s.at - (display[idx - 1]?.at ?? s.at)) : 0;
-          const isLast = idx === display.length - 1 && state.kind === 'submitting';
-          return (
-            <li key={`${s.at}-${s.label}`} className={isLast ? 'steplog-current' : ''}>
-              <span className="steplog-time">+{Math.round(s.at - t0)}ms</span>
-              <span className="steplog-label">
-                {isLast ? '⏳ ' : '✓ '}
-                {s.label}
-              </span>
-              {idx > 0 && dur > 100 && <span className="steplog-delta"> (+{dur}ms)</span>}
-            </li>
-          );
-        })}
-      </ol>
-    </div>
   );
 }

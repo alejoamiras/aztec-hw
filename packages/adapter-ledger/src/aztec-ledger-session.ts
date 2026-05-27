@@ -506,7 +506,12 @@ export class AztecLedgerSession {
      *    this from aztecNode.getCurrentMinFees() (base_wallet.ts:245);
      *    we do the same here. The 10% padding mirrors `minFeePadding`. */
     const currentMinFees = await session.nodeClient.getCurrentMinFees();
-    const maxFeesPerGas = currentMinFees.mul(1.1);
+    /* User feedback (M6.14): drip + transfer were taking minutes to reach
+     * CHECKPOINTED. 10% padding was fine for empty blocks but doesn't
+     * outbid competing transactions on a busy testnet. Bumped to 2.5x
+     * the node-reported minimum — generous because the FPC pays the
+     * fee anyway and we want fast inclusion for the demo. */
+    const maxFeesPerGas = currentMinFees.mul(2.5);
     const gasSettings = GasSettings.fallback({ maxFeesPerGas });
     /* `feePaymentMethodOptions` is the u8 fee-payment-mode arg the entrypoint
      * ABI requires (account_entrypoint.ts:204). For the sponsored FPC path

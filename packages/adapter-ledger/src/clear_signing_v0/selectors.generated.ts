@@ -24,7 +24,7 @@ export const CS_VERBS: readonly CsVerbEntry[] = [
   {
     verb: 'TRANSFER_PRIV_PUB',
     kind: 'TOKEN',
-    selector_u32: 0xd4fcf9f6,
+    selector_u32: 0xaf28c76f,
     is_public: false,
     wire_arg_count: 4,
     display_name: 'Transfer priv→pub',
@@ -33,7 +33,7 @@ export const CS_VERBS: readonly CsVerbEntry[] = [
   {
     verb: 'TRANSFER_PRIV_PRIV',
     kind: 'TOKEN',
-    selector_u32: 0xfe438afc,
+    selector_u32: 0xedc09d49,
     is_public: false,
     wire_arg_count: 4,
     display_name: 'Transfer priv→priv',
@@ -42,7 +42,7 @@ export const CS_VERBS: readonly CsVerbEntry[] = [
   {
     verb: 'TRANSFER_PUB_PRIV',
     kind: 'TOKEN',
-    selector_u32: 0x0c3d0a8e,
+    selector_u32: 0x32c5dcf8,
     is_public: false,
     wire_arg_count: 4,
     display_name: 'Transfer pub→priv',
@@ -69,7 +69,7 @@ export const CS_VERBS: readonly CsVerbEntry[] = [
   {
     verb: 'MINT_PRIV',
     kind: 'TOKEN',
-    selector_u32: 0x87f0f0a4,
+    selector_u32: 0xf8f84119,
     is_public: false,
     wire_arg_count: 2,
     display_name: 'Mint private',
