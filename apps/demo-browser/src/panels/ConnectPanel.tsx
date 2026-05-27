@@ -121,8 +121,12 @@ export function ConnectPanel({ state, setState }: Props) {
       </div>
       {transport === 'speculos' && (
         <div className="status muted">
-          Vite proxies <code>{SPECULOS_PROXY_URL}</code> → <code>localhost:5000</code>. Start the
-          emulator before clicking Connect.
+          Vite proxies <code>{SPECULOS_PROXY_URL}</code> → <code>localhost:5001</code>. Start the
+          emulator (web UI also at{' '}
+          <a href="http://localhost:5001/" target="_blank" rel="noreferrer">
+            localhost:5001
+          </a>
+          ) before clicking Connect.
         </div>
       )}
       <div className="row">

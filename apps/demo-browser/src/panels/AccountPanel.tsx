@@ -1,13 +1,15 @@
 /**
- * Account panel — visible once Connect succeeds. Shows the account address
- * and exposes Deploy (one-time, blind-signed on device) + Drip (recurring,
- * clear-signed) buttons.
+ * Account panel — Deploy (one-time blind-signed) + Drip (clear-signed).
  *
- * The account contract MUST be deployed before any other tx — its private
- * state (signing pubkey as SinglePrivateImmutable) needs to exist on chain,
- * otherwise the entrypoint asserts `self.is_some()` inside Noir.
+ * Renders a live step log so the user sees exactly where the flow is:
+ * "Building payload…" → "Awaiting clear-signed approval on device…" →
+ * "Signature received — building tx request…" → "Proving tx…" →
+ * "Submitting tx 0xabcdef…" → "Awaiting inclusion…" → "Tx mined".
  */
-import { type DemoState, sessionFromState } from '../state.ts';
+
+import type { SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
+import { useState } from 'react';
+import { type DemoState, type SubmitStep, sessionFromState } from '../state.ts';
 
 interface Props {
   state: DemoState;
@@ -16,25 +18,39 @@ interface Props {
 
 export function AccountPanel({ state, setState }: Props) {
   const session = sessionFromState(state);
+  const [steps, setSteps] = useState<SubmitStep[]>([]);
   const disabled = !session || state.kind === 'connecting' || state.kind === 'submitting';
 
-  async function runAction(name: 'deploy' | 'drip', fn: () => Promise<unknown>) {
+  async function runAction(
+    name: 'deploy' | 'drip',
+    fn: (onStep: (s: string) => void) => Promise<SubmitResult>,
+  ) {
     if (!session) return;
-    setState({ kind: 'submitting', session, action: name });
+    const local: SubmitStep[] = [];
+    setSteps([]);
+    setState({ kind: 'submitting', session, action: name, steps: local });
+    const onStep = (label: string) => {
+      const step = { label, at: performance.now() };
+      local.push(step);
+      setSteps([...local]);
+    };
     try {
-      await fn();
-      setState({ kind: 'ready', session });
+      const result = await fn(onStep);
+      setState({
+        kind: 'ready',
+        session,
+        lastSteps: local,
+        lastTxHash: result.txHash.toString(),
+      });
     } catch (e) {
       if (e instanceof Error) {
-        console.error(
-          'Action failed JSON: ' +
-            JSON.stringify({ name: e.name, message: e.message, stack: e.stack }, null, 2),
-        );
+        console.error('Action failed:', { name: e.name, message: e.message, stack: e.stack });
       }
       setState({
         kind: 'error',
         lastSession: session,
         message: e instanceof Error ? e.message : String(e),
+        steps: local,
       });
     }
   }
@@ -56,7 +72,9 @@ export function AccountPanel({ state, setState }: Props) {
           <div className="row">
             <button
               type="button"
-              onClick={() => runAction('deploy', () => session.session.deployAccount())}
+              onClick={() =>
+                runAction('deploy', (onStep) => session.session.deployAccount({ onStep }))
+              }
               disabled={state.kind === 'submitting'}
             >
               {isDeploying ? 'Deploying…' : 'Deploy account'}
@@ -66,7 +84,9 @@ export function AccountPanel({ state, setState }: Props) {
           <div className="row">
             <button
               type="button"
-              onClick={() => runAction('drip', () => session.session.dripUsdc(1_000_000_000n))}
+              onClick={() =>
+                runAction('drip', (onStep) => session.session.dripUsdc(1_000_000_000n, { onStep }))
+              }
               disabled={state.kind === 'submitting'}
             >
               {isDripping ? 'Dripping…' : 'Drip 1000 USDC'}
@@ -75,10 +95,42 @@ export function AccountPanel({ state, setState }: Props) {
               Sponsored. Clear-signed on-device. Mints to msg.sender.
             </span>
           </div>
+          <StepLog state={state} steps={steps} />
         </>
       ) : (
         <div className="status muted">Connect first.</div>
       )}
     </section>
+  );
+}
+
+function StepLog({ state, steps }: { state: DemoState; steps: SubmitStep[] }) {
+  /* Choose which steps to display based on current state. */
+  let display: SubmitStep[] = [];
+  let title = '';
+  if (state.kind === 'submitting') {
+    display = state.steps.length > 0 ? state.steps : steps;
+    title = `Action: ${state.action}`;
+  } else if (state.kind === 'error' && state.steps) {
+    display = state.steps;
+    title = 'Last attempt (failed)';
+  } else if (state.kind === 'ready' && state.lastSteps) {
+    display = state.lastSteps;
+    title = state.lastTxHash ? `Last tx: ${state.lastTxHash.slice(0, 14)}…` : 'Last attempt';
+  }
+  if (display.length === 0) return null;
+  const t0 = display[0]?.at ?? 0;
+  return (
+    <div className="steplog">
+      <div className="steplog-title">{title}</div>
+      <ol>
+        {display.map((s) => (
+          <li key={`${s.at}-${s.label}`}>
+            <span className="steplog-time">+{Math.round(s.at - t0)}ms</span>
+            <span className="steplog-label">{s.label}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }

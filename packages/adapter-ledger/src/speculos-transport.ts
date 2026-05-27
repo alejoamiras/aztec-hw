@@ -40,7 +40,12 @@ export class SpeculosTransport implements LedgerTransport {
 
   constructor(opts: SpeculosTransportOptions = {}) {
     this.baseUrl = opts.baseUrl ?? 'http://localhost:5000';
-    this.timeoutMs = opts.timeoutMs ?? 30_000;
+    /* 5min default. Sign APDUs block until the user navigates + presses
+     * Both on the device — 30s was too tight in manual testing (the user
+     * navigated past Sign, the host timed out, the eventual Both press
+     * landed on a stale APDU and went nowhere). 5min gives plenty of
+     * room for a deliberate review. */
+    this.timeoutMs = opts.timeoutMs ?? 5 * 60_000;
   }
 
   /**

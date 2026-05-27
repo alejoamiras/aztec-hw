@@ -94,6 +94,15 @@ export interface SubmitResult {
   readonly receipt: TxReceipt;
 }
 
+/** Step-by-step status callback for submission flows. Lets the UI render
+ * "Building manifest…" / "Awaiting signature on device…" / "Submitting tx…"
+ * etc. without baking deep coupling into the wrapper class. */
+export type SubmitStepHandler = (label: string) => void;
+
+export interface SubmitOptions {
+  readonly onStep?: SubmitStepHandler;
+}
+
 export interface AztecLedgerSessionConnectOptions {
   /** Aztec node JSON-RPC URL (e.g. https://rpc.testnet.aztec-labs.com). */
   readonly nodeUrl: string;
@@ -241,20 +250,20 @@ export class AztecLedgerSession {
    *
    * Subsequent submitClearSignedIntent calls bypass that path.
    */
-  async deployAccount(): Promise<SubmitResult> {
+  async deployAccount(opts: SubmitOptions = {}): Promise<SubmitResult> {
+    const step = opts.onStep ?? (() => {});
+    step('Building deploy method…');
     const deployMethod = await this.accountManager.getDeployMethod();
+    step('Submitting deploy tx (blind-sign on device)…');
     /* `from: NO_FROM` selects the self-paid deploy path in
      * DeployAccountMethod.request: the to-be-deployed account ITSELF
      * pays via the multicall entrypoint, which bypasses the account's
-     * own (not-yet-existing) signing-key state. With `from: this.address`
-     * the framework tries to use the account's entrypoint for the deploy
-     * tx — but the entrypoint reads signing_pubkey from a private note
-     * the constructor hasn't written yet ("Failed to get a note
-     * 'self.is_some()'"). */
+     * own (not-yet-existing) signing-key state. */
     const result = await deployMethod.send({
       from: NO_FROM,
       fee: { paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress) },
     });
+    step('Tx mined');
     return { txHash: result.receipt.txHash, receipt: result.receipt };
   }
 
@@ -306,18 +315,15 @@ export class AztecLedgerSession {
    * Drip 1000 USDC into this Ledger account (sponsored). Calls
    * `Dripper.drip_to_public(USDC_ADDR, amount)`. Amount is u64 (atomic).
    */
-  async dripUsdc(amount: bigint): Promise<SubmitResult> {
+  async dripUsdc(amount: bigint, opts: SubmitOptions = {}): Promise<SubmitResult> {
+    const step = opts.onStep ?? (() => {});
+    step('Building drip payload…');
     const dripper = this.contractAt(this.deps.dripperInstance.address, this.deps.dripperArtifact);
-    /* `Contract.methods` is an artifact-keyed Proxy — TS types it as
-     * `Record<string, ContractMethod | undefined>` so dynamic access is
-     * possibly-undefined. The artifact provenance is verified at M6.0
-     * codegen time, so we use a typed alias to surface a clear error
-     * if the upstream artifact ever drops drip_to_public. */
     const callContractMethod = this.requireMethod(dripper, 'drip_to_public');
     const exec = await callContractMethod(this.deps.usdcInstance.address, amount).request({
       fee: { paymentMethod: this.sponsoredFee() },
     });
-    return this.submitClearSignedIntent(exec);
+    return this.submitClearSignedIntent(exec, opts);
   }
 
   /**
@@ -332,20 +338,36 @@ export class AztecLedgerSession {
     return m;
   }
 
-  async transferUsdcPubToPub(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
-    return this.transferUsdc('transfer_public_to_public', to, amount);
+  async transferUsdcPubToPub(
+    to: AztecAddress,
+    amount: bigint,
+    opts: SubmitOptions = {},
+  ): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_public_to_public', to, amount, opts);
   }
 
-  async transferUsdcPrivToPub(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
-    return this.transferUsdc('transfer_private_to_public', to, amount);
+  async transferUsdcPrivToPub(
+    to: AztecAddress,
+    amount: bigint,
+    opts: SubmitOptions = {},
+  ): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_private_to_public', to, amount, opts);
   }
 
-  async transferUsdcPubToPriv(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
-    return this.transferUsdc('transfer_public_to_private', to, amount);
+  async transferUsdcPubToPriv(
+    to: AztecAddress,
+    amount: bigint,
+    opts: SubmitOptions = {},
+  ): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_public_to_private', to, amount, opts);
   }
 
-  async transferUsdcPrivToPriv(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
-    return this.transferUsdc('transfer_private_to_private', to, amount);
+  async transferUsdcPrivToPriv(
+    to: AztecAddress,
+    amount: bigint,
+    opts: SubmitOptions = {},
+  ): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_private_to_private', to, amount, opts);
   }
 
   /**
@@ -363,16 +385,16 @@ export class AztecLedgerSession {
       | 'transfer_private_to_private',
     to: AztecAddress,
     amount: bigint,
+    opts: SubmitOptions = {},
   ): Promise<SubmitResult> {
+    const step = opts.onStep ?? (() => {});
+    step(`Building ${method} payload…`);
     const token = this.contractAt(this.deps.usdcInstance.address, this.deps.tokenArtifact);
     const callContractMethod = this.requireMethod(token, method);
-    /* `nonce` arg is the authwitness inner-nonce — 0n means no separate
-     * delegated authwit; our clear-signing flow is self-spend only so 0
-     * is correct. */
     const exec = await callContractMethod(this.address, to, amount, 0n).request({
       fee: { paymentMethod: this.sponsoredFee() },
     });
-    return this.submitClearSignedIntent(exec);
+    return this.submitClearSignedIntent(exec, opts);
   }
 
   /**
@@ -384,7 +406,10 @@ export class AztecLedgerSession {
    * For v0 we assert `exec.calls.length === 2` (single-app-call contract).
    * Multi-app batches are out of scope until a future arc.
    */
-  async submitClearSignedIntent(exec: ExecutionPayload): Promise<SubmitResult> {
+  async submitClearSignedIntent(
+    exec: ExecutionPayload,
+    opts: SubmitOptions = {},
+  ): Promise<SubmitResult> {
     if (this.inflight) {
       throw new Error(
         'AztecLedgerSession: another submission in flight; await it before issuing a new one',
@@ -395,7 +420,7 @@ export class AztecLedgerSession {
         `submitClearSignedIntent expects [sponsor, app] (2 calls); got ${exec.calls.length}`,
       );
     }
-    const work = this.runRecipe(exec);
+    const work = this.runRecipe(exec, opts);
     this.inflight = work;
     try {
       return await work;
@@ -425,30 +450,22 @@ export class AztecLedgerSession {
    * with full clear-signing UI, then hands the witness to the framework
    * via FrozenAuthWitnessProvider.
    */
-  private async runRecipe(exec: ExecutionPayload): Promise<SubmitResult> {
+  private async runRecipe(exec: ExecutionPayload, opts: SubmitOptions = {}): Promise<SubmitResult> {
+    const step = opts.onStep ?? (() => {});
     const { ledgerProvider, session } = this.deps;
 
-    /* 1. Chain info (replay protection). */
+    step('Fetching chain info…');
     const chainInfo = await this.getChainInfo();
 
-    /* 2. Pick OUR own txNonce (bypassing BaseWallet.sendTx's random one
-     *    at base_wallet.ts:180). The witness binds to this nonce via the
-     *    encodedCalls.hash() preimage; framework's createTxExecutionRequest
-     *    must use the same value. */
     const txNonce = Fr.random();
 
-    /* 3. Project ExecutionPayload → CallIntent (pure function; byte-deterministic
-     *    given the M5 manifest's verbs, see L4.1 host-parity tests). */
+    step('Projecting CallIntent…');
     const intent = projectExecutionPayloadIntoCallIntent(exec, this.address, chainInfo);
 
-    /* 4. Pre-sign via Ledger CLEAR-SIGNING. The device shows decoded
-     *    fields (Transfer 1.5 USDC, From: you, To: 0xabcd…) and
-     *    enforces M5.2 strict-allowlist gates before returning a sig. */
-    /* Pass the chosen txNonce so the device-side outer_hash bound to the
-     * witness matches what the framework will compute later in step 7
-     * (codex would have caught this — surfaced via playwright as
-     * FrozenWitnessMismatchError on the first drip run). */
+    step('Awaiting clear-signed approval on device…');
     const witness = await ledgerProvider.createAuthWitFromIntent(intent, txNonce);
+
+    step('Signature received — building tx request…');
 
     /* 5. Wrap in FrozenAuthWitnessProvider — one-shot, hash-asserted.
      *    The framework's account_entrypoint.ts:131 computes its own
@@ -493,14 +510,16 @@ export class AztecLedgerSession {
      *    because nulo's deployed contracts (USDC + Dripper) were
      *    address-derived at 4.2.0; mixing 4.3.0 PXE with 4.2.0 addresses
      *    risks address-derivation drift on registerContract. */
+    step('Proving tx (in-browser WASM)…');
     const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
     const tx = await provenTx.toTx();
     const txHash = tx.getTxHash();
+    step(`Submitting tx ${txHash.toString().slice(0, 10)}…`);
     await session.nodeClient.sendTx(tx);
 
-    /* 9. Wait for inclusion. waitForTx polls the node's tx-receipts API
-     *    until the tx is mined or rejected. */
+    step('Awaiting inclusion…');
     const receipt = await waitForTx(session.nodeClient, txHash);
+    step('Tx mined');
     return { txHash, receipt };
   }
 }

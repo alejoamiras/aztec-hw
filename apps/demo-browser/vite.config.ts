@@ -18,15 +18,51 @@
  * Vite proxy at /speculos → http://localhost:5001 (5000 is macOS AirPlay).
  */
 
+import { exec } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { promisify } from 'node:util';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 const require = createRequire(import.meta.url);
+const execAsync = promisify(exec);
+
+/** POST /api/speculos/restart → `docker restart speculos-aztec-playwright`.
+ * Reachable from the browser via the demo UI's "Reset device" button.
+ * Speculos's APDU connection dies when the host fetch times out; the
+ * device's NBGL review stays up but the callback's response has no
+ * consumer, so pressing Both does nothing visible. A container restart
+ * is the fastest reliable reset. */
+function speculosResetPlugin(): Plugin {
+  return {
+    name: 'speculos-reset',
+    configureServer(server) {
+      server.middlewares.use('/api/speculos/restart', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end('POST only');
+          return;
+        }
+        try {
+          await execAsync('docker restart speculos-aztec-playwright');
+          /* Give the container a moment to come up before responding. */
+          await new Promise((r) => setTimeout(r, 1500));
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: String(e) }));
+        }
+      });
+    },
+  };
+}
 
 /** Redirect bb.js worker URL requests to their on-disk paths. bb.js spawns
  * workers via `new Worker(new URL('./main.worker.js', import.meta.url))`;
@@ -81,7 +117,9 @@ function bbWorkerPlugin(): Plugin {
 
 /** Walk up to find a file inside a workspace dep, ignoring `exports`. */
 function resolvePackageFile(pkg: string, file: string): string {
-  const parts = pkg.startsWith('@') ? pkg.split('/').slice(0, 2) : [pkg.split('/')[0]!];
+  const segments = pkg.split('/');
+  const first = segments[0] ?? pkg;
+  const parts = pkg.startsWith('@') ? segments.slice(0, 2) : [first];
   let dir = fileURLToPath(new URL('.', import.meta.url));
   while (dir !== dirname(dir)) {
     const candidate = join(dir, 'node_modules', ...parts, file);
@@ -93,11 +131,11 @@ function resolvePackageFile(pkg: string, file: string): string {
 
 const COOP_COEP_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
-  /* `require-corp` is the standard COEP for SharedArrayBuffer (bb-prover
-   * needs it). The testnet RPC doesn't set Cross-Origin-Resource-Policy,
-   * so direct cross-origin fetches get blocked. Solution (per codex
-   * 019e69ef): route RPC through a same-origin /aztec proxy below. */
-  'Cross-Origin-Embedder-Policy': 'require-corp',
+  /* `credentialless` gates SharedArrayBuffer for bb-prover BUT allows
+   * cross-origin iframes (the Speculos web UI at localhost:5001 doesn't
+   * set Cross-Origin-Resource-Policy, so `require-corp` would block the
+   * iframe). The /aztec proxy below still works under credentialless. */
+  'Cross-Origin-Embedder-Policy': 'credentialless',
 };
 
 export default defineConfig({
@@ -154,5 +192,6 @@ export default defineConfig({
     }),
     react(),
     bbWorkerPlugin(),
+    speculosResetPlugin(),
   ],
 });

@@ -37,8 +37,11 @@ export {
 } from './auth-witness-provider.ts';
 export {
   AztecLedgerSession,
+  type AztecLedgerSessionConnectOptions,
   type AztecLedgerSessionDeps,
+  type SubmitOptions,
   type SubmitResult,
+  type SubmitStepHandler,
 } from './aztec-ledger-session.ts';
 export {
   FrozenAuthWitnessProvider,

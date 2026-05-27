@@ -22,12 +22,22 @@ export interface SessionRef {
   readonly session: AztecLedgerSession;
 }
 
+export interface SubmitStep {
+  readonly label: string;
+  readonly at: number; // performance.now() timestamp
+}
+
 export type DemoState =
   | { kind: 'idle' }
   | { kind: 'connecting'; transport: Transport; nodeUrl: string }
-  | { kind: 'ready'; session: SessionRef }
-  | { kind: 'submitting'; session: SessionRef; action: string }
-  | { kind: 'error'; lastSession: SessionRef | null; message: string };
+  | { kind: 'ready'; session: SessionRef; lastSteps?: SubmitStep[]; lastTxHash?: string }
+  | { kind: 'submitting'; session: SessionRef; action: string; steps: SubmitStep[] }
+  | {
+      kind: 'error';
+      lastSession: SessionRef | null;
+      message: string;
+      steps?: SubmitStep[];
+    };
 
 /**
  * Helper: extract the "stable" SessionRef for a given state (the one we

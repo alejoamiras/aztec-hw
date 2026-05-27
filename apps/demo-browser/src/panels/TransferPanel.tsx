@@ -1,11 +1,9 @@
 /**
- * Transfer panel — 4 modes, each invoking the matching wrapper on
- * AztecLedgerSession. The recipient is supplied as a hex string;
- * amount is in atomic units (USDC has 6 decimals, so 1_000_000 = 1 USDC).
+ * Transfer panel — 4 modes, each clear-signed on device with step-by-step
+ * status visible to the user.
  */
-
 import { AztecAddress } from '@aztec/aztec.js/addresses';
-import type { AztecLedgerSession } from '@aztec-hwwallet-poc/adapter-ledger';
+import type { AztecLedgerSession, SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
 import { useState } from 'react';
 import { type DemoState, sessionFromState } from '../state.ts';
 
@@ -28,16 +26,18 @@ function callWrapper(
   mode: Mode,
   to: AztecAddress,
   amount: bigint,
-): Promise<unknown> {
+  onStep: (s: string) => void,
+): Promise<SubmitResult> {
+  const opts = { onStep };
   switch (mode) {
     case 'pub-pub':
-      return s.transferUsdcPubToPub(to, amount);
+      return s.transferUsdcPubToPub(to, amount, opts);
     case 'priv-pub':
-      return s.transferUsdcPrivToPub(to, amount);
+      return s.transferUsdcPrivToPub(to, amount, opts);
     case 'pub-priv':
-      return s.transferUsdcPubToPriv(to, amount);
+      return s.transferUsdcPubToPriv(to, amount, opts);
     case 'priv-priv':
-      return s.transferUsdcPrivToPriv(to, amount);
+      return s.transferUsdcPrivToPriv(to, amount, opts);
   }
 }
 
@@ -45,7 +45,7 @@ export function TransferPanel({ state, setState }: Props) {
   const sessionRef = sessionFromState(state);
   const [mode, setMode] = useState<Mode>('pub-pub');
   const [toHex, setToHex] = useState('');
-  const [amount, setAmount] = useState('100000000'); // 100 USDC
+  const [amount, setAmount] = useState('100000000');
 
   const disabled = !sessionRef || state.kind === 'connecting' || state.kind === 'submitting';
 
@@ -63,15 +63,40 @@ export function TransferPanel({ state, setState }: Props) {
       return;
     }
     const atomic = BigInt(amount);
-    setState({ kind: 'submitting', session: sessionRef, action: `transfer ${mode}` });
+    const localSteps: { label: string; at: number }[] = [];
+    setState({
+      kind: 'submitting',
+      session: sessionRef,
+      action: `transfer ${mode}`,
+      steps: localSteps,
+    });
+    const onStep = (label: string) => {
+      localSteps.push({ label, at: performance.now() });
+      /* Force a state re-render by re-issuing the submitting state. */
+      setState({
+        kind: 'submitting',
+        session: sessionRef,
+        action: `transfer ${mode}`,
+        steps: [...localSteps],
+      });
+    };
     try {
-      await callWrapper(sessionRef.session, mode, to, atomic);
-      setState({ kind: 'ready', session: sessionRef });
+      const result = await callWrapper(sessionRef.session, mode, to, atomic, onStep);
+      setState({
+        kind: 'ready',
+        session: sessionRef,
+        lastSteps: localSteps,
+        lastTxHash: result.txHash.toString(),
+      });
     } catch (e) {
+      if (e instanceof Error) {
+        console.error('Transfer failed:', { name: e.name, message: e.message, stack: e.stack });
+      }
       setState({
         kind: 'error',
         lastSession: sessionRef,
         message: e instanceof Error ? e.message : String(e),
+        steps: localSteps,
       });
     }
   }
