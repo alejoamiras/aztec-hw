@@ -88,15 +88,22 @@ export class LedgerEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvide
    * the on-device review screens to the same `outer_hash` that the host's Aztec
    * verifier checks. The host is no longer the sole authority on what gets signed.
    */
-  async createAuthWitFromIntent(intent: CallIntent): Promise<AuthWitness> {
+  async createAuthWitFromIntent(intent: CallIntent, txNonce?: Fr): Promise<AuthWitness> {
     /* Host-side preflight (M5.4): mirrors the device's M5.2 strict-allowlist
      * gates. Fails fast with a clear TS error instead of burning APDU
      * round-trips to get an opaque 0x6F0x SW. */
     preflightIntent(intent);
 
+    /* txNonce gets folded into the inner_hash payload (l4-manifest.ts:177).
+     * When the caller pre-signs ahead of a framework createTxExecutionRequest
+     * that uses a chosen nonce, they MUST pass that same nonce here or
+     * FrozenAuthWitnessProvider will reject the witness as hash-mismatched.
+     * Unset defaults to zero, matching the M5 demo where the framework
+     * was not picking a custom nonce. */
     const manifest = await buildL4Manifest({
       intent,
       bip32Path: this.options.bip32Path,
+      txNonce: txNonce ? txNonce.toBuffer() : undefined,
     });
 
     /* Defensive: if any prior session is dangling on the device, ABORT clears it.

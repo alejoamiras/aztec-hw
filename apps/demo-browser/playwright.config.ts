@@ -11,7 +11,9 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: 'line',
-  timeout: 60_000,
+  /* Drip flow can take a few minutes (PXE sync + proving + on-chain
+   * inclusion). 5min covers a slow alpha-testnet run. */
+  timeout: 5 * 60_000,
   webServer: {
     command: 'bun run dev',
     port: 5173,

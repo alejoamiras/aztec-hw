@@ -37,7 +37,10 @@ import {
 import { SponsoredFeePaymentMethod } from '@aztec/aztec.js/fee';
 import { waitForTx } from '@aztec/aztec.js/node';
 import { AccountManager } from '@aztec/aztec.js/wallet';
-import { DefaultAccountEntrypoint } from '@aztec/entrypoints/account';
+import {
+  AccountFeePaymentMethodOptions,
+  DefaultAccountEntrypoint,
+} from '@aztec/entrypoints/account';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import type { ContractArtifact } from '@aztec/stdlib/abi';
 import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
@@ -168,13 +171,22 @@ export class AztecLedgerSession {
     const accountAddress = accountManager.address;
     const accountCompleteAddress = await accountManager.getCompleteAddress();
 
-    /* Register the pinned contracts in the PXE. We require the caller to
-     * pass already-built ContractInstanceWithAddress objects because PXE
-     * rejects address-only overrides — it recomputes the address from the
-     * full instance (publicKeys, initHash, salt) and throws on mismatch
-     * (codex post-impl review §BLOCKER 1, pxe.ts:674-689). Caller knows
-     * the real salt + constructor args from the deployments registry
-     * (e.g., nulo/nulo-2/packages/faucet/src/contracts/deployments.json). */
+    /* Register the user's account-contract instance FIRST. PXE rejects
+     * tx simulation with "Unknown contract" until the consumer address is
+     * registered (surfaced via playwright as 'Unknown contract 0x2e8…'
+     * on first drip). The framework's standard EmbeddedWallet.createECDSAK
+     * path does this automatically in createAccountInternal; we bypass
+     * that path because we don't have the raw signing key (Ledger holds
+     * it), so we have to register the instance manually here. */
+    const accountInstance = accountManager.getInstance();
+    const accountArtifact = await accountContract.getContractArtifact();
+    await session.registerContract(accountInstance, accountArtifact, secret);
+
+    /* Register the pinned demo contracts. We require the caller to pass
+     * already-built ContractInstanceWithAddress objects because PXE rejects
+     * address-only overrides — it recomputes the address from the FULL
+     * instance (publicKeys, initHash, salt) and throws on mismatch
+     * (codex post-impl review §BLOCKER 1, pxe.ts:674-689). */
     await session.registerContract(opts.usdcInstance, opts.tokenArtifact);
     await session.registerContract(opts.dripperInstance, opts.dripperArtifact);
 
@@ -395,7 +407,11 @@ export class AztecLedgerSession {
     /* 4. Pre-sign via Ledger CLEAR-SIGNING. The device shows decoded
      *    fields (Transfer 1.5 USDC, From: you, To: 0xabcd…) and
      *    enforces M5.2 strict-allowlist gates before returning a sig. */
-    const witness = await ledgerProvider.createAuthWitFromIntent(intent);
+    /* Pass the chosen txNonce so the device-side outer_hash bound to the
+     * witness matches what the framework will compute later in step 7
+     * (codex would have caught this — surfaced via playwright as
+     * FrozenWitnessMismatchError on the first drip run). */
+    const witness = await ledgerProvider.createAuthWitFromIntent(intent, txNonce);
 
     /* 5. Wrap in FrozenAuthWitnessProvider — one-shot, hash-asserted.
      *    The framework's account_entrypoint.ts:131 computes its own
@@ -421,10 +437,16 @@ export class AztecLedgerSession {
     const currentMinFees = await session.nodeClient.getCurrentMinFees();
     const maxFeesPerGas = currentMinFees.mul(1.1);
     const gasSettings = GasSettings.fallback({ maxFeesPerGas });
+    /* `feePaymentMethodOptions` is the u8 fee-payment-mode arg the entrypoint
+     * ABI requires (account_entrypoint.ts:204). For the sponsored FPC path
+     * the account contract is NOT the fee payer — the FPC contract is —
+     * so EXTERNAL (=0). Passing `undefined` here surfaced as
+     * "Undefined argument fee_payment_method of type integer" at first
+     * playwright drip. */
     const txRequest = await entrypoint.createTxExecutionRequest(exec, gasSettings, chainInfo, {
       cancellable: false,
       txNonce,
-      feePaymentMethodOptions: undefined as never,
+      feePaymentMethodOptions: AccountFeePaymentMethodOptions.EXTERNAL,
     });
 
     /* 8. Prove + send via the session's PXE + AztecNode. The raw PXE v4.2.1

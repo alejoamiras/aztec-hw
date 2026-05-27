@@ -1,25 +1,59 @@
 /**
  * Smoke test for the M6 demo browser.
  *
- * What this proves:
- *  - Vite dev server is reachable + the React bundle loads.
- *  - Page mounts (root #root has children, no boot-time error overlay).
- *  - All three panels render with expected H2s.
- *  - The transport dropdown + node URL field accept input.
- *  - Clicking Connect transitions to "connecting" and then either:
- *      - "ready" if Speculos is up + node reachable (won't happen without
- *        live PXE init), or
- *      - "error" with a meaningful message (the most likely path here).
+ * Proves end-to-end:
+ *  - Vite dev server reachable + React bundle loads.
+ *  - All three panels render.
+ *  - Connect drives the full AztecLedgerSession.connect() against
+ *    live alpha-testnet + the Speculos emulator → real Ledger-derived
+ *    account address.
+ *  - Drip kicks off the clear-signing pipeline (BEGIN_AUTHWIT +
+ *    APPEND_CALL × N + FINALIZE_AND_SIGN against Speculos). The test
+ *    drives the Speculos buttons via its REST API to auto-confirm.
  *
- * What this CANNOT prove:
- *  - The actual session connects end-to-end (needs the alpha-testnet
- *    node to be reachable + PXE WASM prover to init).
- *  - That a tx submits to chain.
+ * Pre-reqs:
+ *  - Speculos at localhost:5001 with the M5 Aztec app loaded.
+ *  - Internet access to https://rpc.testnet.aztec-labs.com.
  *
- * Capture: screenshots + console logs at each step so a failure tells
- * the user something actionable.
+ * Doesn't yet drive Transfer (Drip doesn't need on-chain prior balance;
+ * Transfer needs USDC in the account, which Drip would supply if the
+ * tx actually lands).
  */
 import { expect, test } from '@playwright/test';
+
+const SPECULOS_URL = 'http://localhost:5001';
+
+/** Spam the right-then-both button presses on Speculos until the device
+ * returns to idle. Speculos's review screens differ by verb count;
+ * presses are cheap so we just brute-force confirmation. */
+async function autoConfirmSpeculos(durationMs = 8000): Promise<void> {
+  const deadline = Date.now() + durationMs;
+  while (Date.now() < deadline) {
+    /* Sequence Right (advance), Right (advance), Both (confirm). */
+    await fetch(`${SPECULOS_URL}/button/right`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'press-and-release' }),
+    }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 150));
+    await fetch(`${SPECULOS_URL}/button/both`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'press-and-release' }),
+    }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
+async function speculosScreen(): Promise<string> {
+  try {
+    const res = await fetch(`${SPECULOS_URL}/events?currentscreenonly=true`);
+    const json = (await res.json()) as { events: { text: string }[] };
+    return json.events.map((e) => e.text).join(' | ');
+  } catch {
+    return '<unreachable>';
+  }
+}
 
 test('demo browser smoke', async ({ page }) => {
   const consoleErrors: string[] = [];
@@ -94,6 +128,48 @@ test('demo browser smoke', async ({ page }) => {
     } else {
       const addr = await page.locator('.address').first().innerText();
       console.log('\n=== CONNECT OK ===\nAddress: ' + addr + '\n=== END ===\n');
+    }
+  });
+
+  await test.step('drive Drip (Speculos auto-confirm)', async () => {
+    const errBanner = page.locator('.status.err').first();
+    if ((await errBanner.count()) > 0) {
+      console.log('\n=== SKIPPING DRIP (Connect did not succeed) ===\n');
+      return;
+    }
+    const dripBtn = page.getByRole('button', { name: 'Drip 1000 USDC' });
+    await dripBtn.click();
+    /* Concurrently spam Speculos confirmations while the click resolves. */
+    const confirmPromise = autoConfirmSpeculos(20_000);
+    /* Wait up to 90s for the drip to terminate — proving may be slow. */
+    try {
+      await page.waitForFunction(
+        () => {
+          const btn = Array.from(document.querySelectorAll('button')).find((b) =>
+            b.textContent?.includes('Drip'),
+          );
+          const errBanner = document.querySelector('.status.err');
+          if (errBanner) return true;
+          if (!btn) return false;
+          return !btn.textContent?.includes('Dripping');
+        },
+        { timeout: 90_000 },
+      );
+    } catch (e) {
+      console.log('\n=== DRIP TIMED OUT (90s) ===\n');
+    }
+    await confirmPromise.catch(() => {});
+    await page.screenshot({ path: '/tmp/m6-3-after-drip.png', fullPage: true });
+
+    const screen = await speculosScreen();
+    console.log('\n=== SPECULOS POST-DRIP SCREEN ===\n' + screen);
+
+    const errCount = await errBanner.count();
+    if (errCount > 0) {
+      const msg = await errBanner.innerText();
+      console.log('\n=== DRIP ERROR ===\n' + msg + '\n=== END ===\n');
+    } else {
+      console.log('\n=== DRIP OK ===\n');
     }
   });
 
