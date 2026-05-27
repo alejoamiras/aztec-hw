@@ -70,6 +70,18 @@ export function ConnectPanel({ state, setState }: Props) {
       };
       setState({ kind: 'ready', session: ref });
     } catch (e) {
+      /* Surface the full stack to the browser console so Playwright /
+       * devtools picks it up — the on-screen banner only carries the
+       * top-line message. Stack is stringified so newlines survive
+       * Playwright's console.text() concatenation. */
+      if (e instanceof Error) {
+        console.error(
+          'Connect failed JSON: ' +
+            JSON.stringify({ name: e.name, message: e.message, stack: e.stack }, null, 2),
+        );
+      } else {
+        console.error('Connect failed (non-Error):', e);
+      }
       const msg =
         e instanceof WebHidNotSupportedError
           ? 'WebHID is unavailable. Use Chromium-based browser over HTTPS (or localhost), or pick the Speculos transport.'

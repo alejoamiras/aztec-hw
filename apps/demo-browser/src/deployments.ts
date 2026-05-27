@@ -11,16 +11,14 @@
 import { AztecAddress } from '@aztec/aztec.js/addresses';
 import { getContractInstanceFromInstantiationParams } from '@aztec/aztec.js/contracts';
 import { Fr } from '@aztec/foundation/curves/bn254';
-import type { ContractArtifact } from '@aztec/stdlib/abi';
 import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
-
-/* JSON imports — Vite handles these natively. */
-import dripperArtifact from '@defi-wonderland/aztec-standards/target/dripper-Dripper.json' with {
-  type: 'json',
-};
-import tokenArtifact from '@defi-wonderland/aztec-standards/target/token_contract-Token.json' with {
-  type: 'json',
-};
+/* Use Wonderland's pre-processed artifact modules instead of the raw JSON.
+ * The raw target/*.json shape has `f.abi.parameters` (nested); the
+ * framework's FunctionAbi expects `f.parameters` at the top level. The
+ * `dist/src/artifacts/*.js` modules export the normalized shape.
+ * Pattern lifted from nulo-2/packages/faucet/src/contracts/deployments.ts. */
+import { DripperContractArtifact } from '@defi-wonderland/aztec-standards/dist/src/artifacts/Dripper.js';
+import { TokenContractArtifact } from '@defi-wonderland/aztec-standards/dist/src/artifacts/Token.js';
 
 export const NULO_DRIPPER_ADDRESS = AztecAddress.fromString(
   '0x172684be7d86acff9c0e16b15e3f34647e5c8c26f0838a0872df7f61ddcb7070',
@@ -38,8 +36,8 @@ export const DRIPPER_SALT = 1337n;
 export const USDC_SALT = 4242n;
 export const USDC_DECIMALS = 6;
 
-export const TOKEN_ARTIFACT = tokenArtifact as unknown as ContractArtifact;
-export const DRIPPER_ARTIFACT = dripperArtifact as unknown as ContractArtifact;
+export const TOKEN_ARTIFACT = TokenContractArtifact;
+export const DRIPPER_ARTIFACT = DripperContractArtifact;
 
 /**
  * Recompute the Dripper's deployed instance. Constructor has zero args.
