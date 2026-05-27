@@ -39,6 +39,7 @@ export {
   AztecLedgerSession,
   type AztecLedgerSessionConnectOptions,
   type AztecLedgerSessionDeps,
+  type PhaseId,
   type SubmitOptions,
   type SubmitResult,
   type SubmitStepHandler,

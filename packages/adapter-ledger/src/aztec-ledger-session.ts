@@ -94,10 +94,19 @@ export interface SubmitResult {
   readonly receipt: TxReceipt;
 }
 
-/** Step-by-step status callback for submission flows. Lets the UI render
- * "Building manifest…" / "Awaiting signature on device…" / "Submitting tx…"
- * etc. without baking deep coupling into the wrapper class. */
-export type SubmitStepHandler = (label: string) => void;
+/** Canonical phase IDs for the 6-step submission pipeline (M7). The host
+ * UI consumes the phase to drive a deterministic timeline — NEVER infer
+ * the phase by string-matching the label. The label is a free-text human
+ * caption shown beneath the timeline; the phase is the source of truth.
+ *
+ * Order is monotonic — the UI's reducer throws in dev/test if it sees
+ * a backwards transition (codex audit MINOR #1). */
+export type PhaseId = 'build' | 'sign' | 'prove' | 'submit' | 'include' | 'done';
+
+/** INVARIANT: only the adapter calls `onStep`. The browser UI never
+ * synthesizes phase callbacks — that would let a malicious renderer
+ * lie to the user about device state. Document at call site. */
+export type SubmitStepHandler = (phase: PhaseId, label: string) => void;
 
 export interface SubmitOptions {
   readonly onStep?: SubmitStepHandler;
@@ -252,9 +261,15 @@ export class AztecLedgerSession {
    */
   async deployAccount(opts: SubmitOptions = {}): Promise<SubmitResult> {
     const step = opts.onStep ?? (() => {});
-    step('Building deploy method…');
+    /* M7 P1: structured phase callback. Phases 'sign' / 'prove' / 'submit' /
+     * 'include' all fall under deployMethod.send() — a black box we can't
+     * decompose here. M7 P4 replaces this with deployAccountClearSigned()
+     * which drives the full 9-step recipe with accurate phases. For now,
+     * we report 'sign' before send() (device shows blind-sign prompt) and
+     * 'done' when the tx mines; the intermediate phases are not visible. */
+    step('build', 'Building deploy method…');
     const deployMethod = await this.accountManager.getDeployMethod();
-    step('Submitting deploy tx (blind-sign on device)…');
+    step('sign', 'Awaiting blind-sign approval on device…');
     /* `from: NO_FROM` selects the self-paid deploy path in
      * DeployAccountMethod.request: the to-be-deployed account ITSELF
      * pays via the multicall entrypoint, which bypasses the account's
@@ -263,7 +278,7 @@ export class AztecLedgerSession {
       from: NO_FROM,
       fee: { paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress) },
     });
-    step('Tx mined');
+    step('done', 'Account deployed');
     return { txHash: result.receipt.txHash, receipt: result.receipt };
   }
 
@@ -317,7 +332,7 @@ export class AztecLedgerSession {
    */
   async dripUsdc(amount: bigint, opts: SubmitOptions = {}): Promise<SubmitResult> {
     const step = opts.onStep ?? (() => {});
-    step('Building drip payload…');
+    step('build', 'Building drip payload…');
     const dripper = this.contractAt(this.deps.dripperInstance.address, this.deps.dripperArtifact);
     const callContractMethod = this.requireMethod(dripper, 'drip_to_public');
     const exec = await callContractMethod(this.deps.usdcInstance.address, amount).request({
@@ -388,7 +403,7 @@ export class AztecLedgerSession {
     opts: SubmitOptions = {},
   ): Promise<SubmitResult> {
     const step = opts.onStep ?? (() => {});
-    step(`Building ${method} payload…`);
+    step('build', `Building ${method} payload…`);
     const token = this.contractAt(this.deps.usdcInstance.address, this.deps.tokenArtifact);
     const callContractMethod = this.requireMethod(token, method);
     const exec = await callContractMethod(this.address, to, amount, 0n).request({
@@ -471,18 +486,18 @@ export class AztecLedgerSession {
     const step = opts.onStep ?? (() => {});
     const { ledgerProvider, session } = this.deps;
 
-    step('Fetching chain info…');
+    step('build', 'Fetching chain info…');
     const chainInfo = await this.getChainInfo();
 
     const txNonce = Fr.random();
 
-    step('Projecting CallIntent…');
+    step('build', 'Projecting clear-sign intent…');
     const intent = projectExecutionPayloadIntoCallIntent(exec, this.address, chainInfo);
 
-    step('Awaiting clear-signed approval on device…');
+    step('sign', 'Awaiting clear-signed approval on device…');
     const witness = await ledgerProvider.createAuthWitFromIntent(intent, txNonce);
 
-    step('Signature received — building tx request…');
+    step('prove', 'Signature received — building tx request…');
 
     /* 5. Wrap in FrozenAuthWitnessProvider — one-shot, hash-asserted.
      *    The framework's account_entrypoint.ts:131 computes its own
@@ -532,16 +547,16 @@ export class AztecLedgerSession {
      *    because nulo's deployed contracts (USDC + Dripper) were
      *    address-derived at 4.2.0; mixing 4.3.0 PXE with 4.2.0 addresses
      *    risks address-derivation drift on registerContract. */
-    step('Proving tx (in-browser WASM)…');
+    step('prove', 'Proving tx (in-browser WASM)…');
     const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
     const tx = await provenTx.toTx();
     const txHash = tx.getTxHash();
-    step(`Submitting tx ${txHash.toString().slice(0, 10)}…`);
+    step('submit', `Submitting tx ${txHash.toString().slice(0, 10)}…`);
     await session.nodeClient.sendTx(tx);
 
-    step('Awaiting inclusion…');
+    step('include', 'Awaiting L2 inclusion…');
     const receipt = await waitForTx(session.nodeClient, txHash);
-    step('Tx mined');
+    step('done', 'Tx checkpointed');
     return { txHash, receipt };
   }
 }

@@ -1,28 +1,21 @@
 /**
  * Top-of-page status bar with a real PHASE TIMELINE.
  *
- * Replaces the prior "latest step label" surface that lived under
- * panel 2 — the user complained that the two status surfaces (header
- * + under-step-2 console) were redundant AND not clearly communicating
- * what phase the tx was in. The action's name (deploy / drip / transfer
- * pub→pub) sits on the badge. The 6 ordered phases sit below as a
- * horizontal timeline; each phase lights up (done/active/pending) as
- * the step labels from the adapter come through. Single source of
- * truth — the under-step-2 console is gone.
+ * M7 P1: the active phase is read DIRECTLY from `step.phase` — no string
+ * heuristic. The adapter is the source of truth via the structured
+ * `onStep(phase, label)` callback. If a step lands with an unexpected
+ * phase value, that's a typed enum violation and would have failed
+ * at the call site.
  *
- * Phase inference: parses step-label keywords ("Building…", "Awaiting
- * clear-signed…", "Proving…", "Submitting…", "Awaiting inclusion…",
- * "Tx mined / deployed"). Cheap heuristic; resilient enough for the
- * demo. If a label doesn't match any keyword, the active-phase
- * pointer just sticks where it was.
+ * Single source of truth — only the adapter calls `onStep`. The browser
+ * never synthesizes phase callbacks.
  */
-import type { DemoState, SubmitStep } from '../state.ts';
+import type { PhaseId } from '@aztec-hwwallet-poc/adapter-ledger';
+import { type DemoState, PHASE_ORDER, type SubmitStep } from '../state.ts';
 
 interface Props {
   state: DemoState;
 }
-
-type PhaseId = 'build' | 'sign' | 'prove' | 'submit' | 'include' | 'done';
 
 interface Phase {
   id: PhaseId;
@@ -39,24 +32,9 @@ const PHASES: readonly Phase[] = [
   { id: 'done', label: 'Done', hint: 'Tx checkpointed' },
 ] as const;
 
-/** Map an adapter step label to a phase index (0..5). Returns -1 if unknown. */
-function inferPhaseIndex(label: string): number {
-  const l = label.toLowerCase();
-  if (l.includes('building') || l.includes('payload')) return 0;
-  if (l.includes('awaiting') && (l.includes('approval') || l.includes('signed'))) return 1;
-  if (l.includes('signature received') || l.includes('proving') || l.includes('ivc')) return 2;
-  if (l.includes('submitting')) return 3;
-  if (l.includes('awaiting inclusion') || l.includes('inclusion')) return 4;
-  if (l.includes('mined') || l.includes('deployed') || l.includes('done')) return 5;
-  return -1;
-}
-
-function activePhase(steps: readonly SubmitStep[]): number {
-  for (let i = steps.length - 1; i >= 0; i--) {
-    const idx = inferPhaseIndex(steps[i]!.label);
-    if (idx >= 0) return idx;
-  }
-  return 0;
+function activePhaseIdx(steps: readonly SubmitStep[]): number {
+  if (steps.length === 0) return 0;
+  return PHASE_ORDER.indexOf(steps[steps.length - 1]!.phase);
 }
 
 interface TimelineProps {
@@ -147,7 +125,7 @@ export function StatusBar({ state }: Props) {
       primary = last ? last.label : 'Working…';
       currentStep = last?.label ?? '';
       showTimeline = true;
-      activeIdx = activePhase(state.steps);
+      activeIdx = activePhaseIdx(state.steps);
       secondary = PHASES[activeIdx]?.hint ?? '';
       break;
     }
@@ -158,7 +136,7 @@ export function StatusBar({ state }: Props) {
       if (state.steps?.length) {
         showTimeline = true;
         failed = true;
-        activeIdx = activePhase(state.steps);
+        activeIdx = activePhaseIdx(state.steps);
         secondary = `Failed at: ${PHASES[activeIdx]?.label ?? 'unknown phase'}.`;
       }
       break;

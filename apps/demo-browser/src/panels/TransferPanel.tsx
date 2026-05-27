@@ -3,9 +3,14 @@
  * status visible to the user.
  */
 import { AztecAddress } from '@aztec/aztec.js/addresses';
-import type { AztecLedgerSession, SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
+import type { AztecLedgerSession, PhaseId, SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
 import { useState } from 'react';
-import { type DemoState, sessionFromState } from '../state.ts';
+import {
+  assertMonotonicPhase,
+  type DemoState,
+  type SubmitStep,
+  sessionFromState,
+} from '../state.ts';
 
 type Mode = 'pub-pub' | 'priv-pub' | 'pub-priv' | 'priv-priv';
 
@@ -26,7 +31,7 @@ function callWrapper(
   mode: Mode,
   to: AztecAddress,
   amount: bigint,
-  onStep: (s: string) => void,
+  onStep: (phase: PhaseId, label: string) => void,
 ): Promise<SubmitResult> {
   const opts = { onStep };
   switch (mode) {
@@ -63,15 +68,16 @@ export function TransferPanel({ state, setState }: Props) {
       return;
     }
     const atomic = BigInt(amount);
-    const localSteps: { label: string; at: number }[] = [];
+    const localSteps: SubmitStep[] = [];
     setState({
       kind: 'submitting',
       session: sessionRef,
       action: `transfer ${mode}`,
       steps: localSteps,
     });
-    const onStep = (label: string) => {
-      localSteps.push({ label, at: performance.now() });
+    const onStep = (phase: PhaseId, label: string) => {
+      assertMonotonicPhase(phase, localSteps);
+      localSteps.push({ phase, label, at: performance.now() });
       /* Force a state re-render by re-issuing the submitting state. */
       setState({
         kind: 'submitting',

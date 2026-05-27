@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M7 — Shape up the demo (ELI5)</title>
+<style>
+  :root {
+    --bg: #0c0d10;
+    --fg: #e9ecf2;
+    --muted: #99a3b3;
+    --accent: #7c5cff;
+    --ok: #3ddc97;
+    --warn: #f4c03a;
+    --err: #f87171;
+    --card: #14161b;
+    --border: #232631;
+    --maxw: 760px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  body { font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: var(--maxw); margin: 0 auto; padding: 3rem 1.25rem 6rem; }
+  header { padding: 2.25rem 0 1.5rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
+  h1 { font-size: 1.85rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.1rem; margin: 2.5rem 0 0.85rem; padding-top: 1.5rem; border-top: 1px solid var(--border); letter-spacing: 0.02em; }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+  h3 { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 0.5rem; color: var(--fg); }
+  p { color: var(--fg); margin: 0.65rem 0; }
+  p.lead { color: var(--muted); font-size: 1.05rem; }
+  .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+  ul, ol { margin: 0.4rem 0; padding-left: 1.5rem; }
+  li { margin: 0.25rem 0; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: var(--card); padding: 0.05em 0.35em; border-radius: 4px; border: 1px solid var(--border); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.25rem; margin: 1rem 0; }
+  .card.warn { border-left: 3px solid var(--warn); }
+  .card.ok { border-left: 3px solid var(--ok); }
+  .card.err { border-left: 3px solid var(--err); }
+  .card.accent { border-left: 3px solid var(--accent); }
+  .tag { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; border: 1px solid var(--border); margin-right: 0.4rem; }
+  .tag.contested { background: rgba(244, 192, 58, 0.1); color: var(--warn); border-color: rgba(244,192,58,0.4); }
+  .tag.deferred  { background: rgba(124, 92, 255, 0.08); color: var(--accent); border-color: rgba(124,92,255,0.4); }
+  .tag.shipped   { background: rgba(61, 220, 151, 0.1); color: var(--ok); border-color: rgba(61,220,151,0.4); }
+  .ascii { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; white-space: pre; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; line-height: 1.5; }
+  table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; font-size: 0.92rem; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; }
+  th { background: var(--card); font-weight: 600; }
+  td:first-child { white-space: nowrap; }
+  a { color: var(--accent); }
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem 1.25rem; margin-bottom: 2rem; font-size: 0.92rem; }
+  .toc ul { padding-left: 1.2rem; margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>M7 — Shape up the demo</h1>
+    <p class="lead">What this arc does, in plain language. Companion to <code>plan.md</code>.</p>
+    <p class="meta">Status: awaiting approval · Tier A · estimated 7 working days</p>
+  </header>
+
+  <nav class="toc">
+    <strong>In here</strong>
+    <ul>
+      <li><a href="#why">Why we're doing this</a></li>
+      <li><a href="#three">The three pieces</a></li>
+      <li><a href="#deploy">Clear-signing the deploy, explained</a></li>
+      <li><a href="#timeline">Fixing the timeline lie</a></li>
+      <li><a href="#polish">Visual polish</a></li>
+      <li><a href="#contested">Contested decisions to reconfirm</a></li>
+      <li><a href="#deferred">What we're punting (and why)</a></li>
+    </ul>
+  </nav>
+
+  <h2 id="why">Why we're doing this</h2>
+  <p>Today the demo works end-to-end — you can deploy an Aztec account, drip USDC, and transfer it, all on alpha-testnet, with the device showing a real review screen for the drip and transfer.</p>
+  <p>But three things make it feel rough:</p>
+  <ul>
+    <li><strong>Deploy is blind-signed.</strong> The device shows you a 32-byte hash and asks you to trust it. You can't see what you're approving.</li>
+    <li><strong>The timeline lies.</strong> Click Deploy and the progress header jumps to "Submit" while the device is still waiting for your approval. The progress bar is reading tea leaves (regex on label strings) instead of being told what's actually happening.</li>
+    <li><strong>The visual style is rough.</strong> Spacing, typography, motion — looks like scaffolding, not product.</li>
+  </ul>
+
+  <h2 id="three">The three pieces</h2>
+
+  <div class="card accent">
+    <strong>1 · Clear-sign deploy.</strong> The device shows you the account address it's about to deploy, plus the path and fee-payer, and signs only after you approve. Same security pattern as the existing drip + transfer clear-signing.
+  </div>
+  <div class="card accent">
+    <strong>2 · Structured timeline.</strong> The adapter tells the UI exactly which phase it's in. The UI stops guessing. Deploy joins the same 9-phase pipeline that drip and transfer use.
+  </div>
+  <div class="card accent">
+    <strong>3 · CSS polish.</strong> Same vanilla CSS file; tighten type/spacing/motion/hierarchy. ~80 lines net diff. No framework migration.
+  </div>
+  <p>Order matters: <strong>deploy → timeline → polish</strong>. Polish ships last so it can't paper over the timeline bug behind nicer typography.</p>
+
+  <h2 id="deploy">Clear-signing the deploy, explained</h2>
+  <h3>What the device does today</h3>
+  <p>You click Deploy. The browser computes a 32-byte hash of the entire deploy transaction (called the <code>outer_hash</code>) and sends it to the device. The device displays:</p>
+  <div class="ascii">Sign Aztec outer_hash?
+  outer_hash:  0x9a3c...4f1b
+
+[Confirm]  [Reject]</div>
+  <p>The user has no way to know what they're signing. Could be deploying their account, could be authorizing a malicious transaction. The hash is unreadable.</p>
+
+  <h3>What the device will do after M7</h3>
+  <div class="ascii">Deploy your Aztec account?
+
+  Address:     0x014ca15c2cc16501246e710534c87ef
+               20cfce682f0efaaa4bb970ecf547f2771
+  Path:        m/44'/0'/0'/0/0
+  Fee paid by: testnet sponsor
+  Class:       EcdsaKAccount v1
+
+[Confirm]  [Reject]</div>
+  <p>The user reviews the address and the BIP-32 path; if they expected to deploy at this address from this key, they approve.</p>
+
+  <h3>The honest part</h3>
+  <div class="card warn">
+    <strong>What the device can verify cryptographically:</strong> the BIP-32-derived signing pubkey, the initialization hash, the salted init hash, the partial address — all the way up to the next-to-last step in the Aztec address derivation.
+    <br /><br />
+    <strong>What it can't verify in this arc:</strong> the final step is an elliptic-curve operation on the Grumpkin curve. The Ledger SDK doesn't ship Grumpkin scalar-multiplication, and writing it from scratch is ~2 weeks of work. So the final address is <em>shown</em>, but not independently recomputed by the device.
+    <br /><br />
+    <strong>What that means in practice:</strong> a malicious browser <em>can</em> deploy a valid account whose protocol keys (the encryption keys for incoming notes) the host controls. The deploy will succeed. The user thinks they own it. But the host can read every incoming note. This is a <strong>privacy attack the user authorized unknowingly</strong>, not just an availability blip. The user's signing key (held in the Ledger) is still safe, so funds can't be stolen — but transaction privacy is broken if the host is malicious. We document this honestly; the Grumpkin lift + a BIP-32-derived protocol secret (both M8) close the gap.
+  </div>
+
+  <h3>How we built it (briefly)</h3>
+  <ol>
+    <li>Bypass the framework's <code>DeployAccountMethod</code> — turns out it signs <em>during request assembly</em>, before we'd have a chance to intervene. So we build the deploy payload manually.</li>
+    <li>Build the initialization payload + the sponsor fee payload separately.</li>
+    <li>Send a new APDU to the device with the address, salt, public_keys_hash, etc. Device shows the review screen.</li>
+    <li>User approves. Device signs the outer_hash with the same fault-hardened pattern as drip/transfer.</li>
+    <li>Browser injects the signed witness and submits the deploy tx.</li>
+  </ol>
+
+  <h2 id="timeline">Fixing the timeline lie</h2>
+  <p>The old approach: when the adapter wanted to update the progress bar, it called <code>onStep('Submitting deploy tx…')</code> with a free-text label. The UI then ran a regex over the label to guess which phase to highlight ("submitting" → phase 4 of 6). Wrong on deploy because the framework calls "Submit" while the device is still on the Sign screen.</p>
+  <p>The new approach: <code>onStep('sign', 'Awaiting deploy approval on device…')</code>. The phase is the source of truth. The label is for human eyes only.</p>
+  <p>And because clear-signing the deploy means deploy goes through the same 9-step recipe as drip and transfer, ALL THREE actions have an identical phase sequence — the timeline shows the same six markers and lights them up in the same order.</p>
+
+  <h2 id="polish">Visual polish</h2>
+  <p>~80 lines net diff in <code>style.css</code>. Highlights:</p>
+  <ul>
+    <li>Type scale: tighten the existing ad-hoc font sizes onto a consistent ramp.</li>
+    <li>Neutral ramp: add elevation tokens so the status bar can lift visually above panels.</li>
+    <li><strong>Connector bug fix in the phase timeline</strong> — the existing line uses <code>left: 60%; right: -40%</code> which overshoots on narrow viewports. Replace with calc'd offsets that hit the next marker's center reliably.</li>
+    <li><strong>Finite, not infinite, pulse animation.</strong> Infinite pulses on signing screens are a phishing pattern. Change to 3 cycles then settle.</li>
+    <li>Button press feedback, address pill with copy-on-click, panel hierarchy tweaks.</li>
+    <li>Anti-phishing discipline: no host-rendered "✓ Verified" checkmarks anywhere. The device screen is the only authoritative surface.</li>
+  </ul>
+
+  <h2 id="contested">Contested decisions to reconfirm</h2>
+  <p>Both codex (xhigh) and the opus subagent pushed back on two of the earlier user choices. Worth a second look before locking:</p>
+
+  <div class="card warn">
+    <span class="tag contested">Contested</span>
+    <strong>Address-only display on device.</strong>
+    <br />Both auditors say: also show the BIP-32 path and the fee-payer. Reason: <em>path mis-selection is a cheaper attack than breaking secp256k1</em>. An attacker who can suggest the path (e.g. via a malicious dApp prompt) doesn't need to break crypto — they need to get you to sign at a different path. Showing the full path makes that visible.
+  </div>
+
+  <div class="card warn">
+    <span class="tag contested">Contested</span>
+    <strong>Address truncation length.</strong>
+    <br />6 leading + 4 trailing hex chars = 40 bits. Vanity-brute-forceable in minutes. Both auditors recommend full 64-char address on the one-time deploy review (NBGL supports scrolling).
+  </div>
+
+  <div class="card warn">
+    <span class="tag contested">Contested</span>
+    <strong>Grumpkin EC on device.</strong>
+    <br />Without it, "device shows truth" has the gap above. Codex sketched the full chain. Opus and the consolidated plan recommend punting to M8 because the lift is ~2 weeks. Worth confirming you're OK with that trade.
+  </div>
+
+  <h2 id="deferred">What we're punting to M8 (and why)</h2>
+  <p>Things that came up in adversarial review but didn't make the cut:</p>
+  <ul>
+    <li><span class="tag deferred">M8</span> <strong>Grumpkin scalar mult on device.</strong> Lets the device verify the FULL address derivation. ~2 weeks of new crypto code. Real production design.</li>
+    <li><span class="tag deferred">M8</span> <strong><code>INS_GET_AZTEC_SECRET</code>.</strong> Currently the host generates <code>secret = Fr.random()</code> per session and derives publicKeys from it. Opus pushed: lift to BIP-32-derived secret. Real production design; ~1 week.</li>
+    <li><span class="tag deferred">M8</span> <strong>Independent crypto oracle.</strong> Right now our host TS poseidon2 and device C poseidon2 are tested against same-repo golden vectors. A shared bug would silently survive. Need at least one external vector source (barretenberg or Noir-derived).</li>
+    <li><span class="tag deferred">M8</span> <strong>Typed MessagePort for <code>onStep</code>.</strong> Closure callback works fine for v0; for production tightening, replace with MessagePort so a browser extension can't interpose.</li>
+  </ul>
+
+  <h2>What "done" looks like for M7</h2>
+  <ol>
+    <li>Click Deploy → device shows the address review → confirm → tx mines. No more blind-sign.</li>
+    <li>Click Deploy → timeline header progresses Sign → Prove → Submit → Include → Done in real time.</li>
+    <li>Look at the demo, think "this looks intentional" instead of "this looks like scaffolding."</li>
+    <li>All four transfer modes (pub→pub / priv→pub / pub→priv / priv→priv) work end-to-end.</li>
+    <li><code>bun run lint:all && bun test</code> clean.</li>
+    <li>Lessons logged in <code>lessons/phase-N.md</code>.</li>
+  </ol>
+</main>
+</body>
+</html>

@@ -11,9 +11,50 @@
  * keep it opaque here (typed `unknown`) so this file doesn't transitively
  * pull in @aztec/* into every renderer. Concrete callers narrow it.
  */
-import type { AztecLedgerSession } from '@aztec-hwwallet-poc/adapter-ledger';
+import type { AztecLedgerSession, PhaseId } from '@aztec-hwwallet-poc/adapter-ledger';
 
 export type Transport = 'speculos' | 'webhid';
+
+/** Canonical phase order — single source of truth for both the UI
+ * timeline AND the dev-mode monotonic assertion. Re-exported from the
+ * adapter package so adapter + UI agree by construction. */
+export const PHASE_ORDER: readonly PhaseId[] = [
+  'build',
+  'sign',
+  'prove',
+  'submit',
+  'include',
+  'done',
+] as const;
+
+/** Codex audit MINOR #1: phase regression is a state-machine bug, not
+ * a soft warning. Throws in dev/test; logs in production. The unit
+ * test at apps/demo-browser/src/state.test.ts asserts the throw fires.
+ *
+ * Env detection is portable across bun:test (no Vite globals) and the
+ * Vite browser build: throws unless explicitly production. */
+function isProduction(): boolean {
+  // biome-ignore lint/suspicious/noExplicitAny: cross-runtime env probe
+  const meta = import.meta as any;
+  if (meta?.env?.PROD === true) return true;
+  if (meta?.env?.MODE === 'production') return true;
+  // biome-ignore lint/suspicious/noExplicitAny: cross-runtime env probe
+  const proc = (globalThis as any).process;
+  if (proc?.env?.NODE_ENV === 'production') return true;
+  return false;
+}
+
+export function assertMonotonicPhase(next: PhaseId, steps: readonly { phase: PhaseId }[]): void {
+  if (steps.length === 0) return;
+  const prev = steps[steps.length - 1]!.phase;
+  const prevIdx = PHASE_ORDER.indexOf(prev);
+  const nextIdx = PHASE_ORDER.indexOf(next);
+  if (nextIdx < prevIdx) {
+    const msg = `[m7] backwards phase transition: ${prev} (idx=${prevIdx}) → ${next} (idx=${nextIdx})`;
+    if (!isProduction()) throw new Error(msg);
+    console.error(msg);
+  }
+}
 
 export interface SessionRef {
   readonly transport: Transport;
@@ -26,6 +67,7 @@ export interface SessionRef {
 }
 
 export interface SubmitStep {
+  readonly phase: PhaseId;
   readonly label: string;
   readonly at: number; // performance.now() timestamp
 }

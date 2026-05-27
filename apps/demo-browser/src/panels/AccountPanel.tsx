@@ -6,8 +6,13 @@
  * Deploy is one-shot and self-disables; Drip is gated on Deploy.
  */
 
-import type { SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
-import { type DemoState, type SubmitStep, sessionFromState } from '../state.ts';
+import type { PhaseId, SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
+import {
+  assertMonotonicPhase,
+  type DemoState,
+  type SubmitStep,
+  sessionFromState,
+} from '../state.ts';
 
 interface Props {
   state: DemoState;
@@ -21,13 +26,14 @@ export function AccountPanel({ state, setState }: Props) {
 
   async function runAction(
     name: 'deploy' | 'drip',
-    fn: (onStep: (s: string) => void) => Promise<SubmitResult>,
+    fn: (onStep: (phase: PhaseId, label: string) => void) => Promise<SubmitResult>,
   ) {
     if (!session) return;
     const local: SubmitStep[] = [];
     setState({ kind: 'submitting', session, action: name, steps: local });
-    const onStep = (label: string) => {
-      local.push({ label, at: performance.now() });
+    const onStep = (phase: PhaseId, label: string) => {
+      assertMonotonicPhase(phase, local);
+      local.push({ phase, label, at: performance.now() });
       setState({ kind: 'submitting', session, action: name, steps: [...local] });
     };
     try {
