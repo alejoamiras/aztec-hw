@@ -29,9 +29,14 @@
  * route through `submitClearSignedIntent`, so they share the mutex.
  */
 import type { AztecAddress, CompleteAddress } from '@aztec/aztec.js/addresses';
-import { Contract, type ContractMethod } from '@aztec/aztec.js/contracts';
+import {
+  Contract,
+  type ContractMethod,
+  getContractInstanceFromInstantiationParams,
+} from '@aztec/aztec.js/contracts';
 import { SponsoredFeePaymentMethod } from '@aztec/aztec.js/fee';
 import { waitForTx } from '@aztec/aztec.js/node';
+import { AccountManager } from '@aztec/aztec.js/wallet';
 import { DefaultAccountEntrypoint } from '@aztec/entrypoints/account';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import type { ContractArtifact } from '@aztec/stdlib/abi';
@@ -39,11 +44,13 @@ import { GasFees, GasSettings } from '@aztec/stdlib/gas';
 import type { ExecutionPayload, TxHash, TxReceipt } from '@aztec/stdlib/tx';
 import type { ChainInfo } from '@aztec-hwwallet-poc/core';
 
-import type { LedgerEcdsaKAccountContract } from './account-contract.ts';
+import { LedgerEcdsaKAccountContract } from './account-contract.ts';
+import { defaultAztecPath } from './apdu.ts';
 import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
 import { FrozenAuthWitnessProvider } from './frozen-auth-witness-provider.ts';
 import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
-import type { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
+import { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
+import type { LedgerTransport } from './transport.ts';
 
 export interface AztecLedgerSessionDeps {
   /** Ephemeral wallet (PXE + wallet DB) for the session. */
@@ -73,6 +80,31 @@ export interface SubmitResult {
   readonly receipt: TxReceipt;
 }
 
+export interface AztecLedgerSessionConnectOptions {
+  /** Aztec node JSON-RPC URL (e.g. https://rpc.testnet.aztec-labs.com). */
+  readonly nodeUrl: string;
+  /** Open Ledger transport (Speculos / WebHID / hw-transport-node-hid). */
+  readonly transport: LedgerTransport;
+  /** Optional override BIP-32 path; defaults to Aztec's standard. */
+  readonly bip32Path?: readonly number[];
+  /** Wonderland Token contract artifact (loaded JSON). */
+  readonly tokenArtifact: ContractArtifact;
+  /** Wonderland Dripper contract artifact (loaded JSON). */
+  readonly dripperArtifact: ContractArtifact;
+  /** Live token address (USDC). */
+  readonly usdcAddress: AztecAddress;
+  /** Live Dripper address. */
+  readonly dripperAddress: AztecAddress;
+  /** Live SponsoredFPC address (salt=0 on both sandbox and testnet). */
+  readonly sponsoredFpcAddress: AztecAddress;
+  /** Optional pre-chosen account salt. Defaults to a fresh Fr.random(). */
+  readonly salt?: Fr;
+  /** Optional pre-chosen master secret. Defaults to a fresh Fr.random(). */
+  readonly secret?: Fr;
+  /** Enable in-browser proving (default true). Heavy WASM init on first use. */
+  readonly proverEnabled?: boolean;
+}
+
 /**
  * Class is constructed by `AztecLedgerSession.connect(opts)`; tests can
  * also pass in pre-built deps to exercise wiring without spinning up a
@@ -92,7 +124,89 @@ export class AztecLedgerSession {
     private readonly deps: AztecLedgerSessionDeps,
     private readonly accountAddress: AztecAddress,
     private readonly accountCompleteAddress: CompleteAddress,
+    private readonly accountManager: AccountManager,
   ) {}
+
+  /**
+   * Build a fresh AztecLedgerSession against a live Aztec node.
+   *
+   * 1. Spawn the ephemeral SessionEmbeddedWallet (PXE + wallet DB in-memory).
+   *    First call pays ~3-5s WASM-prover init cost.
+   * 2. Build the LedgerEcdsaKAccountContract from the provided transport.
+   * 3. Generate (or reuse) the master secret + salt.
+   * 4. AccountManager.create(...) derives the address from secret + salt
+   *    + Ledger signing pubkey. Does NOT deploy — deployAccount() does.
+   * 5. Register the {USDC, Dripper, SponsoredFPC} contract instances in
+   *    the PXE so contract.methods.X(...) calls can encode against them.
+   *
+   * Heavy: blocks on prover init + node sync. Frontend should show a
+   * progress indicator.
+   */
+  static async connect(opts: AztecLedgerSessionConnectOptions): Promise<AztecLedgerSession> {
+    const session = await SessionEmbeddedWallet.createEphemeral(opts.nodeUrl, {
+      proverEnabled: opts.proverEnabled ?? true,
+    });
+    const accountContract = new LedgerEcdsaKAccountContract(opts.transport, {
+      bip32Path: opts.bip32Path ?? defaultAztecPath(),
+    });
+    const ledgerProvider = accountContract.getProvider();
+    const secret = opts.secret ?? Fr.random();
+    const salt = opts.salt ?? Fr.random();
+
+    const accountManager = await AccountManager.create(session, secret, accountContract, salt);
+    const accountAddress = accountManager.address;
+    const accountCompleteAddress = await accountManager.getCompleteAddress();
+
+    /* Register the pinned contracts in the PXE so they can be invoked via
+     * Contract.at(...). Register-without-artifact is the lightweight path —
+     * the artifact gets attached lazily when we actually dispatch a call. */
+    const usdcInstance = await getContractInstanceFromInstantiationParams(opts.tokenArtifact, {
+      salt: new Fr(0n), // metadata-only; the pinned address is what matters
+    });
+    const dripperInstance = await getContractInstanceFromInstantiationParams(opts.dripperArtifact, {
+      salt: new Fr(0n),
+    });
+    /* registerContract takes the resolved instance + artifact. We override
+     * the resolved address with the live one so PXE looks up by it. */
+    await session.registerContract(
+      { ...usdcInstance, address: opts.usdcAddress },
+      opts.tokenArtifact,
+    );
+    await session.registerContract(
+      { ...dripperInstance, address: opts.dripperAddress },
+      opts.dripperArtifact,
+    );
+
+    const deps: AztecLedgerSessionDeps = {
+      session,
+      accountContract,
+      ledgerProvider,
+      secret,
+      salt,
+      usdcAddress: opts.usdcAddress,
+      dripperAddress: opts.dripperAddress,
+      sponsoredFpcAddress: opts.sponsoredFpcAddress,
+      tokenArtifact: opts.tokenArtifact,
+      dripperArtifact: opts.dripperArtifact,
+    };
+    return new AztecLedgerSession(deps, accountAddress, accountCompleteAddress, accountManager);
+  }
+
+  /**
+   * Deploy the Ledger-backed account contract on-chain. Uses the
+   * framework's standard sendTx path — random txNonce is fine because
+   * the user blind-signs the deploy outer_hash once on-device.
+   *
+   * Subsequent submitClearSignedIntent calls bypass that path.
+   */
+  async deployAccount(): Promise<SubmitResult> {
+    const deployMethod = await this.accountManager.getDeployMethod();
+    const result = await deployMethod.send({
+      from: this.address,
+      fee: { paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress) },
+    });
+    return { txHash: result.receipt.txHash, receipt: result.receipt };
+  }
 
   /**
    * Read-only view of the session deps. Internal — exposed for tests and

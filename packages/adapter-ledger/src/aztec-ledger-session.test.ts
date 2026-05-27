@@ -24,11 +24,13 @@ function stubExec(callCount: number): ExecutionPayload {
 
 function makeSession(): AztecLedgerSession {
   const deps = {} as AztecLedgerSessionDeps;
-  /* CompleteAddress requires more setup than worth here; use ADDR twice. */
+  /* Stub the constructor params: CompleteAddress + AccountManager need
+   * more setup than this shape-only test deserves. */
   return new AztecLedgerSession(
     deps,
     ADDR,
     ADDR as unknown as ConstructorParameters<typeof AztecLedgerSession>[2],
+    {} as unknown as ConstructorParameters<typeof AztecLedgerSession>[3],
   );
 }
 
