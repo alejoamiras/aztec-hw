@@ -34,6 +34,14 @@ int ui_display_verified_calls(void);
 int ui_display_pubkey(void);
 
 /**
+ * M7 P3 — clear-signed deploy review. Renders the new account address
+ * (8+6 hex truncation), BIP-32 path, and "Sponsored (testnet)" fee
+ * notice. Calls `finalize_deploy_after_approval` / `finalize_deploy_rejected`
+ * (in `handler/finalize_deploy_and_sign.h`) on user choice.
+ */
+int ui_display_deploy_review(void);
+
+/**
  * Return the device to the idle home screen. Called from
  * `nbgl_useCaseReviewStatus(..., ui_menu_main)` after a successful
  * (or rejected) signing flow — without this, NBGL's review page

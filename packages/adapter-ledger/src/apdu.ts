@@ -24,6 +24,10 @@ export const INS = {
   APPEND_CALL: 0x06,
   FINALIZE_AND_SIGN: 0x07,
   ABORT: 0x08,
+  /* M7 P3 — clear-signed deploy. Same shape as BEGIN/APPEND/FINALIZE
+   * but for the DEPLOY_ACCOUNT_ECDSAK_V1 profile, NOT a verb call. */
+  BEGIN_DEPLOY_ACCOUNT: 0x10,
+  FINALIZE_DEPLOY_AND_SIGN: 0x11,
 } as const;
 
 export type Ins = (typeof INS)[keyof typeof INS];
@@ -180,6 +184,17 @@ export const SW = {
   BIP32_TOO_LONG: 0x6f05,
   DUP_SIG_MISMATCH: 0x6f06,
   NOT_IMPLEMENTED: 0x6f07,
+  REGISTRY_MISS: 0x6f08,
+  DECODER_MISS: 0x6f09,
+  DECODER_DESYNC: 0x6f0a,
+  VISIBILITY_MISMATCH: 0x6f0b,
+  DELEGATED_SPEND_UNSUPPORTED: 0x6f0c,
+  /* M7 P3 — clear-signed deploy. */
+  UNKNOWN_PROFILE_ID: 0x6f0d,
+  DEPLOY_ADDRESS_MISMATCH: 0x6f0e, // reserved: M8 Grumpkin lift
+  DEPLOY_PUBKEY_HASH_MISMATCH: 0x6f0f, // reserved: M8
+  DEPLOY_CONTEXT_TWICE: 0x6f10,
+  DEPLOY_CONTEXT_WRONG_STATE: 0x6f11,
 } as const;
 
 export type StatusWord = (typeof SW)[keyof typeof SW];

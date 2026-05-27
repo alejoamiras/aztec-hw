@@ -45,6 +45,11 @@ export {
   type SubmitStepHandler,
 } from './aztec-ledger-session.ts';
 export {
+  type DeployContext,
+  defaultDeployPath,
+  encodeBeginDeployAccountBody,
+} from './deploy-context.ts';
+export {
   FrozenAuthWitnessProvider,
   FrozenWitnessMismatchError,
   FrozenWitnessUsedError,

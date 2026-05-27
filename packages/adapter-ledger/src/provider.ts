@@ -9,6 +9,7 @@
  *     `AuthWitnessProvider` interface (mirrors adapter-trezor).
  */
 import { type AzCall, type AzManifestHeader, FR_BYTES, INS, SW } from './apdu.ts';
+import { type DeployContext, encodeBeginDeployAccountBody } from './deploy-context.ts';
 import { encodeAppendCallBody, encodeBeginAuthwitBody } from './l4-manifest.ts';
 import type { AutoConfirmContext, LedgerTransport } from './transport.ts';
 
@@ -120,6 +121,45 @@ export class LedgerProvider {
   async abortAuthwit(): Promise<void> {
     const r = await this.transport.send({ ins: INS.ABORT });
     this.requireOk(r.sw, 'ABORT');
+  }
+
+  /**
+   * M7 P3 — clear-signed deploy. BEGIN_DEPLOY_ACCOUNT commits ALL deploy
+   * semantics (profile, salt, public_keys_hash, expected_address); the
+   * device runs its 3-pass partial-address parity recompute, stores the
+   * context, returns SUCCESS. The host then calls finalizeDeployAndSign.
+   */
+  async beginDeployAccount(ctx: DeployContext): Promise<void> {
+    const body = encodeBeginDeployAccountBody(ctx);
+    const r = await this.transport.send({ ins: INS.BEGIN_DEPLOY_ACCOUNT, data: body });
+    this.requireOk(r.sw, 'BEGIN_DEPLOY_ACCOUNT');
+  }
+
+  /**
+   * M7 P3 — finalize a clear-signed deploy. Submits the host-claimed
+   * outer_hash, prompts the on-device review UI (address + path + fee
+   * payer), and returns r||s on approval. Device rejects with
+   * SW_HASH_MISMATCH if its recompute doesn't agree.
+   *
+   * Codex audit MAJOR #1: this APDU adds NO new deploy semantics beyond
+   * `claimedOuterHash` — everything else came from BEGIN_DEPLOY_ACCOUNT.
+   */
+  async finalizeDeployAndSign(
+    claimedOuterHash: Uint8Array,
+    opts: SignOuterHashOptions = {},
+  ): Promise<LedgerSignature> {
+    if (claimedOuterHash.length !== FR_BYTES) {
+      throw new Error(`claimedOuterHash must be 32 bytes, got ${claimedOuterHash.length}`);
+    }
+    const r = await this.transport.send(
+      { ins: INS.FINALIZE_DEPLOY_AND_SIGN, data: claimedOuterHash },
+      opts.autoConfirm,
+    );
+    this.requireOk(r.sw, 'FINALIZE_DEPLOY_AND_SIGN');
+    if (r.data.length !== 64) {
+      throw new Error(`FINALIZE_DEPLOY_AND_SIGN: expected 64 bytes (r||s), got ${r.data.length}`);
+    }
+    return { r: r.data.slice(0, 32), s: r.data.slice(32, 64) };
   }
 
   async signOuterHash(

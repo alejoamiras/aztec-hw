@@ -33,6 +33,8 @@
 #include "../handler/append_call.h"
 #include "../handler/finalize_and_sign.h"
 #include "../handler/abort_authwit.h"
+#include "../handler/begin_deploy_account.h"
+#include "../handler/finalize_deploy_and_sign.h"
 
 static buffer_t make_buf(const command_t *cmd) {
     buffer_t buf = {0};
@@ -129,6 +131,25 @@ int apdu_dispatcher(const command_t *cmd) {
             buf.size = cmd->lc;
             buf.offset = 0;
             return handler_abort_authwit(&buf);
+
+        /* M7 P3 — clear-signed deploy. Same shape as BEGIN_AUTHWIT/
+         * APPEND_CALL/FINALIZE_AND_SIGN: BEGIN stores context + returns
+         * SUCCESS; FINALIZE triggers the on-device review. */
+        case INS_BEGIN_DEPLOY_ACCOUNT:
+            if (cmd->p1 != 0 || cmd->p2 != 0) {
+                return reject_dispatch(SWO_INCORRECT_P1_P2);
+            }
+            if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
+            buf = make_buf(cmd);
+            return handler_begin_deploy_account(&buf);
+
+        case INS_FINALIZE_DEPLOY_AND_SIGN:
+            if (cmd->p1 != 0 || cmd->p2 != 0) {
+                return reject_dispatch(SWO_INCORRECT_P1_P2);
+            }
+            if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
+            buf = make_buf(cmd);
+            return handler_finalize_deploy_and_sign(&buf);
 
         default:
             return reject_dispatch(SWO_INVALID_INS);

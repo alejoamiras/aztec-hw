@@ -16,9 +16,14 @@
 #include "wire.h"
 
 typedef enum {
-    L4_IDLE = 0,            /* no session — only BEGIN_AUTHWIT accepted */
-    L4_HEADER_PARSED,       /* BEGIN done, awaiting APPEND_CALL × call_count */
-    L4_CALLS_COMPLETE,      /* all real calls received, awaiting FINALIZE_AND_SIGN */
+    L4_IDLE = 0,                /* no session — only BEGIN_AUTHWIT / BEGIN_DEPLOY accepted */
+    L4_HEADER_PARSED,           /* BEGIN_AUTHWIT done, awaiting APPEND_CALL × call_count */
+    L4_CALLS_COMPLETE,          /* all real calls received, awaiting FINALIZE_AND_SIGN */
+    /* M7 P3 — clear-signed deploy. Mutually exclusive with the AUTHWIT path:
+     * BEGIN_DEPLOY_ACCOUNT only accepted when state == L4_IDLE; otherwise
+     * returns SW_DEPLOY_CONTEXT_WRONG_STATE. Likewise BEGIN_AUTHWIT is
+     * rejected when state == L4_DEPLOY_CONTEXT. ABORT zeroes either path. */
+    L4_DEPLOY_CONTEXT,          /* BEGIN_DEPLOY_ACCOUNT done, awaiting FINALIZE_DEPLOY_AND_SIGN */
 } l4_state_e;
 
 typedef struct {
@@ -68,5 +73,52 @@ typedef struct {
 
 extern l4_session_t G_l4_session;
 
-/** Wipe `G_l4_session` to zero. Safe to call from any state. */
+/** Wipe `G_l4_session` AND `G_l4_deploy_session` to zero. Safe to call
+ * from any state. Both must be cleared together because the two paths
+ * share the `state` enum semantics. */
 void l4_session_reset(void);
+
+/* --- M7 P3: clear-signed deploy session ------------------------------ */
+
+/**
+ * Deploy session state. Mutually exclusive with the AUTHWIT path —
+ * see `l4_state_e`. Populated entirely by `INS_BEGIN_DEPLOY_ACCOUNT`;
+ * `INS_FINALIZE_DEPLOY_AND_SIGN` adds only `claimed_outer_hash`.
+ *
+ * `partial_address_local` is the DEVICE-recomputed (poseidon2-chain)
+ * value derived from BIP-32 signing pubkey + manifest-pinned class id +
+ * salt + ctor selector + Noir-ABI-encoded ctor args. The device CANNOT
+ * complete the final Grumpkin EC step in v0 (deferred to M8), so the
+ * `expected_address` field is stored for UI display + outer-hash binding
+ * but is NOT cryptographically refuted on device.
+ *
+ * Trust model: device verifies signing-pubkey/path binding + manifest-
+ * pinned class + 3-pass fault recompute. Does NOT defend against host-
+ * supplied protocol-key spoofing. See plan.md §8.1.
+ */
+typedef struct {
+    /* From BEGIN_DEPLOY_ACCOUNT */
+    uint8_t manifest_version;
+    uint8_t profile_id;          /* index into CS_DEPLOY_PROFILES */
+    uint8_t curve_id;
+    uint8_t path_scheme;
+    uint8_t bip32_path_len;
+    uint32_t bip32_path[MAX_BIP32_PATH_LEN];
+
+    uint8_t chain_id[L4_FR_BYTES];
+    uint8_t protocol_version[L4_FR_BYTES];
+    uint8_t tx_nonce[L4_FR_BYTES];
+    uint8_t salt[L4_FR_BYTES];
+    uint8_t public_keys_hash[L4_FR_BYTES];
+    uint8_t expected_address[L4_FR_BYTES];
+
+    /* Device-recomputed values (parity pass 1+2 before UI). */
+    uint8_t args_hash_local[L4_FR_BYTES];  /* poseidon2(pubkey_64_bytefrs, FUNCTION_ARGS) */
+    uint8_t init_hash_local[L4_FR_BYTES];
+    uint8_t partial_address_local[L4_FR_BYTES];
+
+    /* From FINALIZE_DEPLOY_AND_SIGN. */
+    uint8_t claimed_outer_hash[L4_FR_BYTES];
+} l4_deploy_session_t;
+
+extern l4_deploy_session_t G_l4_deploy_session;

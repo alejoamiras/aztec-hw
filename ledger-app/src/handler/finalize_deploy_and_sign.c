@@ -1,0 +1,272 @@
+/**
+ * M7 P3 — INS_FINALIZE_DEPLOY_AND_SIGN.
+ *
+ * Mirrors finalize_and_sign.c's parity-pass-3 + duplicate-ECDSA-signature
+ * discipline. The only semantic input from the host at this stage is
+ * `claimed_outer_hash` (codex audit MAJOR #1: BEGIN already committed
+ * everything else).
+ *
+ * Codex 019e6ad4 / M6.11 — explicit NBGL dismissal after success / reject.
+ * Required from commit zero on the new verb so we don't regress.
+ */
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
+#include "os.h"
+#include "cx.h"
+#include "io.h"
+#include "buffer.h"
+#include "crypto_helpers.h"
+
+#include "finalize_deploy_and_sign.h"
+#include "sign_outer_hash.h" /* SECP256K1_N is exported from there */
+#include "../constants.h"
+#include "../sw.h"
+#include "../l4/fr_canonical.h"
+#include "../l4/session.h"
+#include "../l4/wire.h"
+#include "../l4/deploy_address.h"
+#include "../clear_signing_v0/deploy_profiles.gen.h"
+#include "../ui/display.h"
+#include "nbgl_use_case.h"
+
+extern const uint8_t SECP256K1_N[32];
+
+static const uint8_t SECP256K1_HALF_N_DEPLOY[32] = {
+    0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
+    0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
+};
+
+static int reject(uint16_t sw) {
+    l4_session_reset();
+    return io_send_sw(sw);
+}
+
+static int ct_memcmp32(const uint8_t a[32], const uint8_t b[32]) {
+    uint8_t diff = 0;
+    for (int i = 0; i < 32; i++) diff |= (uint8_t)(a[i] ^ b[i]);
+    return diff;
+}
+
+static bool s_is_high(const uint8_t *s) {
+    int cmp = 0;
+    for (size_t i = 0; i < 32; i++) {
+        int diff = (int)s[i] - (int)SECP256K1_HALF_N_DEPLOY[i];
+        int already = (cmp != 0) ? 1 : 0;
+        cmp = already ? cmp : (diff > 0 ? 1 : (diff < 0 ? -1 : 0));
+    }
+    return cmp > 0;
+}
+
+static void low_s_normalize(uint8_t *s) {
+    uint16_t borrow = 0;
+    for (int i = 31; i >= 0; i--) {
+        int32_t v = (int32_t)SECP256K1_N[i] - (int32_t)s[i] - (int32_t)borrow;
+        if (v < 0) {
+            v += 256;
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
+        s[i] = (uint8_t)v;
+    }
+}
+
+/* Re-derive the secp256k1 signing pubkey from the BIP-32 path stored
+ * in G_l4_deploy_session. Duplicated from begin_deploy_account.c so we
+ * don't introduce a cross-file static dependency. */
+static int derive_signing_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
+    uint8_t raw[65];
+    uint8_t chain_code[32];
+    cx_err_t err = bip32_derive_get_pubkey_256(
+        CX_CURVE_256K1,
+        G_l4_deploy_session.bip32_path,
+        G_l4_deploy_session.bip32_path_len,
+        raw,
+        chain_code,
+        CX_SHA512);
+    explicit_bzero(chain_code, sizeof(chain_code));
+    if (err != CX_OK || raw[0] != 0x04) {
+        explicit_bzero(raw, sizeof(raw));
+        return -1;
+    }
+    memcpy(out_x, &raw[1], 32);
+    memcpy(out_y, &raw[33], 32);
+    explicit_bzero(raw, sizeof(raw));
+    return 0;
+}
+
+int handler_finalize_deploy_and_sign(buffer_t *cdata) {
+    if (G_l4_session.state != L4_DEPLOY_CONTEXT) {
+        return reject(SW_DEPLOY_CONTEXT_WRONG_STATE);
+    }
+
+    if (!buffer_read_bytes(cdata, G_l4_deploy_session.claimed_outer_hash, L4_FR_BYTES)) {
+        return reject(SWO_WRONG_DATA_LENGTH);
+    }
+    if (cdata->size != cdata->offset) return reject(SWO_WRONG_DATA_LENGTH);
+    if (!l4_fr_is_canonical(G_l4_deploy_session.claimed_outer_hash)) {
+        return reject(SW_HASH_MISMATCH);
+    }
+
+    /* The actual sign step waits for user approval; the UI flow was
+     * already entered from BEGIN_DEPLOY_ACCOUNT (review screen visible).
+     * Here we just stash the outer-hash claim and signal the UI to
+     * proceed. In practice this APDU lands AFTER the user has confirmed,
+     * because the host streams BEGIN → user-approve → FINALIZE → sign-reply
+     * in that order. So the actual signing happens here, in
+     * finalize_deploy_after_approval, invoked from the UI's confirm
+     * callback. */
+    return ui_display_deploy_review();
+}
+
+int finalize_deploy_after_approval(void) {
+    /* Without an outer_hash claim we have nothing to sign. The host
+     * MUST have streamed FINALIZE before user-approve so this slot
+     * is populated; otherwise we reject. (In practice the host
+     * sequences BEGIN → FINALIZE → user-approve, but checking is cheap
+     * and the cost of approving an empty claim is non-zero.) */
+    bool claim_present = false;
+    for (size_t i = 0; i < L4_FR_BYTES; i++) {
+        if (G_l4_deploy_session.claimed_outer_hash[i] != 0) {
+            claim_present = true;
+            break;
+        }
+    }
+    if (!claim_present) {
+        return reject(SW_HASH_MISMATCH);
+    }
+
+    /* --- Parity pass 3 ----------------------------------------------- */
+    const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(G_l4_deploy_session.profile_id);
+    if (profile == NULL) return reject(SW_UNKNOWN_PROFILE_ID);
+
+    uint8_t signing_pubkey_x[32];
+    uint8_t signing_pubkey_y[32];
+    if (derive_signing_pubkey_xy(signing_pubkey_x, signing_pubkey_y) != 0) {
+        explicit_bzero(signing_pubkey_x, 32);
+        explicit_bzero(signing_pubkey_y, 32);
+        return reject(SWO_UNKNOWN);
+    }
+
+    uint8_t recheck_args[32];
+    uint8_t recheck_init[32];
+    uint8_t recheck_partial[32];
+    if (az_deploy_compute_partial_address(
+            signing_pubkey_x,
+            signing_pubkey_y,
+            profile->ctor_selector_u32,
+            G_l4_deploy_session.salt,
+            profile->deployer,
+            profile->account_class_id,
+            recheck_args,
+            recheck_init,
+            recheck_partial) != 0) {
+        explicit_bzero(signing_pubkey_x, 32);
+        explicit_bzero(signing_pubkey_y, 32);
+        explicit_bzero(recheck_args, 32);
+        explicit_bzero(recheck_init, 32);
+        explicit_bzero(recheck_partial, 32);
+        return reject(SWO_UNKNOWN);
+    }
+    explicit_bzero(signing_pubkey_x, 32);
+    explicit_bzero(signing_pubkey_y, 32);
+
+    if (ct_memcmp32(recheck_args, G_l4_deploy_session.args_hash_local) != 0 ||
+        ct_memcmp32(recheck_init, G_l4_deploy_session.init_hash_local) != 0 ||
+        ct_memcmp32(recheck_partial, G_l4_deploy_session.partial_address_local) != 0) {
+        explicit_bzero(recheck_args, 32);
+        explicit_bzero(recheck_init, 32);
+        explicit_bzero(recheck_partial, 32);
+        return reject(SW_HASH_MISMATCH);
+    }
+    explicit_bzero(recheck_args, 32);
+    explicit_bzero(recheck_init, 32);
+    explicit_bzero(recheck_partial, 32);
+
+    /* --- Sign sha256(claimed_outer_hash) with duplicate-signing -------
+     * Sign the LOCAL claimed_outer_hash variable, not the mutable
+     * session field — same TOCTOU defense as finalize_and_sign.c:141-148. */
+    uint8_t outer_hash_local[L4_FR_BYTES];
+    memcpy(outer_hash_local, G_l4_deploy_session.claimed_outer_hash, L4_FR_BYTES);
+
+    uint8_t digest[32];
+    size_t digest_len = cx_hash_sha256(outer_hash_local, L4_FR_BYTES, digest, sizeof(digest));
+    if (digest_len != 32) {
+        explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+        return reject(SWO_UNKNOWN);
+    }
+
+    uint8_t r[32], s[32];
+    uint32_t info = 0;
+    cx_err_t err = bip32_derive_ecdsa_sign_rs_hash_256(
+        CX_CURVE_256K1,
+        G_l4_deploy_session.bip32_path,
+        G_l4_deploy_session.bip32_path_len,
+        CX_RND_RFC6979,
+        CX_SHA256,
+        digest, sizeof(digest),
+        r, s, &info);
+    if (err != CX_OK) {
+        explicit_bzero(r, sizeof(r));
+        explicit_bzero(s, sizeof(s));
+        explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+        return reject(SWO_UNKNOWN);
+    }
+    if (s_is_high(s)) low_s_normalize(s);
+
+    uint8_t r2[32], s2[32];
+    uint32_t info2 = 0;
+    err = bip32_derive_ecdsa_sign_rs_hash_256(
+        CX_CURVE_256K1,
+        G_l4_deploy_session.bip32_path,
+        G_l4_deploy_session.bip32_path_len,
+        CX_RND_RFC6979,
+        CX_SHA256,
+        digest, sizeof(digest),
+        r2, s2, &info2);
+    if (err != CX_OK) {
+        explicit_bzero(r, sizeof(r));
+        explicit_bzero(s, sizeof(s));
+        explicit_bzero(r2, sizeof(r2));
+        explicit_bzero(s2, sizeof(s2));
+        explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+        return reject(SWO_UNKNOWN);
+    }
+    if (s_is_high(s2)) low_s_normalize(s2);
+
+    if (memcmp(r, r2, 32) != 0 || memcmp(s, s2, 32) != 0) {
+        explicit_bzero(r, sizeof(r));
+        explicit_bzero(s, sizeof(s));
+        explicit_bzero(r2, sizeof(r2));
+        explicit_bzero(s2, sizeof(s2));
+        explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+        return reject(SW_DUP_SIG_MISMATCH);
+    }
+
+    uint8_t response[ECDSA_K1_SIG_LEN];
+    memcpy(response, r, 32);
+    memcpy(response + 32, s, 32);
+
+    explicit_bzero(r, sizeof(r));
+    explicit_bzero(s, sizeof(s));
+    explicit_bzero(r2, sizeof(r2));
+    explicit_bzero(s2, sizeof(s2));
+    explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+
+    int rc = io_send_response_pointer(response, sizeof(response), SWO_SUCCESS);
+    l4_session_reset();
+    /* M6.11 regression guard — ship the dismissal from commit zero. */
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_menu_main);
+    return rc;
+}
+
+int finalize_deploy_rejected(void) {
+    l4_session_reset();
+    int rc = io_send_sw(SW_USER_REJECTED);
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_menu_main);
+    return rc;
+}

@@ -149,4 +149,62 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
       provider.signOuterHash(AZTEC_PATH, outerHash, { autoConfirm: rejectFlow }),
     ).rejects.toThrow('SW=0x6985');
   });
+
+  /* --- M7 P3 — clear-signed deploy ----------------------------------
+   * These tests exercise the wire protocol; they don't drive the on-
+   * device review UI button-by-button (the deploy NBGL flow has a
+   * different page count than blind-sign). Full end-to-end with UI
+   * driving lands when the host builder lands (M7 P4) and the demo
+   * exercises it. Here we verify:
+   *   - BEGIN_DEPLOY_ACCOUNT for the registered profile returns 0x9000
+   *   - BEGIN_DEPLOY_ACCOUNT with an unknown profile_id returns 0x6F0D
+   *   - FINALIZE_DEPLOY_AND_SIGN before BEGIN returns 0x6F11
+   */
+  test('BEGIN_DEPLOY_ACCOUNT accepts the registered profile and returns 0x9000', async () => {
+    const ctx = {
+      profileId: 0,
+      bip32Path: AZTEC_PATH,
+      chainId: new Uint8Array(32).fill(0x02),
+      protocolVersion: new Uint8Array(32).fill(0x03),
+      txNonce: new Uint8Array(32).fill(0x04),
+      salt: new Uint8Array(32).fill(0x05),
+      publicKeysHash: new Uint8Array(32).fill(0x06),
+      expectedAddress: new Uint8Array(32).fill(0x07),
+    };
+    /* Force the canonical-Fr check on by zeroing the high byte (already 0 for
+     * fill(0x02) since the BE fill puts 0x02 in [0]; canonical Fr requires
+     * the value < curve modulus, so high-bit-clear is enough). */
+    ctx.chainId[0] = 0x00;
+    ctx.protocolVersion[0] = 0x00;
+    ctx.txNonce[0] = 0x00;
+    ctx.salt[0] = 0x00;
+    ctx.publicKeysHash[0] = 0x00;
+    ctx.expectedAddress[0] = 0x00;
+    await expect(provider.beginDeployAccount(ctx)).resolves.toBeUndefined();
+    /* Tidy up: send an ABORT to leave the device clean for the next test. */
+    await provider.abortAuthwit();
+  });
+
+  test('BEGIN_DEPLOY_ACCOUNT rejects an unknown profile_id with 0x6F0D', async () => {
+    const ctx = {
+      profileId: 7 /* not registered — only 0 exists in v0 */,
+      bip32Path: AZTEC_PATH,
+      chainId: new Uint8Array(32),
+      protocolVersion: new Uint8Array(32),
+      txNonce: new Uint8Array(32),
+      salt: new Uint8Array(32),
+      publicKeysHash: new Uint8Array(32),
+      expectedAddress: new Uint8Array(32),
+    };
+    await expect(provider.beginDeployAccount(ctx)).rejects.toThrow('SW=0x6f0d');
+  });
+
+  test('FINALIZE_DEPLOY_AND_SIGN before BEGIN returns 0x6F11', async () => {
+    /* No BEGIN_DEPLOY_ACCOUNT has been called (we ABORTed at the end of
+     * the prior test); the device should reject FINALIZE with the wrong-
+     * state SW. */
+    await provider.abortAuthwit();
+    const outerHash = new Uint8Array(32);
+    await expect(provider.finalizeDeployAndSign(outerHash)).rejects.toThrow('SW=0x6f11');
+  });
 });

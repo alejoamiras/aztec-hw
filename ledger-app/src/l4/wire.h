@@ -59,3 +59,9 @@
 #define L4_SEP_SIGNATURE_PAYLOAD 463525807u
 #define L4_SEP_AUTHWIT_OUTER     3283595782u
 #define L4_SEP_PUBLIC_CALLDATA   2760353947u
+/* M7 P3: deploy address chain. INITIALIZER + PARTIAL_ADDRESS + FUNCTION_ARGS
+ * (the last is used by computeVarArgsHash over the ABI-encoded ctor args). */
+#define L4_SEP_INITIALIZER        385396519u
+#define L4_SEP_PARTIAL_ADDRESS   2103633018u
+#define L4_SEP_FUNCTION_ARGS     3576554347u
+#define L4_SEP_CONTRACT_ADDR_V1  1788365517u /* reserved: §M8 Grumpkin lift */

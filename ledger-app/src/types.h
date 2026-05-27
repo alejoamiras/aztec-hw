@@ -21,6 +21,13 @@ typedef enum {
     INS_APPEND_CALL = 0x06,
     INS_FINALIZE_AND_SIGN = 0x07,
     INS_ABORT = 0x08,
+    /* M7 P3 — clear-signed deploy. BEGIN_DEPLOY_ACCOUNT commits ALL deploy
+     * semantics (profile_id, salt, public_keys_hash, expected_address);
+     * FINALIZE_DEPLOY_AND_SIGN adds only the claimed_outer_hash (codex
+     * audit MAJOR #1 — eliminates the "host changes its mind between
+     * BEGIN and FINALIZE" desync class). */
+    INS_BEGIN_DEPLOY_ACCOUNT = 0x10,
+    INS_FINALIZE_DEPLOY_AND_SIGN = 0x11,
 } command_e;
 
 /**
