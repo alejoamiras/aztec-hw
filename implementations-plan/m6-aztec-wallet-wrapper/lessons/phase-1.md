@@ -92,4 +92,88 @@ adapter-ledger + `bun add` from there.
 
 ## M6.2 — SessionEmbeddedWallet
 
-(TBD — entering this phase next.)
+Subclass-over-downcast was the right call. Trying to access protected
+`pxe` / `aztecNode` via `as unknown as { pxe }` cast worked at runtime
+but lost type safety; subclass + getters is what we shipped.
+
+## M6.3 — FrozenAuthWitnessProvider + AztecLedgerSession
+
+`@aztec/entrypoints` v4.2.1 has a packaging bug: it declares `./payload`
+in its `exports` map but ships no `payload.{js,d.ts}` in `dest/`. Worked
+around by importing `ExecutionPayload` directly from `@aztec/stdlib/tx`.
+
+The pxe v4.2.1 `proveTx(txRequest, scopes: AztecAddress[])` takes scopes
+as a positional plain array — the wallet-sdk wraps that in
+`{scopes, senderForTags}` object internally. Be careful when reading
+the wallet-sdk source as the API spec — the raw PXE interface is what
+our session calls.
+
+## M6.4 — Frontend
+
+Vite handles CSS side-effect imports natively but tsc needs a
+`declare module '*.css'` ambient. Added to `apps/demo-browser/src/global.d.ts`.
+
+Root tsconfig needed `jsx: "react-jsx"` so `tsc -b --noEmit` at the
+repo root doesn't choke on the demo-browser .tsx files. The
+demo-browser tsconfig already set it; the project-references-less
+root was missing the inherited setting.
+
+## M6.5 — connect() + convenience wrappers
+
+`Contract.methods` is an artifact-keyed Proxy typed as
+`Record<string, ContractMethod | undefined>`. Dynamic indexing requires
+either a non-null assertion (lint hates these) or a helper that
+throws on undefined — picked the helper (`requireMethod`) for
+auditability.
+
+## M6.7 — Codex post-impl review findings
+
+Session `019e6744`. Three BLOCKERs flagged, all real:
+
+### BLOCKER 1 — `connect()` registers fake contract instances
+
+`AztecLedgerSession.connect` derives the contract instance from
+`(artifact, salt=Fr.ZERO)` and overwrites `address` to the live one.
+Wrong: PXE recomputes the address from the FULL instance and rejects
+mismatches (`aztec-packages/yarn-project/pxe/src/pxe.ts:674-689`).
+
+**Fix**: change the API to require the caller to pass deployed
+instances directly. Caller knows the real salt/constructor (nulo's
+faucet exposes them via `deployments.json`).
+
+### BLOCKER 2 — `GasSettings.fallback({maxFeesPerGas: (0n, 0n)})`
+
+Even with a sponsored FPC fee-payer, upstream validation still checks
+`maxFeesPerGas` (`p2p/src/msg_validators/tx_validator/gas_validator.ts:167-178`).
+The wallet-sdk normally fills this from `aztecNode.getCurrentMinFees()`
+(`wallet-sdk/src/base-wallet/base_wallet.ts:242-246`).
+
+**Fix**: call `aztecNode.getCurrentMinFees()` and pass that to
+`GasSettings.fallback`.
+
+### BLOCKER 3 — Frontend stub never calls `connect()`
+
+`apps/demo-browser/src/panels/ConnectPanel.tsx:26-39` always transitions
+to an error state with a "lands in M6.5" message. "M6 frontend landed"
+is overstated.
+
+**Fix**: wire `AztecLedgerSession.connect()` into the Connect button.
+Speculos via the Vite proxy; WebHID via `createWebHidTransport()`.
+Load contract artifacts via Vite JSON imports.
+
+### MAJOR — DRIP_PUB byte-parity is under-proved
+
+The 14/14 L4.1 host-parity tests at M5 cover the 7 verbs that existed
+then. DRIP_PUB (M6.0) is structurally similar but doesn't have a
+golden outer-hash vector. Should add one before the live demo so we
+have the same fail-fast signal we have for the transfer flows.
+
+### Findings I'm acknowledging but not fixing this session
+
+- "Lesson 1 not literally one line" — true; the lessons doc is already
+  honest about threading through `SendOptions`, `BaseWallet`,
+  `EmbeddedWallet`. Reworded for clarity.
+- "pxe.proveTx(txRequest, [address]) is correct for v4.2.1 — upgrade
+  trap": noted, not blocking M6 since we're pinned to 4.2.1.
+- "M6 weaker security model than M5 CLI": flagged in §8 of plan-final.md
+  already; no further mitigation in scope for v0.

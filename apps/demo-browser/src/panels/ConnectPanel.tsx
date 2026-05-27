@@ -1,11 +1,23 @@
 /**
  * Connect panel — pick a transport, choose the Aztec node URL, build the
- * session. The actual session-construction wiring (LedgerEcdsaKAccount
- * + SessionEmbeddedWallet + AccountManager) lands at M6.5; right now this
- * panel exercises the state machine and validates the transport pick.
+ * AztecLedgerSession. After this resolves, the rest of the UI unlocks.
  */
+
+import {
+  AztecLedgerSession,
+  createWebHidTransport,
+  SpeculosTransport,
+  WebHidNotSupportedError,
+} from '@aztec-hwwallet-poc/adapter-ledger';
 import { useState } from 'react';
-import type { DemoState, Transport } from '../state.ts';
+import {
+  DRIPPER_ARTIFACT,
+  dripperInstance,
+  SPONSORED_FPC_ADDRESS,
+  TOKEN_ARTIFACT,
+  usdcInstance,
+} from '../deployments.ts';
+import type { DemoState, SessionRef, Transport } from '../state.ts';
 
 const DEFAULT_NODE_URL = 'https://rpc.testnet.aztec-labs.com';
 const SPECULOS_PROXY_URL = '/speculos';
@@ -25,18 +37,47 @@ export function ConnectPanel({ state, setState }: Props) {
 
   async function onConnect() {
     setState({ kind: 'connecting', transport, nodeUrl });
-    /* Wiring lives in M6.5 — instantiating SessionEmbeddedWallet + the
-     * Ledger transport + the LedgerEcdsaKAccountContract + AccountManager
-     * takes several blocking steps (PXE init, prover WASM load, sync to
-     * tip, getNodeInfo). All gated to the next phase. */
-    setState({
-      kind: 'error',
-      lastSession: null,
-      message:
-        'Connect flow is wired to the AztecLedgerSession scaffold but not yet ' +
-        'producing a live PXE session — lands in M6.5 alongside the alpha-' +
-        'testnet e2e tests.',
-    });
+    try {
+      /* 1. Open the transport. */
+      const txp =
+        transport === 'speculos'
+          ? new SpeculosTransport({ baseUrl: SPECULOS_PROXY_URL })
+          : await createWebHidTransport();
+
+      /* 2. Recompute the deployed contract instances from nulo's
+       *    pinned salt+constructor args. PXE rejects address-only
+       *    overrides (codex BLOCKER 1), so we have to derive the
+       *    FULL ContractInstanceWithAddress here. */
+      const [usdc, dripper] = await Promise.all([usdcInstance(), dripperInstance()]);
+
+      /* 3. Spin up the session. Heavy — first call pays ~3-5s WASM-prover
+       *    init cost and an initial PXE sync against the node. */
+      const session = await AztecLedgerSession.connect({
+        nodeUrl,
+        transport: txp,
+        tokenArtifact: TOKEN_ARTIFACT,
+        dripperArtifact: DRIPPER_ARTIFACT,
+        usdcInstance: usdc,
+        dripperInstance: dripper,
+        sponsoredFpcAddress: SPONSORED_FPC_ADDRESS,
+      });
+
+      const ref: SessionRef = {
+        transport,
+        nodeUrl,
+        addressHex: session.address.toString(),
+        session,
+      };
+      setState({ kind: 'ready', session: ref });
+    } catch (e) {
+      const msg =
+        e instanceof WebHidNotSupportedError
+          ? 'WebHID is unavailable. Use Chromium-based browser over HTTPS (or localhost), or pick the Speculos transport.'
+          : e instanceof Error
+            ? e.message
+            : String(e);
+      setState({ kind: 'error', lastSession: null, message: msg });
+    }
   }
 
   return (

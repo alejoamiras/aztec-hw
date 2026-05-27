@@ -40,6 +40,7 @@ import { AccountManager } from '@aztec/aztec.js/wallet';
 import { DefaultAccountEntrypoint } from '@aztec/entrypoints/account';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import type { ContractArtifact } from '@aztec/stdlib/abi';
+import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
 import { GasFees, GasSettings } from '@aztec/stdlib/gas';
 import type { ExecutionPayload, TxHash, TxReceipt } from '@aztec/stdlib/tx';
 import type { ChainInfo } from '@aztec-hwwallet-poc/core';
@@ -63,10 +64,13 @@ export interface AztecLedgerSessionDeps {
   readonly secret: Fr;
   /** Account-deploy salt Fr. */
   readonly salt: Fr;
-  /** Live USDC contract address (slot 0 in M5 manifest). */
-  readonly usdcAddress: AztecAddress;
-  /** Live Dripper contract address (slot 3 in M5 manifest). */
-  readonly dripperAddress: AztecAddress;
+  /**
+   * Live USDC contract instance — actual deployed shape (publicKeys,
+   * initHash, salt, address). PXE rejects address-only overrides.
+   */
+  readonly usdcInstance: ContractInstanceWithAddress;
+  /** Live Dripper contract instance — same provenance constraint. */
+  readonly dripperInstance: ContractInstanceWithAddress;
   /** Live SponsoredFPC contract address (slot 2 in M5 manifest). */
   readonly sponsoredFpcAddress: AztecAddress;
   /** Wonderland Token contract artifact (for Contract.at). */
@@ -91,10 +95,17 @@ export interface AztecLedgerSessionConnectOptions {
   readonly tokenArtifact: ContractArtifact;
   /** Wonderland Dripper contract artifact (loaded JSON). */
   readonly dripperArtifact: ContractArtifact;
-  /** Live token address (USDC). */
-  readonly usdcAddress: AztecAddress;
-  /** Live Dripper address. */
-  readonly dripperAddress: AztecAddress;
+  /**
+   * Live USDC contract instance. MUST be the actual deployed instance
+   * (with the right publicKeys + salt + initHash + address); PXE
+   * rejects address-only overrides. Caller computes this via
+   * `getContractInstanceFromInstantiationParams(artifact, { salt,
+   * constructorArtifact, constructorArgs })` using the values from
+   * nulo's deployments.json.
+   */
+  readonly usdcInstance: ContractInstanceWithAddress;
+  /** Live Dripper contract instance — same provenance constraint. */
+  readonly dripperInstance: ContractInstanceWithAddress;
   /** Live SponsoredFPC address (salt=0 on both sandbox and testnet). */
   readonly sponsoredFpcAddress: AztecAddress;
   /** Optional pre-chosen account salt. Defaults to a fresh Fr.random(). */
@@ -157,25 +168,15 @@ export class AztecLedgerSession {
     const accountAddress = accountManager.address;
     const accountCompleteAddress = await accountManager.getCompleteAddress();
 
-    /* Register the pinned contracts in the PXE so they can be invoked via
-     * Contract.at(...). Register-without-artifact is the lightweight path —
-     * the artifact gets attached lazily when we actually dispatch a call. */
-    const usdcInstance = await getContractInstanceFromInstantiationParams(opts.tokenArtifact, {
-      salt: new Fr(0n), // metadata-only; the pinned address is what matters
-    });
-    const dripperInstance = await getContractInstanceFromInstantiationParams(opts.dripperArtifact, {
-      salt: new Fr(0n),
-    });
-    /* registerContract takes the resolved instance + artifact. We override
-     * the resolved address with the live one so PXE looks up by it. */
-    await session.registerContract(
-      { ...usdcInstance, address: opts.usdcAddress },
-      opts.tokenArtifact,
-    );
-    await session.registerContract(
-      { ...dripperInstance, address: opts.dripperAddress },
-      opts.dripperArtifact,
-    );
+    /* Register the pinned contracts in the PXE. We require the caller to
+     * pass already-built ContractInstanceWithAddress objects because PXE
+     * rejects address-only overrides — it recomputes the address from the
+     * full instance (publicKeys, initHash, salt) and throws on mismatch
+     * (codex post-impl review §BLOCKER 1, pxe.ts:674-689). Caller knows
+     * the real salt + constructor args from the deployments registry
+     * (e.g., nulo/nulo-2/packages/faucet/src/contracts/deployments.json). */
+    await session.registerContract(opts.usdcInstance, opts.tokenArtifact);
+    await session.registerContract(opts.dripperInstance, opts.dripperArtifact);
 
     const deps: AztecLedgerSessionDeps = {
       session,
@@ -183,8 +184,8 @@ export class AztecLedgerSession {
       ledgerProvider,
       secret,
       salt,
-      usdcAddress: opts.usdcAddress,
-      dripperAddress: opts.dripperAddress,
+      usdcInstance: opts.usdcInstance,
+      dripperInstance: opts.dripperInstance,
       sponsoredFpcAddress: opts.sponsoredFpcAddress,
       tokenArtifact: opts.tokenArtifact,
       dripperArtifact: opts.dripperArtifact,
@@ -257,14 +258,14 @@ export class AztecLedgerSession {
    * `Dripper.drip_to_public(USDC_ADDR, amount)`. Amount is u64 (atomic).
    */
   async dripUsdc(amount: bigint): Promise<SubmitResult> {
-    const dripper = this.contractAt(this.deps.dripperAddress, this.deps.dripperArtifact);
+    const dripper = this.contractAt(this.deps.dripperInstance.address, this.deps.dripperArtifact);
     /* `Contract.methods` is an artifact-keyed Proxy — TS types it as
      * `Record<string, ContractMethod | undefined>` so dynamic access is
      * possibly-undefined. The artifact provenance is verified at M6.0
      * codegen time, so we use a typed alias to surface a clear error
      * if the upstream artifact ever drops drip_to_public. */
     const callContractMethod = this.requireMethod(dripper, 'drip_to_public');
-    const exec = await callContractMethod(this.deps.usdcAddress, amount).request({
+    const exec = await callContractMethod(this.deps.usdcInstance.address, amount).request({
       fee: { paymentMethod: this.sponsoredFee() },
     });
     return this.submitClearSignedIntent(exec);
@@ -314,7 +315,7 @@ export class AztecLedgerSession {
     to: AztecAddress,
     amount: bigint,
   ): Promise<SubmitResult> {
-    const token = this.contractAt(this.deps.usdcAddress, this.deps.tokenArtifact);
+    const token = this.contractAt(this.deps.usdcInstance.address, this.deps.tokenArtifact);
     const callContractMethod = this.requireMethod(token, method);
     /* `nonce` arg is the authwitness inner-nonce — 0n means no separate
      * delegated authwit; our clear-signing flow is self-spend only so 0
@@ -411,12 +412,15 @@ export class AztecLedgerSession {
      *    control over txNonce. */
     const entrypoint = new DefaultAccountEntrypoint(this.address, frozen);
 
-    /* 7. Construct the tx request with OUR chosen txNonce. GasSettings
-     *    fallback values are fine for sponsored txs — the SponsoredFPC
-     *    absorbs the cost regardless. */
-    const gasSettings = GasSettings.fallback({
-      maxFeesPerGas: new GasFees(0n, 0n),
-    });
+    /* 7. Construct the tx request with OUR chosen txNonce.
+     *    Codex post-impl §BLOCKER 2: even with a sponsored FPC fee-payer,
+     *    upstream validation still checks maxFeesPerGas
+     *    (gas_validator.ts:167-178). The wallet-sdk's BaseWallet fills
+     *    this from aztecNode.getCurrentMinFees() (base_wallet.ts:245);
+     *    we do the same here. The 10% padding mirrors `minFeePadding`. */
+    const currentMinFees = await session.nodeClient.getCurrentMinFees();
+    const maxFeesPerGas = currentMinFees.mul(1.1);
+    const gasSettings = GasSettings.fallback({ maxFeesPerGas });
     const txRequest = await entrypoint.createTxExecutionRequest(exec, gasSettings, chainInfo, {
       cancellable: false,
       txNonce,
