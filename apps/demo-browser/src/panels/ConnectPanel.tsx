@@ -14,12 +14,18 @@ import {
   DRIPPER_ARTIFACT,
   dripperInstance,
   SPONSORED_FPC_ADDRESS,
+  SPONSORED_FPC_ARTIFACT,
+  sponsoredFpcInstance,
   TOKEN_ARTIFACT,
   usdcInstance,
 } from '../deployments.ts';
 import type { DemoState, SessionRef, Transport } from '../state.ts';
 
-const DEFAULT_NODE_URL = 'https://rpc.testnet.aztec-labs.com';
+/* Route through Vite's /aztec proxy so the browser doesn't block the
+ * cross-origin fetch under COEP=require-corp (the testnet RPC doesn't
+ * set Cross-Origin-Resource-Policy). Path is rewritten to the real RPC
+ * in vite.config.ts. */
+const DEFAULT_NODE_URL = '/aztec';
 const SPECULOS_PROXY_URL = '/speculos';
 
 interface Props {
@@ -48,7 +54,11 @@ export function ConnectPanel({ state, setState }: Props) {
        *    pinned salt+constructor args. PXE rejects address-only
        *    overrides (codex BLOCKER 1), so we have to derive the
        *    FULL ContractInstanceWithAddress here. */
-      const [usdc, dripper] = await Promise.all([usdcInstance(), dripperInstance()]);
+      const [usdc, dripper, fpc] = await Promise.all([
+        usdcInstance(),
+        dripperInstance(),
+        sponsoredFpcInstance(),
+      ]);
 
       /* 3. Spin up the session. Heavy — first call pays ~3-5s WASM-prover
        *    init cost and an initial PXE sync against the node. */
@@ -57,8 +67,10 @@ export function ConnectPanel({ state, setState }: Props) {
         transport: txp,
         tokenArtifact: TOKEN_ARTIFACT,
         dripperArtifact: DRIPPER_ARTIFACT,
+        sponsoredFpcArtifact: SPONSORED_FPC_ARTIFACT,
         usdcInstance: usdc,
         dripperInstance: dripper,
+        sponsoredFpcInstance: fpc,
         sponsoredFpcAddress: SPONSORED_FPC_ADDRESS,
       });
 

@@ -28,6 +28,8 @@
  * submissions would corrupt the device state. Convenience wrappers
  * route through `submitClearSignedIntent`, so they share the mutex.
  */
+
+import { NO_FROM } from '@aztec/aztec.js/account';
 import type { AztecAddress, CompleteAddress } from '@aztec/aztec.js/addresses';
 import {
   Contract,
@@ -74,12 +76,17 @@ export interface AztecLedgerSessionDeps {
   readonly usdcInstance: ContractInstanceWithAddress;
   /** Live Dripper contract instance — same provenance constraint. */
   readonly dripperInstance: ContractInstanceWithAddress;
+  /** Live SponsoredFPC contract instance — PXE must have this registered or
+   * sponsor calls fail with "Unknown contract" during simulation. */
+  readonly sponsoredFpcInstance: ContractInstanceWithAddress;
   /** Live SponsoredFPC contract address (slot 2 in M5 manifest). */
   readonly sponsoredFpcAddress: AztecAddress;
   /** Wonderland Token contract artifact (for Contract.at). */
   readonly tokenArtifact: ContractArtifact;
   /** Wonderland Dripper contract artifact (for Contract.at). */
   readonly dripperArtifact: ContractArtifact;
+  /** SponsoredFPC contract artifact (from @aztec/noir-contracts.js). */
+  readonly sponsoredFpcArtifact: ContractArtifact;
 }
 
 export interface SubmitResult {
@@ -109,7 +116,11 @@ export interface AztecLedgerSessionConnectOptions {
   readonly usdcInstance: ContractInstanceWithAddress;
   /** Live Dripper contract instance — same provenance constraint. */
   readonly dripperInstance: ContractInstanceWithAddress;
-  /** Live SponsoredFPC address (salt=0 on both sandbox and testnet). */
+  /** Live SponsoredFPC contract instance (PXE must have it for sponsor calls). */
+  readonly sponsoredFpcInstance: ContractInstanceWithAddress;
+  /** SponsoredFPC contract artifact (from @aztec/noir-contracts.js). */
+  readonly sponsoredFpcArtifact: ContractArtifact;
+  /** Live SponsoredFPC address (slot 2 in M5 manifest; salt=0 protocol-pinned). */
   readonly sponsoredFpcAddress: AztecAddress;
   /** Optional pre-chosen account salt. Defaults to a fresh Fr.random(). */
   readonly salt?: Fr;
@@ -171,6 +182,19 @@ export class AztecLedgerSession {
     const accountAddress = accountManager.address;
     const accountCompleteAddress = await accountManager.getCompleteAddress();
 
+    /* Plumb the Account into SessionEmbeddedWallet's external-account
+     * registry so:
+     *  - `getAccountFromAddress` returns our Ledger-backed account
+     *  - `walletDB.retrieveAccount(from)` (called directly by
+     *    `simulateViaEntrypoint`, embedded_wallet.ts:260) finds a stub
+     *    entry with the right `type` so simulation can build the stub
+     *    account. SigningKey is irrelevant in our flow since
+     *    getAccountFromAddress short-circuits before createAccountInternal.
+     * Surfaced via playwright as "Account 0x… does not exist on this
+     * wallet" when Deploy first ran. */
+    const accountForCache = await accountManager.getAccount();
+    await session.registerExternalAccount(accountAddress, accountForCache, secret, salt);
+
     /* Register the user's account-contract instance FIRST. PXE rejects
      * tx simulation with "Unknown contract" until the consumer address is
      * registered (surfaced via playwright as 'Unknown contract 0x2e8…'
@@ -189,6 +213,9 @@ export class AztecLedgerSession {
      * (codex post-impl review §BLOCKER 1, pxe.ts:674-689). */
     await session.registerContract(opts.usdcInstance, opts.tokenArtifact);
     await session.registerContract(opts.dripperInstance, opts.dripperArtifact);
+    /* Without this, sponsor simulation fails with "Unknown contract
+     * 0x254082…1257" — surfaced via playwright. */
+    await session.registerContract(opts.sponsoredFpcInstance, opts.sponsoredFpcArtifact);
 
     const deps: AztecLedgerSessionDeps = {
       session,
@@ -198,6 +225,8 @@ export class AztecLedgerSession {
       salt,
       usdcInstance: opts.usdcInstance,
       dripperInstance: opts.dripperInstance,
+      sponsoredFpcInstance: opts.sponsoredFpcInstance,
+      sponsoredFpcArtifact: opts.sponsoredFpcArtifact,
       sponsoredFpcAddress: opts.sponsoredFpcAddress,
       tokenArtifact: opts.tokenArtifact,
       dripperArtifact: opts.dripperArtifact,
@@ -214,8 +243,16 @@ export class AztecLedgerSession {
    */
   async deployAccount(): Promise<SubmitResult> {
     const deployMethod = await this.accountManager.getDeployMethod();
+    /* `from: NO_FROM` selects the self-paid deploy path in
+     * DeployAccountMethod.request: the to-be-deployed account ITSELF
+     * pays via the multicall entrypoint, which bypasses the account's
+     * own (not-yet-existing) signing-key state. With `from: this.address`
+     * the framework tries to use the account's entrypoint for the deploy
+     * tx — but the entrypoint reads signing_pubkey from a private note
+     * the constructor hasn't written yet ("Failed to get a note
+     * 'self.is_some()'"). */
     const result = await deployMethod.send({
-      from: this.address,
+      from: NO_FROM,
       fee: { paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress) },
     });
     return { txHash: result.receipt.txHash, receipt: result.receipt };
@@ -449,10 +486,13 @@ export class AztecLedgerSession {
       feePaymentMethodOptions: AccountFeePaymentMethodOptions.EXTERNAL,
     });
 
-    /* 8. Prove + send via the session's PXE + AztecNode. The raw PXE v4.2.1
-     *    interface takes `scopes: AztecAddress[]` as a positional 2nd arg
-     *    (pxe.d.ts:201); the wallet-sdk wraps that in an options object. We
-     *    call the raw shape directly here. */
+    /* 8. Prove + send via the session's PXE + AztecNode. PXE v4.2.1
+     *    takes `scopes: AztecAddress[]` as a positional 2nd arg
+     *    (pxe.d.ts:201). 4.3.0 changed this to a ProveTxOpts object —
+     *    codex 019e69ef flagged it as an upgrade trap. Pinned to 4.2.1
+     *    because nulo's deployed contracts (USDC + Dripper) were
+     *    address-derived at 4.2.0; mixing 4.3.0 PXE with 4.2.0 addresses
+     *    risks address-derivation drift on registerContract. */
     const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
     const tx = await provenTx.toTx();
     const txHash = tx.getTxHash();

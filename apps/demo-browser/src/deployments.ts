@@ -11,6 +11,7 @@
 import { AztecAddress } from '@aztec/aztec.js/addresses';
 import { getContractInstanceFromInstantiationParams } from '@aztec/aztec.js/contracts';
 import { Fr } from '@aztec/foundation/curves/bn254';
+import { SponsoredFPCContract } from '@aztec/noir-contracts.js/SponsoredFPC';
 import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
 /* Use Wonderland's pre-processed artifact modules instead of the raw JSON.
  * The raw target/*.json shape has `f.abi.parameters` (nested); the
@@ -38,6 +39,26 @@ export const USDC_DECIMALS = 6;
 
 export const TOKEN_ARTIFACT = TokenContractArtifact;
 export const DRIPPER_ARTIFACT = DripperContractArtifact;
+export const SPONSORED_FPC_ARTIFACT = SponsoredFPCContract.artifact;
+
+/**
+ * Recompute the SponsoredFPC instance. Salt = 0 (protocol-pinned per
+ * @aztec/constants); the deployed instance on testnet is at
+ * SPONSORED_FPC_ADDRESS above. PXE must have the instance registered or
+ * the framework rejects sponsor calls with "Unknown contract".
+ */
+export async function sponsoredFpcInstance(): Promise<ContractInstanceWithAddress> {
+  const instance = await getContractInstanceFromInstantiationParams(SPONSORED_FPC_ARTIFACT, {
+    salt: new Fr(0n),
+  });
+  if (!instance.address.equals(SPONSORED_FPC_ADDRESS)) {
+    throw new Error(
+      `SponsoredFPC instance address ${instance.address} doesn't match canonical pin ${SPONSORED_FPC_ADDRESS}. ` +
+        'Check @aztec/constants SPONSORED_FPC_SALT.',
+    );
+  }
+  return instance;
+}
 
 /**
  * Recompute the Dripper's deployed instance. Constructor has zero args.

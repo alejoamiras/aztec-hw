@@ -19,11 +19,56 @@
  *  - Upstream lesson: `ephemeral` is a TOP-LEVEL `EmbeddedWalletOptions`
  *    flag, NOT nested under `pxe`. Easy to get wrong.
  */
+import type { Account } from '@aztec/aztec.js/account';
+import type { AztecAddress } from '@aztec/aztec.js/addresses';
 import type { AztecNode } from '@aztec/aztec.js/node';
+import type { Fr } from '@aztec/foundation/curves/bn254';
 import type { PXE } from '@aztec/pxe/server';
 import { EmbeddedWallet, type EmbeddedWalletOptions } from '@aztec/wallets/embedded';
 
 export class SessionEmbeddedWallet extends EmbeddedWallet {
+  /**
+   * In-memory map of address → Account, populated by AztecLedgerSession
+   * after AccountManager.create returns. We override
+   * `getAccountFromAddress` to consult this map FIRST because the
+   * upstream EmbeddedWallet's implementation rebuilds the account from
+   * a stored `signingKey: Buffer` in WalletDB — that won't work for our
+   * Ledger-backed flow where the K1 signing key never leaves the device.
+   */
+  private readonly externalAccounts = new Map<string, Account>();
+
+  /** Register a pre-built Account (Ledger-backed) so subsequent
+   *  `getAccountFromAddress` lookups resolve through this cache. ALSO
+   *  writes a minimal `walletDB.storeAccount` entry — upstream's
+   *  `simulateViaEntrypoint` calls `walletDB.retrieveAccount(from)`
+   *  DIRECTLY (embedded_wallet.ts:260) before falling through to
+   *  `getAccountFromAddress`, so we need both paths covered. */
+  async registerExternalAccount(
+    address: AztecAddress,
+    account: Account,
+    secret: Fr,
+    salt: Fr,
+  ): Promise<void> {
+    this.externalAccounts.set(address.toString(), account);
+    /* WalletDB only needs `type` and `secretKey` / `salt` to satisfy the
+     * upstream lookup — `signingKey` is consumed by `createAccountInternal`
+     * which we never reach (our `getAccountFromAddress` short-circuits).
+     * Pass a 32-byte zero Buffer as a placeholder. */
+    await this.walletDB.storeAccount(address, {
+      type: 'ecdsasecp256k1',
+      secretKey: secret,
+      salt,
+      signingKey: Buffer.alloc(32),
+      alias: 'ledger',
+    });
+  }
+
+  protected override async getAccountFromAddress(address: AztecAddress): Promise<Account> {
+    const cached = this.externalAccounts.get(address.toString());
+    if (cached) return cached;
+    return super.getAccountFromAddress(address);
+  }
+
   /**
    * Build an ephemeral session wallet against the given node URL.
    *

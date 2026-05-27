@@ -23,25 +23,55 @@ import { expect, test } from '@playwright/test';
 
 const SPECULOS_URL = 'http://localhost:5001';
 
-/** Spam the right-then-both button presses on Speculos until the device
- * returns to idle. Speculos's review screens differ by verb count;
- * presses are cheap so we just brute-force confirmation. */
-async function autoConfirmSpeculos(durationMs = 8000): Promise<void> {
+async function pressSpeculos(button: 'left' | 'right' | 'both'): Promise<void> {
+  await fetch(`${SPECULOS_URL}/button/${button}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'press-and-release' }),
+  }).catch(() => {});
+}
+
+/** Walk through Nano S+ review screens until "Sign Aztec outer_hash?"
+ * appears, then press Both. Keeps a log of screens for diagnostics. */
+async function autoConfirmSpeculos(durationMs = 60_000, screenLog?: string[]): Promise<void> {
   const deadline = Date.now() + durationMs;
+  let prevScreen = '';
   while (Date.now() < deadline) {
-    /* Sequence Right (advance), Right (advance), Both (confirm). */
-    await fetch(`${SPECULOS_URL}/button/right`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'press-and-release' }),
-    }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 150));
-    await fetch(`${SPECULOS_URL}/button/both`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'press-and-release' }),
-    }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 300));
+    let screen = '';
+    try {
+      const res = await fetch(`${SPECULOS_URL}/events?currentscreenonly=true`);
+      const json = (await res.json()) as { events: { text: string }[] };
+      screen = json.events.map((e) => e.text).join(' | ');
+    } catch {}
+    if (screen !== prevScreen) {
+      screenLog?.push(screen);
+      prevScreen = screen;
+    }
+    /* Blind-sign warning screen ("Blind signing ahead | press both buttons"):
+     * Ledger requires explicit Both-press acknowledgement before the
+     * review starts. Without this the screen sticks forever. */
+    if (/Blind signing ahead|press.*both buttons/i.test(screen)) {
+      await pressSpeculos('both');
+      await new Promise((r) => setTimeout(r, 500));
+      continue;
+    }
+    /* Final sign confirmation prompt. Note: Nano S+ wraps long text so
+     * "Sign Aztec outer_hash?" displays as "Sign Aztec outer_ | hash?".
+     * Match the leading "Sign Aztec" instead of the full string. */
+    if (/Sign Aztec|^Approve$|Hold to sign/i.test(screen)) {
+      await pressSpeculos('both');
+      await new Promise((r) => setTimeout(r, 800));
+      continue;
+    }
+    /* "Reject" alone means we've overshot the Sign screen — back up. */
+    if (/^Reject/.test(screen) && !/Sign|Approve|Blind/.test(screen)) {
+      await pressSpeculos('left');
+      await new Promise((r) => setTimeout(r, 250));
+      continue;
+    }
+    /* Default: advance. */
+    await pressSpeculos('right');
+    await new Promise((r) => setTimeout(r, 250));
   }
 }
 
@@ -59,12 +89,38 @@ test('demo browser smoke', async ({ page }) => {
   const consoleErrors: string[] = [];
   const consoleAll: string[] = [];
   const pageErrors: Error[] = [];
+  const failedRequests: { url: string; failure: string }[] = [];
+  const wasmRequests: { url: string; status: number; contentType: string }[] = [];
   page.on('console', (msg) => {
     const text = `[${msg.type()}] ${msg.text()}`;
     consoleAll.push(text);
     if (msg.type() === 'error') consoleErrors.push(msg.text());
+    /* Mirror live to the playwright stdout so we don't have to wait for
+     * the test to terminate to see what the page is doing. */
+    if (process.env.LIVE_CONSOLE === '1') {
+      const short = text.length > 200 ? text.slice(0, 200) + '…' : text;
+      console.log('[browser] ' + short);
+    }
   });
   page.on('pageerror', (err) => pageErrors.push(err));
+  page.on('requestfailed', (req) => {
+    failedRequests.push({ url: req.url(), failure: req.failure()?.errorText ?? '?' });
+  });
+  page.on('response', (res) => {
+    const url = res.url();
+    if (
+      url.includes('.wasm') ||
+      url.includes('barretenberg') ||
+      url.includes('worker') ||
+      url.includes('bb.js')
+    ) {
+      wasmRequests.push({
+        url,
+        status: res.status(),
+        contentType: res.headers()['content-type'] ?? '',
+      });
+    }
+  });
 
   await test.step('page loads', async () => {
     const resp = await page.goto('/');
@@ -87,7 +143,7 @@ test('demo browser smoke', async ({ page }) => {
     await transportSelect.selectOption('speculos');
 
     const nodeInput = page.locator('#node-url');
-    await expect(nodeInput).toHaveValue('https://rpc.testnet.aztec-labs.com');
+    await expect(nodeInput).toHaveValue('/aztec');
   });
 
   await test.step('disabled panels are visibly disabled', async () => {
@@ -131,6 +187,53 @@ test('demo browser smoke', async ({ page }) => {
     }
   });
 
+  await test.step('drive Deploy (Speculos auto-confirm)', async () => {
+    const errBanner = page.locator('.status.err').first();
+    if ((await errBanner.count()) > 0) {
+      console.log('\n=== SKIPPING DEPLOY (Connect did not succeed) ===\n');
+      return;
+    }
+    const deployBtn = page.getByRole('button', { name: 'Deploy account' });
+    await deployBtn.click();
+    const deployScreens: string[] = [];
+    const confirmPromise = autoConfirmSpeculos(120_000, deployScreens);
+    try {
+      await page.waitForFunction(
+        () => {
+          const btn = Array.from(document.querySelectorAll('button')).find((b) =>
+            b.textContent?.includes('Deploy'),
+          );
+          const errBanner = document.querySelector('.status.err');
+          if (errBanner) return true;
+          if (!btn) return false;
+          return !btn.textContent?.includes('Deploying');
+        },
+        { timeout: 5 * 60_000 },
+      );
+    } catch {
+      console.log('\n=== DEPLOY TIMED OUT (5min) ===\n');
+    }
+    await confirmPromise.catch(() => {});
+    await page.screenshot({ path: '/tmp/m6-2b-after-deploy.png', fullPage: true });
+
+    const screen = await speculosScreen();
+    console.log('\n=== SPECULOS POST-DEPLOY SCREEN ===\n' + screen);
+    console.log(
+      '\n=== DEPLOY SCREEN LOG (' +
+        deployScreens.length +
+        ') ===\n  ' +
+        deployScreens.map((s, i) => `${i}: ${s}`).join('\n  '),
+    );
+
+    const errCount = await errBanner.count();
+    if (errCount > 0) {
+      const msg = await errBanner.innerText();
+      console.log('\n=== DEPLOY ERROR ===\n' + msg + '\n=== END ===\n');
+    } else {
+      console.log('\n=== DEPLOY OK ===\n');
+    }
+  });
+
   await test.step('drive Drip (Speculos auto-confirm)', async () => {
     const errBanner = page.locator('.status.err').first();
     if ((await errBanner.count()) > 0) {
@@ -141,7 +244,7 @@ test('demo browser smoke', async ({ page }) => {
     await dripBtn.click();
     /* Concurrently spam Speculos confirmations while the click resolves. */
     const confirmPromise = autoConfirmSpeculos(20_000);
-    /* Wait up to 90s for the drip to terminate — proving may be slow. */
+    /* Wait up to 5min for the drip to terminate — proving + inclusion. */
     try {
       await page.waitForFunction(
         () => {
@@ -153,10 +256,10 @@ test('demo browser smoke', async ({ page }) => {
           if (!btn) return false;
           return !btn.textContent?.includes('Dripping');
         },
-        { timeout: 90_000 },
+        { timeout: 5 * 60_000 },
       );
-    } catch (e) {
-      console.log('\n=== DRIP TIMED OUT (90s) ===\n');
+    } catch {
+      console.log('\n=== DRIP TIMED OUT (5min) ===\n');
     }
     await confirmPromise.catch(() => {});
     await page.screenshot({ path: '/tmp/m6-3-after-drip.png', fullPage: true });
@@ -190,5 +293,13 @@ test('demo browser smoke', async ({ page }) => {
     }
     console.log('=== CONSOLE (last 20, full) ===');
     for (const e of consoleAll.slice(-20)) console.log('  ' + e);
+    console.log('=== WASM/WORKER REQUESTS (' + wasmRequests.length + ') ===');
+    for (const r of wasmRequests) {
+      console.log('  [' + r.status + ' ' + r.contentType + '] ' + r.url);
+    }
+    console.log('=== FAILED REQUESTS (' + failedRequests.length + ') ===');
+    for (const r of failedRequests) {
+      console.log('  ' + r.failure + ': ' + r.url);
+    }
   });
 });
