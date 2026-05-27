@@ -1,0 +1,167 @@
+/* Plain CSS — no Tailwind. Opus rejected Tailwind setup for a PoC of
+ * this scope (decisions log §14). Keep this short. */
+:root {
+  --bg: #0f1115;
+  --fg: #e8eaed;
+  --muted: #94a3b8;
+  --accent: #7c5cff;
+  --accent-dim: #4c3da6;
+  --ok: #2dd4bf;
+  --err: #f87171;
+  --warn: #facc15;
+  --card: #161922;
+  --border: #232838;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.25rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin: 0 0 2rem;
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin: 1rem 0;
+}
+
+.panel.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+  flex-wrap: wrap;
+}
+
+.row > label {
+  min-width: 6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+input,
+select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 0;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-dim);
+}
+
+button:disabled {
+  background: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+}
+
+button.secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+code,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-size: 0.85rem;
+}
+
+.status {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.status.ok {
+  color: var(--ok);
+}
+.status.err {
+  color: var(--err);
+}
+.status.warn {
+  color: var(--warn);
+}
+.status.muted {
+  color: var(--muted);
+}
+
+a {
+  color: var(--accent);
+}
+
+.address {
+  display: inline-block;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-size: 0.8rem;
+}

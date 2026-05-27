@@ -1,0 +1,28 @@
+{
+  "name": "@aztec-hwwallet-poc/demo-browser",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Browser PoC: in-browser PXE + Ledger-backed clear-signing for the M6 demo video. Three panels (Connect / Drip / Transfer), ephemeral session, runtime Speculos/WebHID switch.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aztec-hwwallet-poc/adapter-ledger": "workspace:*",
+    "@aztec-hwwallet-poc/core": "workspace:*",
+    "@aztec/aztec.js": "^4.2.1",
+    "@aztec/foundation": "^4.2.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0"
+  }
+}
