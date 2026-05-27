@@ -140,13 +140,15 @@ export function ConnectPanel({ state, setState }: Props) {
       </div>
       <div className="row">
         <button type="button" onClick={onConnect} disabled={isConnecting || isConnected}>
-          {isConnecting ? 'Connecting…' : isConnected ? 'Connected' : 'Connect'}
+          {isConnecting ? 'Connecting…' : isConnected ? '✓ Connected' : 'Connect'}
         </button>
-        {isConnected && state.kind !== 'error' && (
-          <span className="status ok">
-            Account: <span className="address">{state.session.addressHex}</span>
-          </span>
-        )}
+        <span className="status muted">
+          {isConnecting
+            ? 'Spawning PXE + prover, deriving Ledger address…'
+            : isConnected
+              ? 'Session established. Account shown in panel 2.'
+              : 'Spins up a session against testnet. Takes a few seconds.'}
+        </span>
       </div>
       {state.kind === 'error' && <div className="status err">{state.message}</div>}
     </section>

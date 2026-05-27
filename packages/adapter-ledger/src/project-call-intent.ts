@@ -37,5 +37,18 @@ export function projectExecutionPayloadIntoCallIntent(
     hideMsgSender: c.hideMsgSender,
     isStatic: c.isStatic,
   }));
+  /* Diagnostic: dump every call's address + selector so the host log
+   * gives us the exact bytes when the device's strict-allowlist rejects.
+   * Surfaced during transfer-mode debugging — the framework occasionally
+   * routes calls through wrapper functions we haven't pinned. */
+  if (typeof globalThis !== 'undefined' && (globalThis as { console?: Console }).console) {
+    const lines = calls
+      .map(
+        (c, i) =>
+          `  [${i}] ${c.contractAddress.toString()} sel=${c.selector.toString()} args=${c.args.length} pub=${c.isPublic}`,
+      )
+      .join('\n');
+    console.log(`[projectCallIntent] consumer=${consumer.toString()} calls:\n${lines}`);
+  }
   return { consumer, chainInfo, calls };
 }

@@ -24,6 +24,7 @@
 #include "../globals.h"
 #include "../sw.h"
 #include "../ui/display.h"
+#include "nbgl_use_case.h"
 
 const uint8_t SECP256K1_N[32] = {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -187,10 +188,17 @@ int sign_outer_hash_after_approval(void) {
     explicit_bzero(s2, sizeof(s2));
     int rc = io_send_response_pointer(response, sizeof(response), SWO_SUCCESS);
     explicit_bzero(&G_context, sizeof(G_context));
+    /* Codex 019e6ad4: dismiss the NBGL review back to the home screen
+     * after a successful blind-sign — without this, the device sits on
+     * "Sign Aztec outer_hash?" forever even though the host has the
+     * signature. */
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_menu_main);
     return rc;
 }
 
 int sign_outer_hash_rejected(void) {
     explicit_bzero(&G_context, sizeof(G_context));
-    return io_send_sw(SW_USER_REJECTED);
+    int rc = io_send_sw(SW_USER_REJECTED);
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_menu_main);
+    return rc;
 }

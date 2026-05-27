@@ -394,6 +394,23 @@ export class AztecLedgerSession {
     const exec = await callContractMethod(this.address, to, amount, 0n).request({
       fee: { paymentMethod: this.sponsoredFee() },
     });
+    /* Codex 019e6ad4 Bug 2 diagnostic: pub→priv / priv→pub / priv→priv
+     * trip a PreflightError on selector 0x32c5dcf8, which isn't any of
+     * our four registered transfer selectors. Codex's read: artifact-
+     * driven method-surface drift — log name+selector+type per call so
+     * we can see whether the method lookup picked a wrong ABI entry. */
+    // biome-ignore lint/suspicious/noConsole: temporary live-debug instrumentation
+    console.log(
+      '[transferUsdc] method=%s exec.calls=%o',
+      method,
+      exec.calls.map((c) => ({
+        name: c.name,
+        to: c.to.toString(),
+        selector: c.selector.toString(),
+        type: c.type,
+        argsLen: c.args.length,
+      })),
+    );
     return this.submitClearSignedIntent(exec, opts);
   }
 

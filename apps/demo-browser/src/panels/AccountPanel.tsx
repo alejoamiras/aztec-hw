@@ -5,6 +5,9 @@
  * "Building payload…" → "Awaiting clear-signed approval on device…" →
  * "Signature received — building tx request…" → "Proving tx…" →
  * "Submitting tx 0xabcdef…" → "Awaiting inclusion…" → "Tx mined".
+ *
+ * Deploy disables itself once it succeeds — account deployment is
+ * one-shot per session.
  */
 
 import type { SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
@@ -20,6 +23,7 @@ export function AccountPanel({ state, setState }: Props) {
   const session = sessionFromState(state);
   const [steps, setSteps] = useState<SubmitStep[]>([]);
   const disabled = !session || state.kind === 'connecting' || state.kind === 'submitting';
+  const alreadyDeployed = Boolean(session?.deployedTxHash);
 
   async function runAction(
     name: 'deploy' | 'drip',
@@ -33,14 +37,21 @@ export function AccountPanel({ state, setState }: Props) {
       const step = { label, at: performance.now() };
       local.push(step);
       setSteps([...local]);
+      /* Mirror the active step into the global state so the top status
+       * bar updates in real time. */
+      setState({ kind: 'submitting', session, action: name, steps: [...local] });
     };
     try {
       const result = await fn(onStep);
+      const txHash = result.txHash.toString();
+      /* Persist deploy completion onto the session ref so the button
+       * stays disabled across re-renders. */
+      if (name === 'deploy') session.deployedTxHash = txHash;
       setState({
         kind: 'ready',
         session,
         lastSteps: local,
-        lastTxHash: result.txHash.toString(),
+        lastTxHash: txHash,
       });
     } catch (e) {
       if (e instanceof Error) {
@@ -75,11 +86,17 @@ export function AccountPanel({ state, setState }: Props) {
               onClick={() =>
                 runAction('deploy', (onStep) => session.session.deployAccount({ onStep }))
               }
-              disabled={state.kind === 'submitting'}
+              disabled={state.kind === 'submitting' || alreadyDeployed}
             >
-              {isDeploying ? 'Deploying…' : 'Deploy account'}
+              {alreadyDeployed
+                ? '✓ Account deployed'
+                : isDeploying
+                  ? 'Deploying…'
+                  : 'Deploy account'}
             </button>
-            <span className="status muted">One-time. Blind-signed on device.</span>
+            <span className="status muted">
+              One-time. Blind-signed on device (hash review, not decoded — that's a future arc).
+            </span>
           </div>
           <div className="row">
             <button
@@ -87,12 +104,14 @@ export function AccountPanel({ state, setState }: Props) {
               onClick={() =>
                 runAction('drip', (onStep) => session.session.dripUsdc(1_000_000_000n, { onStep }))
               }
-              disabled={state.kind === 'submitting'}
+              disabled={state.kind === 'submitting' || !alreadyDeployed}
             >
-              {isDripping ? 'Dripping…' : 'Drip 1000 USDC'}
+              {isDripping ? 'Dripping…' : 'Drip 1000 USDC (public)'}
             </button>
             <span className="status muted">
-              Sponsored. Clear-signed on-device. Mints to msg.sender.
+              {alreadyDeployed
+                ? 'Sponsored. Clear-signed on-device. Mints USDC publicly to your address.'
+                : 'Deploy the account first.'}
             </span>
           </div>
           <StepLog state={state} steps={steps} />
@@ -105,12 +124,11 @@ export function AccountPanel({ state, setState }: Props) {
 }
 
 function StepLog({ state, steps }: { state: DemoState; steps: SubmitStep[] }) {
-  /* Choose which steps to display based on current state. */
   let display: SubmitStep[] = [];
   let title = '';
   if (state.kind === 'submitting') {
     display = state.steps.length > 0 ? state.steps : steps;
-    title = `Action: ${state.action}`;
+    title = `Active: ${state.action}`;
   } else if (state.kind === 'error' && state.steps) {
     display = state.steps;
     title = 'Last attempt (failed)';
@@ -120,16 +138,29 @@ function StepLog({ state, steps }: { state: DemoState; steps: SubmitStep[] }) {
   }
   if (display.length === 0) return null;
   const t0 = display[0]?.at ?? 0;
+  const last = display[display.length - 1];
+  const totalMs = last ? Math.round(last.at - t0) : 0;
   return (
     <div className="steplog">
-      <div className="steplog-title">{title}</div>
+      <div className="steplog-title">
+        {title}
+        {totalMs > 0 && <span className="steplog-total"> · {totalMs}ms total</span>}
+      </div>
       <ol>
-        {display.map((s) => (
-          <li key={`${s.at}-${s.label}`}>
-            <span className="steplog-time">+{Math.round(s.at - t0)}ms</span>
-            <span className="steplog-label">{s.label}</span>
-          </li>
-        ))}
+        {display.map((s, idx) => {
+          const dur = idx > 0 ? Math.round(s.at - (display[idx - 1]?.at ?? s.at)) : 0;
+          const isLast = idx === display.length - 1 && state.kind === 'submitting';
+          return (
+            <li key={`${s.at}-${s.label}`} className={isLast ? 'steplog-current' : ''}>
+              <span className="steplog-time">+{Math.round(s.at - t0)}ms</span>
+              <span className="steplog-label">
+                {isLast ? '⏳ ' : '✓ '}
+                {s.label}
+              </span>
+              {idx > 0 && dur > 100 && <span className="steplog-delta"> (+{dur}ms)</span>}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

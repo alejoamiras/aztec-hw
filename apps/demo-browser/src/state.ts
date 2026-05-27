@@ -20,6 +20,9 @@ export interface SessionRef {
   readonly nodeUrl: string;
   readonly addressHex: string;
   readonly session: AztecLedgerSession;
+  /** Set to a tx hash once deployAccount has run successfully. The
+   * Deploy button reads this to disable itself — accounts deploy once. */
+  deployedTxHash?: string;
 }
 
 export interface SubmitStep {

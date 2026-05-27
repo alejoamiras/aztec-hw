@@ -28,6 +28,7 @@
 #include "../l4/wire.h"
 #include "../l4/parity.h"
 #include "../ui/display.h"
+#include "nbgl_use_case.h"
 
 /* sign_outer_hash.c exports n (the secp256k1 order) — reuse it. */
 extern const uint8_t SECP256K1_N[32];
@@ -206,10 +207,17 @@ int finalize_after_approval(void) {
 
     int rc = io_send_response_pointer(response, sizeof(response), SWO_SUCCESS);
     l4_session_reset();
+    /* Codex 019e6ad4 fix: NBGL review screen stays painted after the
+     * APDU success reply unless we explicitly transition the device
+     * back to home. nbgl_useCaseReviewStatus shows a brief "Tx signed"
+     * confirmation page, then calls ui_menu_main() to return to idle. */
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_menu_main);
     return rc;
 }
 
 int finalize_rejected(void) {
     l4_session_reset();
-    return io_send_sw(SW_USER_REJECTED);
+    int rc = io_send_sw(SW_USER_REJECTED);
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_menu_main);
+    return rc;
 }

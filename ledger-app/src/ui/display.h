@@ -32,3 +32,11 @@ int ui_display_verified_calls(void);
  * Optional public-key display flow. L2: simple confirm path → emit response.
  */
 int ui_display_pubkey(void);
+
+/**
+ * Return the device to the idle home screen. Called from
+ * `nbgl_useCaseReviewStatus(..., ui_menu_main)` after a successful
+ * (or rejected) signing flow — without this, NBGL's review page
+ * stays painted forever.
+ */
+void ui_menu_main(void);

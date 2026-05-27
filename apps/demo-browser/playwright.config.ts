@@ -8,6 +8,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  /* `.e2e.ts` (not `.spec.ts`) so bun:test's discovery doesn't pick
+   * these up — @playwright/test's `test()` blows up when invoked by
+   * the bun runner. */
+  testMatch: /.*\.e2e\.ts$/,
   fullyParallel: false,
   workers: 1,
   reporter: 'line',

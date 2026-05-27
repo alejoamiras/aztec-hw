@@ -58,7 +58,7 @@ export function StatusBar({ state }: Props) {
       badgeClass = 'error';
       primary = state.message;
       secondary = state.steps?.length
-        ? `Failed after: ${state.steps[state.steps.length - 1]!.label}`
+        ? `Failed after: ${state.steps[state.steps.length - 1]?.label}`
         : '';
       break;
   }
