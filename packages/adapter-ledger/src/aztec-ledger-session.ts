@@ -29,9 +29,12 @@
  * route through `submitClearSignedIntent`, so they share the mutex.
  */
 import type { AztecAddress, CompleteAddress } from '@aztec/aztec.js/addresses';
+import { Contract, type ContractMethod } from '@aztec/aztec.js/contracts';
+import { SponsoredFeePaymentMethod } from '@aztec/aztec.js/fee';
 import { waitForTx } from '@aztec/aztec.js/node';
 import { DefaultAccountEntrypoint } from '@aztec/entrypoints/account';
 import { Fr } from '@aztec/foundation/curves/bn254';
+import type { ContractArtifact } from '@aztec/stdlib/abi';
 import { GasFees, GasSettings } from '@aztec/stdlib/gas';
 import type { ExecutionPayload, TxHash, TxReceipt } from '@aztec/stdlib/tx';
 import type { ChainInfo } from '@aztec-hwwallet-poc/core';
@@ -59,6 +62,10 @@ export interface AztecLedgerSessionDeps {
   readonly dripperAddress: AztecAddress;
   /** Live SponsoredFPC contract address (slot 2 in M5 manifest). */
   readonly sponsoredFpcAddress: AztecAddress;
+  /** Wonderland Token contract artifact (for Contract.at). */
+  readonly tokenArtifact: ContractArtifact;
+  /** Wonderland Dripper contract artifact (for Contract.at). */
+  readonly dripperArtifact: ContractArtifact;
 }
 
 export interface SubmitResult {
@@ -117,24 +124,91 @@ export class AztecLedgerSession {
    * (alpha-testnet e2e) once the in-browser PXE has a contract artifact
    * loaded for nulo's Dripper.
    */
-  async dripUsdc(_amount: bigint): Promise<SubmitResult> {
-    throw new Error('AztecLedgerSession.dripUsdc: convenience wrapper lands at M6.5');
+  /**
+   * Common builder: instantiate a contract handle bound to our session wallet.
+   * `Contract.at` itself does not hit the chain — the artifact + address are
+   * all it needs to dispatch method calls.
+   */
+  private contractAt(address: AztecAddress, artifact: ContractArtifact): Contract {
+    return Contract.at(address, artifact, this.deps.session);
   }
 
-  async transferUsdcPubToPub(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
-    throw new Error('AztecLedgerSession.transferUsdcPubToPub: convenience wrapper lands at M6.5');
+  /** SponsoredFeePaymentMethod bound to this session's pinned FPC address. */
+  private sponsoredFee(): SponsoredFeePaymentMethod {
+    return new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress);
   }
 
-  async transferUsdcPrivToPub(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
-    throw new Error('AztecLedgerSession.transferUsdcPrivToPub: convenience wrapper lands at M6.5');
+  /**
+   * Drip 1000 USDC into this Ledger account (sponsored). Calls
+   * `Dripper.drip_to_public(USDC_ADDR, amount)`. Amount is u64 (atomic).
+   */
+  async dripUsdc(amount: bigint): Promise<SubmitResult> {
+    const dripper = this.contractAt(this.deps.dripperAddress, this.deps.dripperArtifact);
+    /* `Contract.methods` is an artifact-keyed Proxy — TS types it as
+     * `Record<string, ContractMethod | undefined>` so dynamic access is
+     * possibly-undefined. The artifact provenance is verified at M6.0
+     * codegen time, so we use a typed alias to surface a clear error
+     * if the upstream artifact ever drops drip_to_public. */
+    const callContractMethod = this.requireMethod(dripper, 'drip_to_public');
+    const exec = await callContractMethod(this.deps.usdcAddress, amount).request({
+      fee: { paymentMethod: this.sponsoredFee() },
+    });
+    return this.submitClearSignedIntent(exec);
   }
 
-  async transferUsdcPubToPriv(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
-    throw new Error('AztecLedgerSession.transferUsdcPubToPriv: convenience wrapper lands at M6.5');
+  /**
+   * Type-narrowing helper: pull a method off contract.methods or throw a
+   * meaningful error. Centralizes the artifact-drift surface area.
+   */
+  private requireMethod(contract: Contract, name: string): ContractMethod {
+    const m = (contract.methods as Record<string, ContractMethod | undefined>)[name];
+    if (!m) {
+      throw new Error(`Contract artifact missing method "${name}" — check artifact pin`);
+    }
+    return m;
   }
 
-  async transferUsdcPrivToPriv(_to: AztecAddress, _amount: bigint): Promise<SubmitResult> {
-    throw new Error('AztecLedgerSession.transferUsdcPrivToPriv: convenience wrapper lands at M6.5');
+  async transferUsdcPubToPub(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_public_to_public', to, amount);
+  }
+
+  async transferUsdcPrivToPub(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_private_to_public', to, amount);
+  }
+
+  async transferUsdcPubToPriv(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_public_to_private', to, amount);
+  }
+
+  async transferUsdcPrivToPriv(to: AztecAddress, amount: bigint): Promise<SubmitResult> {
+    return this.transferUsdc('transfer_private_to_private', to, amount);
+  }
+
+  /**
+   * Shared transfer dispatcher — picks the method by name and builds the
+   * sponsor-merged ExecutionPayload. All four 4-arg transfer verbs have
+   * the same shape: `(from, to, amount, nonce)`. `from` MUST equal the
+   * session address (M5.2 strict-allowlist enforces this on-device with
+   * SW_DELEGATED_SPEND_UNSUPPORTED — we'd surface it during pre-sign).
+   */
+  private async transferUsdc(
+    method:
+      | 'transfer_public_to_public'
+      | 'transfer_private_to_public'
+      | 'transfer_public_to_private'
+      | 'transfer_private_to_private',
+    to: AztecAddress,
+    amount: bigint,
+  ): Promise<SubmitResult> {
+    const token = this.contractAt(this.deps.usdcAddress, this.deps.tokenArtifact);
+    const callContractMethod = this.requireMethod(token, method);
+    /* `nonce` arg is the authwitness inner-nonce — 0n means no separate
+     * delegated authwit; our clear-signing flow is self-spend only so 0
+     * is correct. */
+    const exec = await callContractMethod(this.address, to, amount, 0n).request({
+      fee: { paymentMethod: this.sponsoredFee() },
+    });
+    return this.submitClearSignedIntent(exec);
   }
 
   /**
