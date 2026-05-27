@@ -26,6 +26,15 @@ const MODE_LABELS: Record<Mode, string> = {
   'priv-priv': 'private → private',
 };
 
+/** Short per-mode caption shown beneath the dropdown so the user (and the
+ * demo audience) knows what each mode actually does. M7 P5. */
+const MODE_HINTS: Record<Mode, string> = {
+  'pub-pub': 'Public balance → public balance. Visible on-chain. Cheapest gas, no proving.',
+  'priv-pub': 'Spend a private note → credit recipient publicly. Sender stays anonymous.',
+  'pub-priv': 'Debit your public balance → mint a private note for the recipient.',
+  'priv-priv': 'Private note → private note. Fully shielded; only sender + recipient know.',
+};
+
 function callWrapper(
   s: AztecLedgerSession,
   mode: Mode,
@@ -126,6 +135,10 @@ export function TransferPanel({ state, setState }: Props) {
         </select>
       </div>
       <div className="row">
+        <span style={{ minWidth: '6rem' }} />
+        <span className="status muted">{MODE_HINTS[mode]}</span>
+      </div>
+      <div className="row">
         <label htmlFor="to">To</label>
         <input
           id="to"
@@ -134,6 +147,16 @@ export function TransferPanel({ state, setState }: Props) {
           onChange={(e) => setToHex(e.target.value)}
           disabled={state.kind === 'submitting'}
         />
+        {sessionRef && state.kind !== 'submitting' && (
+          <button
+            type="button"
+            className="button-ghost"
+            onClick={() => setToHex(sessionRef.addressHex)}
+            title="Self-transfer for demo: useful when there's no other testnet account handy"
+          >
+            Use my address
+          </button>
+        )}
       </div>
       <div className="row">
         <label htmlFor="amount">Amount</label>

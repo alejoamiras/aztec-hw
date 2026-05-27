@@ -55,7 +55,12 @@ function Timeline({ activeIdx, finished, failed }: TimelineProps) {
         } else if (idx < activeIdx) state = 'done';
         else if (idx === activeIdx) state = 'active';
         return (
-          <li key={phase.id} className={`phase phase-${state}`} title={phase.hint}>
+          <li
+            key={phase.id}
+            className={`phase phase-${state}`}
+            title={phase.hint}
+            aria-current={state === 'active' ? 'step' : undefined}
+          >
             <div className="phase-marker">
               {state === 'done' ? '✓' : state === 'failed' ? '!' : idx + 1}
             </div>

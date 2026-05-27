@@ -1,15 +1,27 @@
-/* Plain CSS — no Tailwind. Opus rejected Tailwind setup for a PoC of
- * this scope (decisions log §14). Keep this short. */
+/* Plain CSS — no Tailwind. M7 P6 polish: tighter type ramp, expanded
+ * neutral tokens, finite phase pulse (M7 anti-phishing discipline), and
+ * minor surface lifts (shadow, larger radii). Net diff target ≤80 lines.
+ *
+ * Anti-phishing reminder: this file MUST NOT add host-rendered "verified"
+ * badges, checkmarks attached to addresses, or any UI element that implies
+ * the host has authority over a value. The device screen is the only
+ * authoritative surface. */
 :root {
   --bg: #0f1115;
+  --bg-elev-1: #161922;            /* panel surface */
+  --bg-elev-2: #1c2030;            /* inputs / sub-cards */
+  --fg-strong: #f4f6fa;            /* headings + primary text */
   --fg: #e8eaed;
-  --muted: #94a3b8;
+  --fg-muted: #94a3b8;             /* secondary text */
+  --fg-subtle: #64748b;            /* tertiary captions */
+  --muted: #94a3b8;                /* legacy alias of --fg-muted */
   --accent: #7c5cff;
+  --accent-soft: rgba(124, 92, 255, 0.18);
   --accent-dim: #4c3da6;
   --ok: #2dd4bf;
   --err: #f87171;
   --warn: #facc15;
-  --card: #161922;
+  --card: #161922;                 /* legacy alias of --bg-elev-1 */
   --border: #232838;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -23,8 +35,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 main {
@@ -34,14 +46,15 @@ main {
 }
 
 .status-bar {
-  background: var(--card);
+  background: var(--bg-elev-1);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
   margin: 0 0 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .status-bar-row {
@@ -52,7 +65,7 @@ main {
 
 .status-bar-badge {
   display: inline-block;
-  padding: 0.15rem 0.6rem;
+  padding: 0.2rem 0.75rem;
   border-radius: 999px;
   font-size: 0.7rem;
   font-weight: 600;
@@ -122,13 +135,15 @@ main {
   position: relative;
 }
 
-/* Connector line between phases */
+/* Connector line between phases. Codex audit-flagged: previous offsets
+ * (60% / -40%) overshot the next marker on narrow viewports. Anchored to
+ * the marker radius (0.85rem) so the line always meets the next center. */
 .phase:not(:last-child)::after {
   content: '';
   position: absolute;
   top: 0.85rem;
-  left: 60%;
-  right: -40%;
+  left: calc(50% + 0.85rem);
+  right: calc(-50% + 0.85rem);
   height: 2px;
   background: var(--border);
   z-index: 0;
@@ -175,7 +190,11 @@ main {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--bg);
-  animation: phase-pulse 1.4s ease-in-out infinite;
+  /* Finite, not infinite (codex audit + opus): infinite pulses on a
+   * signing screen are a phishing pattern. Three cycles is enough to
+   * draw the eye, then settle. */
+  animation: phase-pulse 1.4s ease-in-out 3;
+  box-shadow: 0 0 0 0 var(--accent-soft);
 }
 .phase-active .phase-label {
   color: var(--accent);
@@ -222,17 +241,20 @@ main {
 }
 
 h1 {
-  font-size: 1.4rem;
-  margin: 0 0 0.25rem;
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg-strong);
+  margin: 0 0 0.3rem;
 }
 
 h2 {
-  font-size: 1rem;
-  margin: 0 0 0.75rem;
-  color: var(--muted);
-  font-weight: 500;
+  font-size: 0.78rem;
+  margin: 0 0 1rem;
+  color: var(--fg-muted);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .subtitle {
@@ -241,15 +263,16 @@ h2 {
 }
 
 .panel {
-  background: var(--card);
+  background: var(--bg-elev-1);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 1.25rem;
   margin: 1rem 0;
+  transition: opacity 120ms ease, border-color 120ms ease;
 }
 
 .panel.disabled {
-  opacity: 0.45;
+  opacity: 0.55;
   pointer-events: none;
 }
 
@@ -269,16 +292,17 @@ h2 {
 
 input,
 select {
-  background: var(--bg);
+  background: var(--bg-elev-2);
   color: var(--fg);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  padding: 0.45rem 0.7rem;
   font: inherit;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
   flex: 1;
   min-width: 0;
+  transition: border-color 120ms ease;
 }
 
 input:focus,
@@ -291,37 +315,53 @@ button {
   background: var(--accent);
   color: white;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 0.5rem 1rem;
   font: inherit;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.1s;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  transition: background 120ms ease, transform 80ms ease;
 }
 
 button:hover:not(:disabled) {
   background: var(--accent-dim);
 }
 
-button:disabled {
-  background: var(--border);
-  color: var(--muted);
-  cursor: not-allowed;
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
-button.secondary {
+button:disabled {
+  background: var(--border);
+  color: var(--fg-subtle);
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+button.secondary,
+button.button-ghost {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--fg);
+  box-shadow: none;
 }
 
-button.secondary:hover:not(:disabled) {
+button.secondary:hover:not(:disabled),
+button.button-ghost:hover:not(:disabled) {
   border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+button.button-ghost {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
 }
 
 code,
 .mono {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
 }
 
@@ -347,11 +387,19 @@ a {
   color: var(--accent);
 }
 
+/* Address pill. The host renders the full 64-char string here; do NOT
+ * attach a "✓ Verified" checkmark or any other authority-implying glyph
+ * (anti-phishing discipline — only the device screen is authoritative). */
 .address {
   display: inline-block;
-  word-break: break-all;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
-  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.55rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--fg-strong);
 }
 
 .steplog {
@@ -374,7 +422,7 @@ a {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem;
 }
 
@@ -407,7 +455,7 @@ a {
   border-radius: 4px;
   padding: 1rem 0.75rem;
   margin-bottom: 0.5rem;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -431,7 +479,7 @@ a {
 .press-log {
   margin-top: 0.5rem;
   font-size: 0.75rem;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--muted);
   max-height: 8rem;
   overflow-y: auto;
