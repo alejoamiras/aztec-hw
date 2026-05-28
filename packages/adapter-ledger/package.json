@@ -10,6 +10,7 @@
   "scripts": {
     "gen:clear-signing-v0": "bun scripts/gen-clear-signing-v0.ts",
     "gen:clear-signing-v0:check": "bun scripts/gen-clear-signing-v0.ts --check",
+    "gen:golden-vectors": "bun scripts/gen-golden-vectors.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

@@ -1,7 +1,8 @@
 # Phase 0 — Independent oracle + golden vectors
 
-**Status:** in progress.
+**Status:** complete.
 **Branch:** `m8-phase-0-oracle`.
+**Tests:** `5 pass / 0 fail, 3610 expect() calls` across 2 files (3 determinism + 2 stability against 256 vectors).
 
 ## What's done
 
@@ -13,13 +14,16 @@
   - `public-keys-hash-encoding.md` — codex final-audit MAJOR #2 deliverable. Pins the 12-field serialization (`x`, `y`, `isInfinite` per `Point` × 4) under `DomainSeparator.PUBLIC_KEYS_HASH = 777457226`. Phase 6's device-side `recompute_public_keys_hash()` MUST byte-match.
 - `aztec-derivation.test.ts` — 3 determinism + shape tests (`3 pass / 0 fail`).
 
-## What's pending
+## What's done (continued)
 
-- Golden-vector generator script (`packages/adapter-ledger/scripts/gen-golden-vectors.ts`).
-- Committed golden-vectors JSON (256 random `(sk, partial)` triples with expected output).
-- Stability test (oracle output today == committed bytes; catches `@aztec/*` regressions).
-- Address-chain round-trip test that exercises `computeFullAddress`.
-- Grumpkin round-trip test exercising `grumpkinMulGenerator` + `grumpkinAdd`.
+- Generator script `packages/adapter-ledger/scripts/gen-golden-vectors.ts` (256 vectors via SHA-512 expansion of a fixed seed — deterministic re-run).
+- Committed `src/oracle/golden-vectors.json` (256 entries; ~92 KB).
+- `golden-vectors.stability.test.ts` re-derives all 256 entries through Aztec's path and asserts byte-equality on the 4 scalars + 4 (x, y) pubkey pairs + publicKeysHash + address. 3610 expect calls. Catches any `@aztec/*` regression that would silently change the derivation chain.
+
+## What's deferred (not strictly Phase 0 scope)
+
+- Standalone `computeFullAddress` golden vectors (ctorSelector + encodedArgs → partial → address). Phase 1 will add these naturally when the deploy builder is wired — at that point the host-side address chain is the function under test and standalone vectors clarify the contract.
+- Standalone Grumpkin `[k]G` vectors. The stability test exercises Grumpkin transitively (every viewing pubkey IS `[secret]G`, so 4 × 256 = 1024 implicit `[k]G` assertions per run). Phase 3's device-side parity test will add the explicit standalone vectors via the debug INS.
 
 ## Lessons
 
