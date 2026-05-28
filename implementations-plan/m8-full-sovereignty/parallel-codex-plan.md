@@ -1,0 +1,127 @@
+# M8 Plan: Aztec HW Wallet PoC
+
+## Critical read before the plan
+
+I would ship `safe-v3` as planned. I would **not** green-light `safe-v4` unchanged without pushing on two assumptions.
+
+First, the locked sign-and-derive primitive is **not actually domain-separated today** if `INS_SIGN_OUTER_HASH` remains in release firmware. The current blind-sign path accepts an arbitrary 32-byte payload and signs `sha256(payload)` with the same secp256k1 key (`ledger-app/src/handler/sign_outer_hash.c:71-99,106-197`). That means a hostile host can reproduce the derivation signature by feeding the derivation digest into the blind-sign INS. If “the derivation message must never be producible as a side effect of any other signed message” is a hard requirement, you need one of: remove/disable `INS_SIGN_OUTER_HASH` in `safe-v4`, derive under a distinct hidden key domain, or stop using “ECDSA signature as recovery artifact” entirely.
+
+Second, the milestone description underestimates the **host account-model blast radius**. Current Aztec APIs still assume a single root `Fr secretKey`: `AccountManager.create` derives `publicKeys` from that one secret (`../aztec-packages/yarn-project/aztec.js/src/wallet/account_manager.ts:32-49`), `CompleteAddress.fromSecretKeyAndPartialAddress` does the same (`../aztec-packages/yarn-project/stdlib/src/contract/complete_address.ts:55-72`), and `PXE.registerAccount` takes `(secretKey, partialAddress)` (`../aztec-packages/yarn-project/pxe/src/pxe.ts:568-580`). If you keep the locked “sig -> 4 master scalars directly” design, `safe-v4` is not just device crypto plus a demo; it also requires a new account-registration path that bypasses the current one-secret model. If you instead derive a single recovery root from the exported artifact and then feed Aztec’s existing `deriveKeys(secret)` path (`../aztec-packages/yarn-project/stdlib/src/keys/derivation.ts:29-39,95-123`), the host work drops sharply.
+
+Closest public precedent is Zondax’s shielded Zcash Ledger work: the guide and audit both show that “custom privacy-key derivation + hardware wallet UX” becomes a compatibility and performance project very quickly, and the release thread explicitly mentions device watchdog pressure during key calculation on Nano-class hardware. That is the right prior here, not Ethereum-style “just sign a digest” ([guide](https://zondax.ch/blog/zcash-integration-guide), [audit](https://zecsec.com/audits/zcash-ledger-audit-report-v2.pdf), [release note](https://forum.zcashcommunity.com/t/official-shielded-support-for-zcash-in-ledger-hw-wallet/45965/149)).
+
+## 1. Phase decomposition with dependencies
+
+1. **`safe-v3`: host clear-signed deploy builder.** Files: `packages/adapter-ledger/src/aztec-ledger-session.ts`, `packages/adapter-ledger/src/auth-witness-provider.ts`, new `packages/adapter-ledger/src/deploy-clear-signing.ts`, `packages/adapter-ledger/src/deploy-context.ts`, tests in `packages/adapter-ledger/src/aztec-ledger-session.test.ts` and `packages/adapter-ledger/src/aztec-ledger-session.integration.test.ts`. APIs: add `LedgerEcdsaKAuthWitnessProvider.createDeployAccountAuthWit(ctx)`, add `AztecLedgerSession.deployAccountClearSigned()` or replace `deployAccount()`, and add a `projectDeployContext(...)` helper that emits `{ profileId, bip32Path, chainId, protocolVersion, txNonce, salt, publicKeysHash, expectedAddress }`. Dependencies: current M7 scaffold only. Done when: the adapter no longer relies on blind `createAuthWit(messageHash)` for deploys, no longer calls `DeployAccountMethod.send()`, and constructs the self-paid deploy in the same order as `DeployAccountMethod.request()` expects for `from === NO_FROM` (`../aztec-packages/yarn-project/aztec.js/src/wallet/deploy_account_method.ts:128-153`), with `deployer: AztecAddress.ZERO`, then proves via `DefaultEntrypoint`’s single-call path (`../aztec-packages/yarn-project/entrypoints/src/default_entrypoint.ts:11-21`). This is the `safe-v3` tag.
+
+2. **Host key-model cutover decision.** Files: `packages/adapter-ledger/src/aztec-ledger-session.ts`, `packages/adapter-ledger/src/session-embedded-wallet.ts`, and, if the locked direct-4-scalar design stands, `../aztec-packages/yarn-project/key-store/src/key_store.ts`, `../aztec-packages/yarn-project/pxe/src/pxe.ts`, and either `../aztec-packages/yarn-project/aztec.js/src/wallet/account_manager.ts` or a PoC-local replacement. APIs: either `deriveRecoverySecretFromBackupArtifact(...): Fr` and keep existing Aztec APIs, or `KeyStore.addAccountFromMasterKeys(...)` plus `PXE.registerAccountFromMasterKeys(...)`. Dependencies: phase 1 can land without this; phases 3-8 depend on it. Done when: you can explain, in code, how a post-`safe-v2` account is bootstrapped without a fake random `secret`. This is the hidden architecture fork in M8.
+
+3. **Host reference derivation and backup bundle.** Files: new `packages/adapter-ledger/src/recovery/derive.ts`, `backup-codec.ts`, `fingerprint.ts`, `recover-account.ts`, exports in `packages/adapter-ledger/src/index.ts`, tests in new `packages/adapter-ledger/src/recovery.test.ts`. APIs: `deriveMasterKeysFromBackupSig(sig)` if you keep the locked design, or `deriveRecoverySecretFromBackupSig(sig)` if you fold back into Aztec’s one-secret model; `encodeViewingBackupV1({ accountAddress, chainId, sig, publicKeysHash })`; `decodeViewingBackupV1(...)`. Dependencies: phase 2. Done when: the bundle format is versioned, rejects malformed or high-`s` signatures, and includes `accountAddress` explicitly because a raw 64-byte signature is not enough to recover the account identity.
+
+4. **Device export INS and cache scaffolding.** Files: `ledger-app/src/apdu/dispatcher.c`, `ledger-app/src/sw.h`, `ledger-app/src/l4/session.h`, new `ledger-app/src/handler/derive_aztec_viewing_keys.c`, `.h`, new `ledger-app/src/ui/derive_backup_ui.c`, and host plumbing in `packages/adapter-ledger/src/apdu.ts`, `provider.ts`, `provider.test.ts`. APIs: add `INS_DERIVE_AZTEC_VIEWING_KEYS = 0x12`; add `LedgerProvider.deriveViewingBackup(path): Promise<{ sig: Uint8Array }>`; add a capability bit such as `CAPS_VIEWING_BACKUP` instead of overloading `CAPS.GRUMPKIN`. Dependencies: phase 3 for host-side decoding. Done when: repeated derives for the same path produce the same low-`s` `r || s`, the app uses the same duplicate-sign check already present in `sign_outer_hash.c` and `finalize_deploy_and_sign.c`, and the UI says “Export viewing backup” rather than anything transaction-shaped.
+
+5. **Feasibility gate on real Nano S+.** Files: benchmark harness in `ledger-app/tests/test_derive_viewing_keys.py`, new vectors in `ledger-app/tests/golden_vectors/viewing_key_vectors.json`, and a temporary measurement path if needed. APIs: none ship. Dependencies: phase 4. Done when: you have measured one full derive on a real Nano S+ and one `preaddress * G` address step, with a written go/no-go. Do this before the production Grumpkin port. If the full derive is already beyond roughly 6 seconds or trips a watchdog, safe-v4 must be cut down before more code lands.
+
+6. **Production Grumpkin engine, but only for the operations M8 needs.** Files: new `ledger-app/src/crypto/grumpkin/field_bn254.{c,h}`, `scalar_bn254.{c,h}`, `point.{c,h}`, `mul_generator.{c,h}`, generated `generator_table.c`, plus a codegen script such as `ledger-app/scripts/gen-grumpkin-table.ts`. APIs: `grumpkin_mul_generator(grumpkin_affine_t* out, const uint8_t scalar_be[32])`, `grumpkin_add_affine(...)`, `grumpkin_is_on_curve(...)`; do **not** start with a generic `scalar_mul(point, scalar)` API because M8 only needs fixed-base `k * G` and one affine add. Dependencies: phase 5 go/no-go. Done when: vectors match Aztec’s `derivePublicKeyFromSecretKey` path (`../aztec-packages/yarn-project/stdlib/src/keys/derivation.ts:86-88`) and the timing budget is acceptable.
+
+7. **Device-side `publicKeysHash` and address verification in `BEGIN_DEPLOY_ACCOUNT`.** Files: `ledger-app/src/handler/begin_deploy_account.c`, `ledger-app/src/handler/finalize_deploy_and_sign.c`, `ledger-app/src/l4/session.h`, `ledger-app/src/l4/deploy_address.c` or a new `deploy_verify.c`, `ledger-app/src/ui/deploy_review_ui.c`, and host tests in `packages/adapter-ledger/src/provider.test.ts`. APIs: widen deploy session state to include cached derived public keys, `public_keys_hash_local`, `preaddress_local`, and `expected_address_local`; add a helper like `az_deploy_compute_verified_address(...)`. Dependencies: phases 4 and 6. Done when: `BEGIN_DEPLOY_ACCOUNT` compares its locally derived `publicKeysHash` against the host claim and throws `0x6F0F` on mismatch, derives the final address and throws `0x6F0E` on mismatch, and `FINALIZE_DEPLOY_AND_SIGN` no longer recomputes the expensive Grumpkin path.
+
+8. **PXE restore path and hero demo.** Files: `../aztec-packages/yarn-project/key-store/src/key_store.ts`, `../aztec-packages/yarn-project/pxe/src/pxe.ts`, `packages/adapter-ledger/src/session-embedded-wallet.ts`, `packages/adapter-ledger/src/recovery/recover-account.ts`, `apps/demo-browser/src/panels/RecoveryPanel.tsx`, `App.tsx`, `state.ts`, and `apps/demo-browser/e2e/smoke.e2e.ts`. APIs: `PXE.registerAccountFromMasterKeys(...)` if the locked design stands, or `PXE.registerAccount(recoverySecret, partialAddress)` if you collapse back to one secret; a demo helper that takes the bundle, calls `AztecNode.getContract(address)` (`../aztec-packages/yarn-project/stdlib/src/interfaces/aztec-node.ts:475-478`), verifies the derived public keys against the on-chain instance, and registers the account. Dependencies: phases 2, 3, and 7. Done when: a fresh browser can paste the bundle, fetch the deployed account instance, register the account, sync, and show the same notes. I would scope this explicitly as **read-only recovery** unless you also solve the broader account-manager/session model.
+
+9. **Hardening, adversarial tests, and `safe-v4` cut.** Files: `ledger-app/tests/test_dispatcher.py`, new `test_begin_deploy_verify.py`, `test_derive_viewing_keys.py`, `packages/adapter-ledger/src/recovery.test.ts`, `apps/demo-browser/e2e/smoke.e2e.ts`, and workflow updates in `.github/workflows/*`. Dependencies: all prior phases. Done when: vectors are stable, error codes are exact, capability gating works, and you have made an explicit choice about whether `INS_SIGN_OUTER_HASH` still ships in `safe-v4`.
+
+## 2. Hardest pieces
+
+### (a) Grumpkin scalar multiplication on Nano S+
+
+Do not start with GLV. Barretenberg does use endomorphism and 4-bit WNAF for Grumpkin (`../aztec-packages/barretenberg/cpp/src/barretenberg/ecc/curves/grumpkin/grumpkin.hpp:17-21`, `../aztec-packages/barretenberg/cpp/src/barretenberg/ecc/groups/element_impl.hpp:636-712`), but that implementation is tightly coupled to its own Montgomery field types and is a correctness oracle, not a portable embedded reference. First pass should be a **fixed-base** multiplication engine for the generator only, because M8 needs `npk_m = nhk_m * G`, `ivpk_m = ivsk_m * G`, `ovpk_m = ovsk_m * G`, `tpk_m = tsk_m * G`, and `preaddress * G + ivpk_m`; it does **not** need arbitrary-point scalar multiplication.
+
+Algorithm recommendation: fixed-base 4-bit signed window with precomputed generator tables in flash, Jacobian accumulator, affine table entries, constant-time table selection, and no secret-dependent branches. If that misses the budget, add GLV later. I would not ship a generic Montgomery ladder over `cx_math_*` unless the benchmark spike proves it is already fast enough, because five scalar multiplications per derivation on generic big-int primitives is likely multi-second per op, not multi-second per flow. The field engine should use Montgomery reduction over 8×32-bit limbs, not raw `cx_math_*` modular multiply for every field op. Barrett reduction is possible, but Montgomery pays off immediately because multiplication dominates and you can keep values in domain.
+
+Stack target should be under about 2 KB per call path; anything larger is asking for trouble on Nano-class devices. Put tables in flash, keep point structs compact, and move scratch buffers to static workspace where practical. My runtime expectation is: naïve `cx_math_*` ladder is probably too slow to hit `<6s` for the whole derive path; a specialized fixed-base engine can plausibly get the one-mul deploy path into the 1–2 second range and the four-key export into a few seconds. That is exactly why phase 5 is a gate, not paperwork.
+
+### (b) Address verification across `BEGIN` / `FINALIZE`
+
+The full `publicKeysHash` and final address must be computed in `BEGIN_DEPLOY_ACCOUNT`, not `FINALIZE_DEPLOY_AND_SIGN`. The user should only ever approve a deploy that has already been locally verified. Today the scaffold stops at `partial_address_local` (`ledger-app/src/l4/deploy_address.c:79-140`, `ledger-app/src/l4/session.h:88-97`). In M8, `BEGIN` should derive or load the per-path viewing-key cache, compute `publicKeysHash`, compute `preaddress = Poseidon2([publicKeysHash, partialAddress], CONTRACT_ADDRESS_V1)`, compute `preaddress * G + ivpk_m`, compare the resulting x-coordinate to `expected_address`, and reject before UI on mismatch.
+
+Do not recompute the expensive Grumpkin path again in `FINALIZE`. Keep the current “all semantics are committed in BEGIN, FINALIZE adds only `claimed_outer_hash`” invariant, but change the parity strategy: keep cheap multi-pass parity on the Poseidon partial-address chain, cache the expensive Grumpkin outputs in RAM, and sign only if the cached verified context is still present. Re-doing five scalar muls after approval is the wrong UX shape and increases lockup risk.
+
+The session cache should be separate from the authwitness call buffer. I would add a `vk_cache` keyed by `(path_scheme, bip32_path_len, bip32_path[])`, containing the four derived public keys and `publicKeysHash`, plus a deploy session containing `partial_address_local`, `preaddress_local`, and `expected_address_local`. No NVRAM writes. RAM only.
+
+### (c) Sig-as-backup encoding and UX
+
+Do not present raw hex as the primary UX. A 128-character hex string is miserable. Use a versioned bundle string such as `aztec-vk1:<base64url(payload)>`, where the payload includes the 64-byte signature plus public metadata: `accountAddress`, `chainId`, and `publicKeysHash`. The secret is still the signature; the rest is public routing data needed for recovery. Signature alone is not enough.
+
+The user flow should be: connect Ledger, choose “Export viewing backup”, approve on-device, see a `publicKeysHash` fingerprint on the device, then copy or scan the bundle from the browser. Saving it to a password manager secure note is fine. Mnemonic-style encoding is the wrong fit here; 64 bytes turns into too many words. QR + copyable base64url is the pragmatic pair.
+
+Recovery should be: paste the bundle, host validates version and low-`s`, derives the same viewing material, fetches the account instance from the node using `accountAddress`, verifies that the on-chain instance’s public keys hash matches the derived one, then registers the account into PXE. If that verification fails, abort loudly. The confirmation UX is the fingerprint: device shows it at export time, host shows it when the bundle is saved and again on restore.
+
+### (d) HKDF parameters
+
+If the locked direct-4-scalar design stands, use HKDF-SHA256 with `IKM = r || s`, a fixed constant salt such as `SHA256("aztec-vk-derive-v1/salt")`, and separate `info` labels: `aztec-vk-derive-v1/nhk_m`, `/ivsk_m`, `/ovsk_m`, `/tsk_m`. Generate 64 bytes per output and do wide reduction mod Grumpkin scalar field order. Reject zero and re-expand with a counter if needed. Reducing a 32-byte output mod `q` is not catastrophic, but it is needless bias when 64-byte wide reduction is easy.
+
+If you can still change the primitive, I would instead derive one `recoverySecret` with `info = aztec-vk-derive-v1/root-secret`, reduce it to `Fr`, and reuse Aztec’s existing `deriveKeys(secret)` path. That is much cleaner and fits the current host stack.
+
+## 3. Independent verification oracle
+
+The reference path should be TypeScript against Aztec’s own primitives, not a second homegrown C implementation. For key derivation and address math, wrap `derivePublicKeyFromSecretKey`, `PublicKeys.hash()`, `computePreaddress`, and `computeAddress` from `../aztec-packages/yarn-project/stdlib/src/keys/derivation.ts:46-88,95-123` and `../aztec-packages/yarn-project/stdlib/src/keys/public_keys.ts:75-87`. For deploy partial-address parity, wrap `computeInitializationHashFromEncodedArgs`, `computeSaltedInitializationHash`, and `computePartialAddress` from `../aztec-packages/yarn-project/stdlib/src/contract/contract_address.ts:35-90`. For the on-chain truth model, use Noir’s address formula and registry validation as the final source of semantics (`../aztec-packages/noir-projects/noir-protocol-circuits/crates/types/src/address/aztec_address.nr:104-155`, `../aztec-packages/noir-projects/noir-contracts/contracts/protocol/contract_instance_registry_contract/src/main.nr:129-138`).
+
+Test vectors: at minimum 256 random scalar-to-point vectors for `k * G`, 64 random backup artifacts to `publicKeysHash`, and 64 random deploy contexts to final address. Put the golden vectors in `ledger-app/tests/golden_vectors/`. Add a host-side vector generator under `packages/adapter-ledger/scripts/` or `ledger-app/scripts/`. For device parity, either expose a debug-only test path or validate via `INS_DERIVE_AZTEC_VIEWING_KEYS` plus `BEGIN_DEPLOY_ACCOUNT` mismatch behavior. CI should run the TS oracle tests on every PR and the device-in-the-loop tests at least nightly.
+
+## 4. Security and adversarial review
+
+The hostile-host problem is the center of this milestone. M8 improves deploy safety because the device stops trusting host-supplied `publicKeysHash` and address, but the new export INS creates a different exfiltration surface. A malicious extension cannot spend funds through `INS_DERIVE`, but it can steal permanent note-decryption capability if the user approves it. That is why the export UI must look nothing like a transaction approval, and why I would not allow it to hide behind generic wording like “sync keys” or “authorize app.” It is an export, not a signature.
+
+The side-channel story is mixed. Constant-time code is mandatory because a USB host can measure coarse timing, and a lab attacker can always do more. Use fixed-length recoding, constant-time table lookup, no secret-dependent early exits, and avoid conditional negation branches where possible. But be honest: Nano S+ does not make a custom BN254/Grumpkin implementation magically side-channel-proof. The device gives you a stronger key store than the browser, not a formal EM shield. Repeated deterministic derives amplify this risk, because the same secret-dependent math runs on demand. Caching per path in RAM reduces repeated exposure during a session.
+
+RFC 6979 is good at removing RNG failures; it is not a free pass. In M8 it becomes part of the recovery root of trust, not just a tx-signing implementation detail. The current app already duplicate-signs and compares to catch gross determinism failures (`ledger-app/src/handler/sign_outer_hash.c:144-177`, `ledger-app/src/handler/finalize_deploy_and_sign.c:221-248`); reuse that in the export path. But it still means one bug now affects both spend authorization and recovery reproducibility. That is one more reason I prefer a seed-return primitive or a root-secret derivation path instead of “signature as artifact.”
+
+The domain-separation issue is more serious than it looks. A dedicated derivation message string is not sufficient if another INS can sign arbitrary 32-byte payloads with the same key. As long as `INS_SIGN_OUTER_HASH` ships and accepts host-chosen bytes (`ledger-app/src/handler/sign_outer_hash.c:71-99`), the derivation signature can be replayed through a different flow. If you keep the locked sign-and-derive design, I would either disable blind-sign in `safe-v4` builds or explicitly accept that the “never producible elsewhere” requirement is false.
+
+Backup theft is a privacy break, not a spend break, but it is permanent. If the bundle leaks from 1Password or a screenshot, the attacker can recover incoming/outgoing/tagging/nullifier-hiding capability forever for that account. There is no “rotate the viewing key” without migrating to a new account because the account address is derived from those public keys. The UI must say this plainly: this backup restores note visibility, not signing authority.
+
+Do not write derived keys or export counters to NVRAM. Ledger write-cycle limits are real, and you do not need persistence for this flow. Keep everything in RAM and rebuild on reconnect. Also be clear about blind-sign coverage after M8: deploys become locally verified, existing allowlisted clear-sign calls stay verified, but arbitrary unsupported interactions remain blind or unsupported. M8 is not “all Aztec txs are now clear-signed.”
+
+## 5. Testing strategy
+
+- Unit tests: TS oracle tests for backup bundle parsing, low-`s` validation, HKDF derivation, `publicKeysHash`, final address, and deploy context projection in `packages/adapter-ledger/src/*.test.ts`.
+- Device tests: add pytest/Speculos cases under `ledger-app/tests/` for `INS_DERIVE_AZTEC_VIEWING_KEYS`, wrong-state handling, duplicate-sign determinism, wrong `publicKeysHash -> 0x6F0F`, wrong `expectedAddress -> 0x6F0E`, and success path.
+- Integration tests: extend `packages/adapter-ledger/src/aztec-ledger-session.integration.test.ts` to cover `safe-v3` deploy and `safe-v4` deploy with verified address/public keys.
+- Recovery integration: new browser E2E in `apps/demo-browser/e2e/` that exports the bundle, destroys browser state, reconnects to a fresh session, restores from the bundle, syncs, and checks that the same balance/notes reappear.
+- Adversarial tests: malformed bundle, high-`s` bundle, wrong account address in bundle, wrong on-chain instance for a valid bundle, repeated `INS_DERIVE` on a different path, stale deploy cache across paths, and attempt to reproduce derivation via `INS_SIGN_OUTER_HASH` if blind-sign still ships.
+- CI matrix: PR lane should run Bun unit tests and Speculos device tests that do not touch live testnet; nightly/manual lane should run the full browser recovery demo and any real-device timing benchmark.
+
+## 6. Effort estimate
+
+- Phase 1: 0.5–1.5 weeks.
+- Phase 2: 1–2 weeks if you keep direct-4-scalar; 0.5 week if you collapse back to a recovery root secret.
+- Phase 3: 0.5–1 week.
+- Phase 4: 0.5 week, but it is a hard gate.
+- Phase 5: 2–5 weeks. This is the highest-variance phase by far.
+- Phase 6: 1–2 weeks.
+- Phase 7: 1–2 weeks if read-only restore; 2–4 if you insist on full spend-capable recovery.
+- Phase 8: 1–2 weeks.
+- Phase 9: 0.5–1 week.
+
+Total: roughly 7–15 weeks as stated, and closer to the high end if you keep both the direct-4-scalar host model and shipping blind-sign.
+
+## 7. Open questions to flag
+
+- Is `nsk_m` in the milestone text actually meant to be `nhk_m`? Aztec code uses `nhk_m` consistently (`../aztec-packages/yarn-project/stdlib/src/keys/derivation.ts:29-39`).
+- Can the locked direct-4-scalar design still be relaxed to “derive one recovery root secret, then call Aztec `deriveKeys(secret)`”? That is the biggest scope reducer.
+- Is the `safe-v4` hero explicitly **read-only** restore, or do you expect a restored session to submit private txs as well?
+- Are you willing to disable `INS_SIGN_OUTER_HASH` in `safe-v4` builds? If not, the strict domain-separation claim does not hold.
+- Is including `accountAddress` in the backup bundle acceptable? Signature alone is not enough for restore routing.
+- Do you have a real Nano S+ available for the phase-5 gate? Speculos timing is not enough here.
+
+## 8. Risk register
+
+1. **Grumpkin on Nano S+ is too slow or unstable.** Mitigation: make phase 5 a real stop/go gate; implement fixed-base only; cache derived public keys by path; keep FINALIZE cheap.
+2. **Locked direct-4-scalar design forces a larger host refactor than expected.** Mitigation: switch to a recovery root secret if at all possible; otherwise budget explicit `PXE.registerAccountFromMasterKeys` work.
+3. **Derivation signature is reproducible through blind-sign.** Mitigation: remove or disable `INS_SIGN_OUTER_HASH` in `safe-v4`, or change the primitive.
+4. **Cross-implementation mismatch in `publicKeysHash` or address serialization.** Mitigation: generate vectors from Aztec TS, compare bit-exactly, and verify against on-chain fetched instances during recovery.
+5. **Recovery demo UX over-promises.** Mitigation: scope it to read-only restore, bundle `accountAddress`, and demo it on a recent test account with bounded history.
+
+## Verdict
+
+I would build `safe-v3` as planned. I would push back hard on `safe-v4` in its current form for two reasons: the exported-signature primitive is not truly domain-separated while blind-sign still exists, and the direct “sig -> 4 master scalars” path cuts across Aztec’s current one-secret host model much more deeply than the milestone text acknowledges. If you can still change one thing, change that primitive: export or derive a single recovery root secret and reuse Aztec’s existing `deriveKeys(secret)` path. If you cannot, then I would still proceed, but only with an explicit phase-5 performance gate and with the recovery demo scoped to read-only PXE restore, not full wallet recovery.

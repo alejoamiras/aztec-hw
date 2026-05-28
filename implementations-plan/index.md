@@ -1,6 +1,7 @@
 # Implementation Plans — Index
 
-- [m7-shape-up-demo](m7-shape-up-demo/plan.md) — Tier A, awaiting approval — clear-sign deploy + structured-step phases + CSS polish. Codex audit REJECTed first consolidated draft; all 3 blockers + 3 majors + 2 minors remediated. Open: Grumpkin EC on device + BIP-32-derived protocol secret deferred to M8.
+- [m8-full-sovereignty](m8-full-sovereignty/plan.md) — Tier A, in final codex audit — P4 host deploy builder (safe-v3) + Grumpkin scalar mult + `INS_GET_AZTEC_MASTER_SECRET` (Option A: single Fr → host reuses Aztec's `deriveKeys`) + device-side `publicKeysHash`/address verification + read-only PXE wipe-and-restore demo (safe-v4). Pivoted from sign-and-derive Option B during triangulation — both codex + opus drafts converged on Option A.
+- [m7-shape-up-demo](m7-shape-up-demo/plan.md) — complete (`safe-v2`, `315048f`) — M7 P1-P3+P5+P6 shipped; demo recorded; P4 + Grumpkin EC + INS_DERIVE bundled into M8.
 - [m6-aztec-wallet-wrapper](m6-aztec-wallet-wrapper/plan.md) — m6 arc complete; safe-v1 (`bdf2936`); deploy + drip + transfer end-to-end on alpha-testnet.
 - [hw-wallet-poc-v0](hw-wallet-poc-v0/plan.md) — PoC implementation. Phase A (Trezor emulator) → Phase B (Aztec SDK extension) → Phase C (Ledger production). Phase A + B complete; Phase C in progress.
 - [hw-wallet-poc-ledger](hw-wallet-poc-ledger/plan-final.md) — Ledger BOLOS app. **L2 + L3 + L4 complete** (Speculos sign-flow + acceptance test via Aztec `Ecdsa.verifySignature`, ragger harness, verified-calls signing end-to-end with 3× fault-hardened recompute).
