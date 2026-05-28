@@ -30,7 +30,7 @@
  */
 
 import { NO_FROM } from '@aztec/aztec.js/account';
-import type { AztecAddress, CompleteAddress } from '@aztec/aztec.js/addresses';
+import { AztecAddress, type CompleteAddress } from '@aztec/aztec.js/addresses';
 import {
   Contract,
   type ContractMethod,
@@ -43,11 +43,12 @@ import {
   AccountFeePaymentMethodOptions,
   DefaultAccountEntrypoint,
 } from '@aztec/entrypoints/account';
+import { DefaultEntrypoint } from '@aztec/entrypoints/default';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import type { ContractArtifact } from '@aztec/stdlib/abi';
 import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
 import { GasFees, GasSettings } from '@aztec/stdlib/gas';
-import type { ExecutionPayload, TxHash, TxReceipt } from '@aztec/stdlib/tx';
+import { type ExecutionPayload, type TxHash, type TxReceipt, TxStatus } from '@aztec/stdlib/tx';
 import type { ChainInfo } from '@aztec-hwwallet-poc/core';
 
 import { LedgerEcdsaKAccountContract } from './account-contract.ts';
@@ -110,6 +111,12 @@ export type SubmitStepHandler = (phase: PhaseId, label: string) => void;
 
 export interface SubmitOptions {
   readonly onStep?: SubmitStepHandler;
+  /** Fired ONCE per submission, the moment the proven tx's hash is known
+   * (between `prove` and `submit`). Lets the UI surface an aztecscan link
+   * while we're still waiting for L2 inclusion — handy when testnet is
+   * slow and the user wants to check status out-of-band. Hash is the
+   * `txHash.toString()` form (0x-prefixed hex). */
+  readonly onTxHash?: (txHash: string) => void;
 }
 
 export interface AztecLedgerSessionConnectOptions {
@@ -261,25 +268,91 @@ export class AztecLedgerSession {
    */
   async deployAccount(opts: SubmitOptions = {}): Promise<SubmitResult> {
     const step = opts.onStep ?? (() => {});
-    /* M7 P1: structured phase callback. Phases 'sign' / 'prove' / 'submit' /
-     * 'include' all fall under deployMethod.send() — a black box we can't
-     * decompose here. M7 P4 replaces this with deployAccountClearSigned()
-     * which drives the full 9-step recipe with accurate phases. For now,
-     * we report 'sign' before send() (device shows blind-sign prompt) and
-     * 'done' when the tx mines; the intermediate phases are not visible. */
+    const session = this.deps.session;
+
+    /* M7 P1+follow-up: previously we called `deployMethod.send()` which
+     * is an opaque black box across sign + prove + submit + wait, leaving
+     * the timeline stuck on 'sign' for the entire flow. We now decompose
+     * the same sequence BaseWallet.sendTx runs internally (see
+     * `aztec-packages/yarn-project/wallet-sdk/src/base-wallet/base_wallet.ts:434-470`)
+     * so each phase advances on the timeline as it happens. The device
+     * blind-sign is still the auth path here — M7 P4 replaces it with
+     * the clear-signed flow. */
     step('build', 'Building deploy method…');
     const deployMethod = await this.accountManager.getDeployMethod();
+
     step('sign', 'Awaiting blind-sign approval on device…');
-    /* `from: NO_FROM` selects the self-paid deploy path in
-     * DeployAccountMethod.request: the to-be-deployed account ITSELF
-     * pays via the multicall entrypoint, which bypasses the account's
-     * own (not-yet-existing) signing-key state. */
-    const result = await deployMethod.send({
+    /* v4.2.1 quirk: `deployMethod.send()` internally maps
+     * `from: NO_FROM → deployer: AztecAddress.ZERO` via
+     * `convertDeployOptionsToRequestOptions` before calling
+     * `request()`. That `deployer === ZERO` check is what gates the
+     * multicall-wrap branch in `request()` (deploy_account_method.js:60-70)
+     * which collapses the deploy + sponsor calls into a single-call
+     * ExecutionPayload that DefaultEntrypoint can consume.
+     *
+     * We bypass `send()` here so each phase advances on the UI timeline,
+     * so we MUST pass `deployer: ZERO` ourselves — otherwise `request()`
+     * returns a 2-call payload and DefaultEntrypoint throws
+     * "Expected a single call, got 2". The host blind-sign happens
+     * inside this `request()` call because the meta-payment wrapper
+     * invokes `auth.createAuthWit(messageHash)`. */
+    const executionPayload = await deployMethod.request({
       from: NO_FROM,
+      deployer: AztecAddress.ZERO,
       fee: { paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress) },
     });
-    step('done', 'Account deployed');
-    return { txHash: result.receipt.txHash, receipt: result.receipt };
+
+    step('prove', 'Signature received — building tx request…');
+    const chainInfo = await this.getChainInfo();
+    const currentMinFees = await session.nodeClient.getCurrentMinFees();
+    const maxFeesPerGas = currentMinFees.mul(2.5);
+    const gasSettings = GasSettings.fallback({ maxFeesPerGas });
+    /* For `from: NO_FROM`, BaseWallet.sendTx (line 174-176) builds the
+     * tx request via `new DefaultEntrypoint().createTxExecutionRequest`,
+     * NOT DefaultAccountEntrypoint. The init payload is already wrapped
+     * through DefaultMultiCallEntrypoint inside request() via the
+     * universal-deploy path. */
+    const entrypoint = new DefaultEntrypoint();
+    const txRequest = await entrypoint.createTxExecutionRequest(
+      executionPayload,
+      gasSettings,
+      chainInfo,
+    );
+
+    step('prove', 'Proving deploy tx (in-browser WASM)…');
+    /* v4.2.1 PXE: positional `proveTx(txRequest, scopes)`. The deploy's
+     * `additionalScopes` injection from `prepareDeployOptions` lands
+     * here — the to-be-deployed address goes into scopes so the
+     * constructor can access its own keys. */
+    const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
+    const tx = await provenTx.toTx();
+    const txHash = tx.getTxHash();
+    /* Surface the hash before submit so the UI can render an aztecscan
+     * link mid-flight (testnet inclusion can take minutes). */
+    opts.onTxHash?.(txHash.toString());
+
+    step('submit', `Submitting tx ${txHash.toString().slice(0, 10)}…`);
+    await session.nodeClient.sendTx(tx);
+
+    step('include', `Awaiting L2 inclusion (${txHash.toString().slice(0, 10)}…)`);
+    /* Codex consult (testnet sync bug, M7 post-checkpoint): drop the
+     * threshold to PROPOSED — that's what aztec's own `isMined()`
+     * returns true for, and what aztecscan surfaces as "mined".
+     * `waitForTx`'s default `CHECKPOINTED` is a stronger consensus
+     * milestone (post-attestation), which is a useful background
+     * indicator but a bad blocking signal for demo UX: we routinely
+     * hit the 300s default timeout while the tx is already on-chain.
+     *
+     * Risk noted: PROPOSED is not yet final — a proposed block can fail
+     * attestation and the tx can return to mempool. So we label the
+     * milestone "Tx included" (NOT "checkpointed/final") to be honest. */
+    const receipt = await waitForTx(session.nodeClient, txHash, {
+      waitForStatus: TxStatus.PROPOSED,
+      timeout: 900,
+    });
+
+    step('done', 'Account deployed (included in proposed block)');
+    return { txHash, receipt };
   }
 
   /**
@@ -551,12 +624,21 @@ export class AztecLedgerSession {
     const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
     const tx = await provenTx.toTx();
     const txHash = tx.getTxHash();
+    /* Surface the hash before submit so the UI can render an aztecscan
+     * link mid-flight (testnet inclusion can take minutes). */
+    opts.onTxHash?.(txHash.toString());
     step('submit', `Submitting tx ${txHash.toString().slice(0, 10)}…`);
     await session.nodeClient.sendTx(tx);
 
-    step('include', 'Awaiting L2 inclusion…');
-    const receipt = await waitForTx(session.nodeClient, txHash);
-    step('done', 'Tx checkpointed');
+    step('include', `Awaiting L2 inclusion (${txHash.toString().slice(0, 10)}…)`);
+    /* See deployAccount() above for the rationale on these opts —
+     * same trade: PROPOSED unblocks the UI when aztecscan is already
+     * showing the tx, 900s safety buffer for slow testnet days. */
+    const receipt = await waitForTx(session.nodeClient, txHash, {
+      waitForStatus: TxStatus.PROPOSED,
+      timeout: 900,
+    });
+    step('done', 'Tx included');
     return { txHash, receipt };
   }
 }

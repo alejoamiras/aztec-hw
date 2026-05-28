@@ -41,8 +41,9 @@ function callWrapper(
   to: AztecAddress,
   amount: bigint,
   onStep: (phase: PhaseId, label: string) => void,
+  onTxHash: (hash: string) => void,
 ): Promise<SubmitResult> {
-  const opts = { onStep };
+  const opts = { onStep, onTxHash };
   switch (mode) {
     case 'pub-pub':
       return s.transferUsdcPubToPub(to, amount, opts);
@@ -78,6 +79,7 @@ export function TransferPanel({ state, setState }: Props) {
     }
     const atomic = BigInt(amount);
     const localSteps: SubmitStep[] = [];
+    let txHashSoFar: string | undefined;
     setState({
       kind: 'submitting',
       session: sessionRef,
@@ -93,10 +95,21 @@ export function TransferPanel({ state, setState }: Props) {
         session: sessionRef,
         action: `transfer ${mode}`,
         steps: [...localSteps],
+        currentTxHash: txHashSoFar,
+      });
+    };
+    const onTxHash = (hash: string) => {
+      txHashSoFar = hash;
+      setState({
+        kind: 'submitting',
+        session: sessionRef,
+        action: `transfer ${mode}`,
+        steps: [...localSteps],
+        currentTxHash: hash,
       });
     };
     try {
-      const result = await callWrapper(sessionRef.session, mode, to, atomic, onStep);
+      const result = await callWrapper(sessionRef.session, mode, to, atomic, onStep, onTxHash);
       setState({
         kind: 'ready',
         session: sessionRef,

@@ -155,7 +155,12 @@ export default defineConfig({
        * (the RPC doesn't set CORP). Codex consult 019e69ef recommended
        * this over loosening COEP to `credentialless`. */
       '/aztec': {
-        target: 'https://rpc.testnet.aztec-labs.com',
+        /* Switched off rpc.testnet.aztec-labs.com after observing
+         * inclusion-detection lag during M7 demo prep — aztecscan was
+         * already showing the tx as mined while our `getTxReceipt`
+         * polls came back stale. beast-5 (aztlanlabs) tracks the chain
+         * tip much closer in practice. */
+        target: 'https://rpc.testnet.aztec.beast-5.aztlanlabs.xyz',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/aztec/, ''),
       },

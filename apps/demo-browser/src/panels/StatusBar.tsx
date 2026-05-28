@@ -29,7 +29,7 @@ const PHASES: readonly Phase[] = [
   { id: 'prove', label: 'Prove', hint: 'Generating ClientIVC proof (WASM)' },
   { id: 'submit', label: 'Submit', hint: 'Sending tx to the node' },
   { id: 'include', label: 'Include', hint: 'Waiting for L2 block inclusion' },
-  { id: 'done', label: 'Done', hint: 'Tx checkpointed' },
+  { id: 'done', label: 'Done', hint: 'Tx included in a proposed L2 block (finality follows)' },
 ] as const;
 
 function activePhaseIdx(steps: readonly SubmitStep[]): number {
@@ -111,7 +111,7 @@ export function StatusBar({ state }: Props) {
     case 'ready':
       badge = 'Ready';
       badgeClass = 'ready';
-      primary = state.lastTxHash ? 'Last tx checkpointed.' : 'Session live.';
+      primary = state.lastTxHash ? 'Last tx included.' : 'Session live.';
       secondary = state.lastTxHash
         ? 'Ready for the next action.'
         : 'Use panels 2 + 3 to deploy, drip, or transfer.';
@@ -132,6 +132,9 @@ export function StatusBar({ state }: Props) {
       showTimeline = true;
       activeIdx = activePhaseIdx(state.steps);
       secondary = PHASES[activeIdx]?.hint ?? '';
+      /* Surface the proven tx hash mid-flight so the user can hit
+       * aztecscan while we wait for inclusion (testnet can drag). */
+      txHash = state.currentTxHash;
       break;
     }
     case 'error':

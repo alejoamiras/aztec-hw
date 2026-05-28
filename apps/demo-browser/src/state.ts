@@ -76,7 +76,16 @@ export type DemoState =
   | { kind: 'idle' }
   | { kind: 'connecting'; transport: Transport; nodeUrl: string }
   | { kind: 'ready'; session: SessionRef; lastSteps?: SubmitStep[]; lastTxHash?: string }
-  | { kind: 'submitting'; session: SessionRef; action: string; steps: SubmitStep[] }
+  | {
+      kind: 'submitting';
+      session: SessionRef;
+      action: string;
+      steps: SubmitStep[];
+      /** Populated once the proven tx hash is known (between prove +
+       * submit). Lets the status bar render an aztecscan link mid-flight
+       * — useful when testnet inclusion drags. */
+      currentTxHash?: string;
+    }
   | {
       kind: 'error';
       lastSession: SessionRef | null;

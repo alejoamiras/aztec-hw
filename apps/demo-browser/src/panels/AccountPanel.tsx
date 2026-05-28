@@ -26,18 +26,38 @@ export function AccountPanel({ state, setState }: Props) {
 
   async function runAction(
     name: 'deploy' | 'drip',
-    fn: (onStep: (phase: PhaseId, label: string) => void) => Promise<SubmitResult>,
+    fn: (
+      onStep: (phase: PhaseId, label: string) => void,
+      onTxHash: (hash: string) => void,
+    ) => Promise<SubmitResult>,
   ) {
     if (!session) return;
     const local: SubmitStep[] = [];
+    let txHashSoFar: string | undefined;
     setState({ kind: 'submitting', session, action: name, steps: local });
     const onStep = (phase: PhaseId, label: string) => {
       assertMonotonicPhase(phase, local);
       local.push({ phase, label, at: performance.now() });
-      setState({ kind: 'submitting', session, action: name, steps: [...local] });
+      setState({
+        kind: 'submitting',
+        session,
+        action: name,
+        steps: [...local],
+        currentTxHash: txHashSoFar,
+      });
+    };
+    const onTxHash = (hash: string) => {
+      txHashSoFar = hash;
+      setState({
+        kind: 'submitting',
+        session,
+        action: name,
+        steps: [...local],
+        currentTxHash: hash,
+      });
     };
     try {
-      const result = await fn(onStep);
+      const result = await fn(onStep, onTxHash);
       const txHash = result.txHash.toString();
       if (name === 'deploy') session.deployedTxHash = txHash;
       setState({ kind: 'ready', session, lastSteps: local, lastTxHash: txHash });
@@ -72,7 +92,9 @@ export function AccountPanel({ state, setState }: Props) {
             <button
               type="button"
               onClick={() =>
-                runAction('deploy', (onStep) => session.session.deployAccount({ onStep }))
+                runAction('deploy', (onStep, onTxHash) =>
+                  session.session.deployAccount({ onStep, onTxHash }),
+                )
               }
               disabled={state.kind === 'submitting' || alreadyDeployed}
             >
@@ -90,7 +112,9 @@ export function AccountPanel({ state, setState }: Props) {
             <button
               type="button"
               onClick={() =>
-                runAction('drip', (onStep) => session.session.dripUsdc(1_000_000_000n, { onStep }))
+                runAction('drip', (onStep, onTxHash) =>
+                  session.session.dripUsdc(1_000_000_000n, { onStep, onTxHash }),
+                )
               }
               disabled={state.kind === 'submitting' || !alreadyDeployed}
             >
