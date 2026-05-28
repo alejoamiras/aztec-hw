@@ -13,27 +13,32 @@ import { Fr } from '@aztec/foundation/curves/bn254';
 import { computeAddress } from './aztec-address.js';
 import { deriveAztecKeysFromMasterSecret } from './aztec-derivation.js';
 
+/* `0x${string}` template literal matches what Aztec's Fr/Point/AztecAddress
+ * toString returns, so expect(...).toBe(...) type-checks against the JSON
+ * fixture without runtime casts. */
+type HexFr = `0x${string}`;
+
 interface PointJson {
-  x: string;
-  y: string;
+  x: HexFr;
+  y: HexFr;
   isInfinite: boolean;
 }
 
 interface Vector {
   index: number;
-  secretKey: string;
-  partialAddress: string;
+  secretKey: HexFr;
+  partialAddress: HexFr;
   expected: {
-    masterNullifierHidingKey: string;
-    masterIncomingViewingSecretKey: string;
-    masterOutgoingViewingSecretKey: string;
-    masterTaggingSecretKey: string;
+    masterNullifierHidingKey: HexFr;
+    masterIncomingViewingSecretKey: HexFr;
+    masterOutgoingViewingSecretKey: HexFr;
+    masterTaggingSecretKey: HexFr;
     masterNullifierPublicKey: PointJson;
     masterIncomingViewingPublicKey: PointJson;
     masterOutgoingViewingPublicKey: PointJson;
     masterTaggingPublicKey: PointJson;
-    publicKeysHash: string;
-    address: string;
+    publicKeysHash: HexFr;
+    address: HexFr;
   };
 }
 

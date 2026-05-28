@@ -23,11 +23,17 @@ import type { LedgerTransport } from './transport.ts';
 export interface LedgerEcdsaKAccountContractOptions extends LedgerProviderOptions {}
 
 export class LedgerEcdsaKAccountContract extends DefaultAccountContract {
-  private readonly provider: LedgerEcdsaKAuthWitnessProvider;
+  private readonly defaultProvider: LedgerEcdsaKAuthWitnessProvider;
+  /** M8 P1 — temporary override for the two-pass deploy flow. When set,
+   * `getAuthWitnessProvider` returns this instead of the default device-backed
+   * provider. The deploy builder uses it to inject a spy (pass 1) then a
+   * `FrozenAuthWitnessProvider` carrying the pre-signed device witness (pass 2).
+   * Outside of the deploy flow it's always `null`. */
+  private overrideProvider: AuthWitnessProvider | null = null;
 
   constructor(transport: LedgerTransport, options: LedgerEcdsaKAccountContractOptions) {
     super();
-    this.provider = new LedgerEcdsaKAuthWitnessProvider(transport, options);
+    this.defaultProvider = new LedgerEcdsaKAuthWitnessProvider(transport, options);
   }
 
   override getContractArtifact(): Promise<ContractArtifact> {
@@ -42,7 +48,7 @@ export class LedgerEcdsaKAccountContract extends DefaultAccountContract {
     constructorName: string;
     constructorArgs: Buffer[];
   }> {
-    const { x, y } = await this.provider.getPublicKeyXY();
+    const { x, y } = await this.defaultProvider.getPublicKeyXY();
     return {
       constructorName: 'constructor',
       constructorArgs: [Buffer.from(x), Buffer.from(y)],
@@ -50,11 +56,22 @@ export class LedgerEcdsaKAccountContract extends DefaultAccountContract {
   }
 
   override getAuthWitnessProvider(_address: CompleteAddress): AuthWitnessProvider {
-    return this.provider;
+    return this.overrideProvider ?? this.defaultProvider;
+  }
+
+  /**
+   * M8 P1 — install a temporary auth-provider override. Used by the deploy
+   * builder to capture the framework's outer_hash via a spy (pass 1) and then
+   * hand back a `FrozenAuthWitnessProvider` carrying the pre-signed device
+   * witness (pass 2). Pass `null` to restore the default device-backed
+   * provider. Never persisted across deploy boundaries.
+   */
+  setAuthWitnessOverride(provider: AuthWitnessProvider | null): void {
+    this.overrideProvider = provider;
   }
 
   /** Exposed for tests + the demo CLI; the framework only sees this via `getAuthWitnessProvider`. */
   getProvider(): LedgerEcdsaKAuthWitnessProvider {
-    return this.provider;
+    return this.defaultProvider;
   }
 }
