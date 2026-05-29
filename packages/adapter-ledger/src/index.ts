@@ -55,7 +55,7 @@ export {
   FrozenWitnessMismatchError,
   FrozenWitnessUsedError,
 } from './frozen-auth-witness-provider.ts';
-export { type RevealedMasterSecret, revealMasterSecret } from './onboarding.ts';
+export { deviceCacheKey, type RevealedMasterSecret, revealMasterSecret } from './onboarding.ts';
 export {
   LedgerProvider,
   type LedgerPublicKey,

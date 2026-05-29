@@ -35,21 +35,21 @@ function sessionStore(): Storage | undefined {
  * Cache the revealed secret for this session. `key` lets callers scope by device
  * path (default: a single account). Stores hex; no 0x prefix.
  */
-export function cacheSecret(secret: Fr, key = 'default'): void {
+export function cacheSecret(secret: Fr, key: string): void {
   const hex = secret.toBuffer().toString('hex');
   mem.set(key, hex);
   sessionStore()?.setItem(STORAGE_PREFIX + key, hex);
 }
 
 /** The cached secret for `key`, or undefined if none (fresh session / wiped). */
-export function loadCachedSecret(key = 'default'): Fr | undefined {
+export function loadCachedSecret(key: string): Fr | undefined {
   const hex = mem.get(key) ?? sessionStore()?.getItem(STORAGE_PREFIX + key) ?? undefined;
   if (!hex) return undefined;
   return Fr.fromBuffer(Buffer.from(hex, 'hex'));
 }
 
 /** Forget the secret for `key` (e.g. on disconnect). */
-export function clearCachedSecret(key = 'default'): void {
+export function clearCachedSecret(key: string): void {
   mem.delete(key);
   sessionStore()?.removeItem(STORAGE_PREFIX + key);
 }

@@ -18,9 +18,10 @@ describe('secret-cache', () => {
 
   test('round-trips a secret within the session', () => {
     const s = Fr.random();
-    expect(loadCachedSecret()).toBeUndefined();
-    cacheSecret(s);
-    expect(loadCachedSecret()?.toString()).toBe(s.toString());
+    const k = 'pubkey-hex-k0';
+    expect(loadCachedSecret(k)).toBeUndefined();
+    cacheSecret(s, k);
+    expect(loadCachedSecret(k)?.toString()).toBe(s.toString());
   });
 
   test('scopes by key — clearing one leaves others intact', () => {

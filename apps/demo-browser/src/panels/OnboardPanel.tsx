@@ -16,6 +16,7 @@ import {
   AztecLedgerSession,
   cacheSecret,
   defaultAztecPath,
+  deviceCacheKey,
   loadCachedSecret,
   revealMasterSecret,
 } from '@aztec-hwwallet-poc/adapter-ledger';
@@ -39,6 +40,7 @@ interface Props {
 export function OnboardPanel({ state, setState }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [checksum, setChecksum] = useState<string | null>(null);
+  const [accountIndex, setAccountIndex] = useState(0);
 
   const isOnboarding = state.kind === 'onboarding';
   const isOnboarded = state.kind === 'ready' || state.kind === 'submitting';
@@ -47,19 +49,24 @@ export function OnboardPanel({ state, setState }: Props) {
     if (state.kind !== 'onboarding') return;
     const { transport, nodeUrl, ledger } = state;
     try {
-      /* 1. Get the device's Aztec master secret. Reuse the in-session cache if
-       *    present (reconnect within a tab needs no re-approval); otherwise
-       *    reveal on-device (1 approval) + cache. "Forget session" clears the
-       *    cache, so the next onboard re-reveals from the device — that's the
-       *    re-derivation that makes reconnect == recovery. */
-      let secret = loadCachedSecret();
+      /* M9 A2: the account index is the single source — the SAME path threads to
+       * the reveal, the cache key, AND connect()'s bip32Path. */
+      const path = defaultAztecPath(accountIndex);
+      /* M9 A1: cache keyed by the DEVICE signing pubkey (per path) — a different
+       * device OR account index is a miss → a fresh reveal, never a reuse of
+       * another context's viewing root (codex MAJOR 1). "Forget session" clears
+       * the cache, so the next onboard re-reveals — the re-derivation that makes
+       * reconnect == recovery. */
+      setBusy('Reading device…');
+      const cacheKey = await deviceCacheKey(ledger, path);
+      let secret = loadCachedSecret(cacheKey);
       if (secret) {
         setChecksum('cached');
       } else {
         setBusy('Approve the reveal on your device…');
-        const reveal = await revealMasterSecret(ledger, defaultAztecPath());
+        const reveal = await revealMasterSecret(ledger, path);
         setChecksum(reveal.checksum);
-        cacheSecret(reveal.secret); // in-memory / sessionStorage only — never disk
+        cacheSecret(reveal.secret, cacheKey); // in this browser tab for the session — not disk
         secret = reveal.secret;
       }
       /* 2. Recompute the pinned demo contract instances (PXE rejects
@@ -76,6 +83,8 @@ export function OnboardPanel({ state, setState }: Props) {
         nodeUrl,
         transport: ledger,
         secret,
+        bip32Path: path, // M9 A2: same path as the reveal + cache key
+
         tokenArtifact: TOKEN_ARTIFACT,
         dripperArtifact: DRIPPER_ARTIFACT,
         sponsoredFpcArtifact: SPONSORED_FPC_ARTIFACT,
@@ -130,8 +139,24 @@ export function OnboardPanel({ state, setState }: Props) {
             device — reconnect any time to re-derive the same account.
           </div>
           <div className="row">
+            <label htmlFor="account-index">Account</label>
+            <select
+              id="account-index"
+              value={accountIndex}
+              onChange={(e) => setAccountIndex(Number(e.target.value))}
+              disabled={busy !== null}
+            >
+              {[0, 1, 2, 3, 4].map((n) => (
+                <option key={n} value={n}>
+                  Account #{n}
+                </option>
+              ))}
+            </select>
+            <span className="status muted">Each index is a separate account on your Ledger.</span>
+          </div>
+          <div className="row">
             <button type="button" onClick={onDerive} disabled={busy !== null}>
-              {busy ? 'Working…' : 'Derive Aztec viewing keys (1 approval)'}
+              {busy ? 'Working…' : `Derive Account #${accountIndex} viewing keys (1 approval)`}
             </button>
             <span className="status muted">
               {busy ?? 'One on-device approval. Discloses viewing, not spending.'}

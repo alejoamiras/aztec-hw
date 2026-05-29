@@ -55,3 +55,21 @@ export async function revealMasterSecret(
   const checksum = masterSecretChecksum(bytes);
   return { secret, checksum };
 }
+
+/**
+ * M9 A1 — device-bound cache key for `bip32Path`: the full secp256k1 signing
+ * pubkey `x‖y` as hex. A collision-resistant session identifier for
+ * `(device seed, account index)` — keying the secret cache by this makes a
+ * different device OR a different account index a cache MISS, forcing a fresh
+ * reveal rather than reusing the prior context's viewing root (codex MAJOR 1:
+ * the cache was previously global → cross-device/index reuse). `getPublicKey`
+ * needs no on-device approval, so this is cheap to call before deciding whether
+ * to reveal.
+ */
+export async function deviceCacheKey(
+  transport: LedgerTransport,
+  bip32Path: readonly number[] = defaultAztecPath(),
+): Promise<string> {
+  const pk = await new LedgerProvider(transport).getPublicKey(bip32Path);
+  return Buffer.concat([Buffer.from(pk.x), Buffer.from(pk.y)]).toString('hex');
+}
