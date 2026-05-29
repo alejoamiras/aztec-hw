@@ -11,7 +11,11 @@
  * keep it opaque here (typed `unknown`) so this file doesn't transitively
  * pull in @aztec/* into every renderer. Concrete callers narrow it.
  */
-import type { AztecLedgerSession, PhaseId } from '@aztec-hwwallet-poc/adapter-ledger';
+import type {
+  AztecLedgerSession,
+  LedgerTransport,
+  PhaseId,
+} from '@aztec-hwwallet-poc/adapter-ledger';
 
 export type Transport = 'speculos' | 'webhid';
 
@@ -75,6 +79,10 @@ export interface SubmitStep {
 export type DemoState =
   | { kind: 'idle' }
   | { kind: 'connecting'; transport: Transport; nodeUrl: string }
+  /* M8 P7.3 — transport open + device verified; awaiting the explicit
+   * "Derive viewing keys" reveal that yields the session secret. Holds the
+   * open LedgerTransport so OnboardPanel can reveal + build the session. */
+  | { kind: 'onboarding'; transport: Transport; nodeUrl: string; ledger: LedgerTransport }
   | { kind: 'ready'; session: SessionRef; lastSteps?: SubmitStep[]; lastTxHash?: string }
   | {
       kind: 'submitting';

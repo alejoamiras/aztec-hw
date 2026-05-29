@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AccountPanel } from './panels/AccountPanel.tsx';
 import { ConnectPanel } from './panels/ConnectPanel.tsx';
+import { OnboardPanel } from './panels/OnboardPanel.tsx';
 import { SpeculosPanel } from './panels/SpeculosPanel.tsx';
 import { StatusBar } from './panels/StatusBar.tsx';
 import { TransferPanel } from './panels/TransferPanel.tsx';
@@ -22,6 +23,7 @@ export function App() {
       <div className="layout">
         <div className="layout-main">
           <ConnectPanel state={state} setState={setState} />
+          <OnboardPanel state={state} setState={setState} />
           <AccountPanel state={state} setState={setState} />
           <TransferPanel state={state} setState={setState} />
         </div>

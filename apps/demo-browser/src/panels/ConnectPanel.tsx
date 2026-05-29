@@ -4,22 +4,13 @@
  */
 
 import {
-  AztecLedgerSession,
   createWebHidTransport,
+  LedgerProvider,
   SpeculosTransport,
   WebHidNotSupportedError,
 } from '@aztec-hwwallet-poc/adapter-ledger';
 import { useState } from 'react';
-import {
-  DRIPPER_ARTIFACT,
-  dripperInstance,
-  SPONSORED_FPC_ADDRESS,
-  SPONSORED_FPC_ARTIFACT,
-  sponsoredFpcInstance,
-  TOKEN_ARTIFACT,
-  usdcInstance,
-} from '../deployments.ts';
-import type { DemoState, SessionRef, Transport } from '../state.ts';
+import type { DemoState, Transport } from '../state.ts';
 
 /* Route through Vite's /aztec proxy so the browser doesn't block the
  * cross-origin fetch under COEP=require-corp (the testnet RPC doesn't
@@ -39,48 +30,25 @@ export function ConnectPanel({ state, setState }: Props) {
 
   const isConnecting = state.kind === 'connecting';
   const isConnected =
-    state.kind === 'ready' || state.kind === 'submitting' || state.kind === 'error';
+    state.kind === 'onboarding' ||
+    state.kind === 'ready' ||
+    state.kind === 'submitting' ||
+    state.kind === 'error';
 
   async function onConnect() {
     setState({ kind: 'connecting', transport, nodeUrl });
     try {
-      /* 1. Open the transport. */
+      /* Open the transport and verify the device is alive + running the
+       * Aztec app (fail fast with a clear error before the user is asked to
+       * approve anything). The heavy session build + the device-secret reveal
+       * happen in the explicit "Derive viewing keys" step (OnboardPanel) —
+       * M8 P7.3: onboarding is a deliberate step, never folded into Connect. */
       const txp =
         transport === 'speculos'
           ? new SpeculosTransport({ baseUrl: SPECULOS_PROXY_URL })
           : await createWebHidTransport();
-
-      /* 2. Recompute the deployed contract instances from nulo's
-       *    pinned salt+constructor args. PXE rejects address-only
-       *    overrides (codex BLOCKER 1), so we have to derive the
-       *    FULL ContractInstanceWithAddress here. */
-      const [usdc, dripper, fpc] = await Promise.all([
-        usdcInstance(),
-        dripperInstance(),
-        sponsoredFpcInstance(),
-      ]);
-
-      /* 3. Spin up the session. Heavy — first call pays ~3-5s WASM-prover
-       *    init cost and an initial PXE sync against the node. */
-      const session = await AztecLedgerSession.connect({
-        nodeUrl,
-        transport: txp,
-        tokenArtifact: TOKEN_ARTIFACT,
-        dripperArtifact: DRIPPER_ARTIFACT,
-        sponsoredFpcArtifact: SPONSORED_FPC_ARTIFACT,
-        usdcInstance: usdc,
-        dripperInstance: dripper,
-        sponsoredFpcInstance: fpc,
-        sponsoredFpcAddress: SPONSORED_FPC_ADDRESS,
-      });
-
-      const ref: SessionRef = {
-        transport,
-        nodeUrl,
-        addressHex: session.address.toString(),
-        session,
-      };
-      setState({ kind: 'ready', session: ref });
+      await new LedgerProvider(txp).getVersion();
+      setState({ kind: 'onboarding', transport, nodeUrl, ledger: txp });
     } catch (e) {
       /* Surface the full stack to the browser console so Playwright /
        * devtools picks it up — the on-screen banner only carries the
@@ -144,10 +112,12 @@ export function ConnectPanel({ state, setState }: Props) {
         </button>
         <span className="status muted">
           {isConnecting
-            ? 'Spawning PXE + prover, deriving Ledger address…'
-            : isConnected
-              ? 'Session established. Account shown in panel 2.'
-              : 'Spins up a session against testnet. Takes a few seconds.'}
+            ? 'Opening transport, verifying device…'
+            : state.kind === 'onboarding'
+              ? 'Device verified. Derive your viewing keys in panel 1.5.'
+              : isConnected
+                ? 'Session live. Account shown in panel 2.'
+                : 'Connects + verifies your device. Onboarding is the next step.'}
         </span>
       </div>
       {state.kind === 'error' && <div className="status err">{state.message}</div>}

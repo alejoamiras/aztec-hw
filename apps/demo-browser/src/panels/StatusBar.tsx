@@ -108,6 +108,12 @@ export function StatusBar({ state }: Props) {
       primary = 'Spinning up PXE + WASM prover + Ledger…';
       secondary = `${state.transport} → ${state.nodeUrl}`;
       break;
+    case 'onboarding':
+      badge = 'Onboarding';
+      badgeClass = 'connecting';
+      primary = 'Device connected — derive your viewing keys to continue.';
+      secondary = `${state.transport} → ${state.nodeUrl}`;
+      break;
     case 'ready':
       badge = 'Ready';
       badgeClass = 'ready';
