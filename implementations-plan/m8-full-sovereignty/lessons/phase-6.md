@@ -86,6 +86,29 @@ benchmark if it matters. On Speculos, irrelevant.
   + the verification/parity/wipe logic, which codex reviews + Speculos confirms.
 - Full M8 TS suite after 6c: 16 pass / 0 fail / 1074 expect; typecheck clean.
 
+## 6c codex review (session waJFTaR6) — CHANGES-NEEDED, fixed
+
+Verdict CHANGES-NEEDED, one real MAJOR. Codex positively cleared: secret
+hygiene (no missed wipes — sk/digests/scalars/scalar_be all wiped on every
+path), `reject()` clears both session structs, the `az_account_address`
+Jacobian lift, stack (biggest locals few-hundred bytes, heavy calls
+sequential), and all 3 BOLOS prototypes against the actual Ledger SDK headers
+(`bip32_derive_init_privkey_256`, `cx_ecfp_256_private_key_t.d`/`.d_len`,
+`cx_hash_sha512`).
+
+- **MAJOR (fixed):** the two BEGIN passes shared one `sk` buffer (derive sk
+  once → derive account twice), and FINALIZE likewise. So a fault in
+  `az_derive_master_secret` (BIP-32/SHA-512/reduce) poisons both passes
+  identically — the self-consistency check didn't cover the sk-derivation step.
+  Fix: added `az_account_derive_from_path` (account_derive.c) that re-derives
+  sk from the seed per call and wipes it; BEGIN now calls it twice (fully
+  independent passes), FINALIZE once. No `sk` buffer shared across passes.
+  Re-validated: host parity green (5 pass / 389 expect).
+- **MINOR:** "a glitch can't sign a bad deploy" isn't fully true until 6d (the
+  deploy outer_hash recompute) lands — FINALIZE still signs the host-claimed
+  `claimed_outer_hash`. 6c closes protocol-key spoofing; 6d closes blind-signing
+  of a bad outer hash. Building 6d next.
+
 ## Pending to close Phase 6
 
 1. **Codex review of 6c** (the device wiring).

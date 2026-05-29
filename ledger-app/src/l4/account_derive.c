@@ -9,6 +9,7 @@
 #include "cx.h"
 
 #include "account_keys.h"
+#include "aztec_secret.h"
 #include "../crypto/grumpkin/fq.h"
 #include "../crypto/grumpkin/mul_generator.h"
 
@@ -64,4 +65,20 @@ int az_account_derive_from_secret(const uint8_t sk[32], const uint8_t partial_ad
     if (rc != 0) return rc;
     /* address uses the master incoming-viewing pubkey (ivpk). */
     return az_account_address(out_pkh, partial_address, &ivpk, out_addr);
+}
+
+int az_account_derive_from_path(const uint32_t *bip32_path, size_t bip32_path_len,
+                                const uint8_t partial_address[32], uint8_t out_pkh[32],
+                                uint8_t out_addr[32]) {
+    /* Each call re-derives sk from the seed so independent recompute passes
+     * cover the BIP-32/SHA-512/reduce step too (codex Phase-6c review MAJOR:
+     * never share an sk buffer across passes). */
+    uint8_t sk[32];
+    if (az_derive_master_secret(bip32_path, bip32_path_len, sk) != 0) {
+        explicit_bzero(sk, sizeof(sk));
+        return -1;
+    }
+    int rc = az_account_derive_from_secret(sk, partial_address, out_pkh, out_addr);
+    explicit_bzero(sk, sizeof(sk));
+    return rc;
 }

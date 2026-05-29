@@ -27,7 +27,6 @@
 #include "../l4/session.h"
 #include "../l4/wire.h"
 #include "../l4/deploy_address.h"
-#include "../l4/aztec_secret.h"
 #include "../l4/account_derive.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
@@ -194,23 +193,18 @@ int finalize_deploy_after_approval(void) {
      * cached the public values. Re-derive once more here (just before signing)
      * and compare against the cached locals -- a glitch between BEGIN and the
      * signature must not let us sign a deploy whose on-chain viewing keys /
-     * address differ from what was verified + displayed. Internal mismatch is a
-     * fault, not a host disagreement -> generic SW_HASH_MISMATCH. */
-    uint8_t p6_sk[32];
-    if (az_derive_master_secret(G_l4_deploy_session.bip32_path,
-                                G_l4_deploy_session.bip32_path_len, p6_sk) != 0) {
-        explicit_bzero(p6_sk, sizeof(p6_sk));
-        return reject(SWO_UNKNOWN);
-    }
+     * address differ from what was verified + displayed. A full independent
+     * path->sk->{pkh,addr} pass (codex Phase-6c review MAJOR). Internal mismatch
+     * is a fault, not a host disagreement -> generic SW_HASH_MISMATCH. */
     uint8_t p6_pkh[32], p6_addr[32];
-    if (az_account_derive_from_secret(p6_sk, G_l4_deploy_session.partial_address_local,
-                                      p6_pkh, p6_addr) != 0) {
-        explicit_bzero(p6_sk, sizeof(p6_sk));
+    if (az_account_derive_from_path(G_l4_deploy_session.bip32_path,
+                                    G_l4_deploy_session.bip32_path_len,
+                                    G_l4_deploy_session.partial_address_local,
+                                    p6_pkh, p6_addr) != 0) {
         explicit_bzero(p6_pkh, 32);
         explicit_bzero(p6_addr, 32);
         return reject(SWO_UNKNOWN);
     }
-    explicit_bzero(p6_sk, sizeof(p6_sk));
     if (ct_memcmp32(p6_pkh, G_l4_deploy_session.public_keys_hash_local) != 0 ||
         ct_memcmp32(p6_addr, G_l4_deploy_session.address_local) != 0) {
         explicit_bzero(p6_pkh, 32);

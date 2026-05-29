@@ -16,6 +16,7 @@
  */
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 /**
@@ -28,3 +29,16 @@
  */
 int az_account_derive_from_secret(const uint8_t sk[32], const uint8_t partial_address[32],
                                   uint8_t out_pkh[32], uint8_t out_addr[32]);
+
+/**
+ * Full INDEPENDENT pass: path → sk → {publicKeysHash, address}, wiping `sk`
+ * before return. Use this for fault-hardening recompute passes — each call
+ * re-derives `sk` from the seed, so a glitch in the BIP-32/SHA-512/reduce step
+ * cannot poison two passes identically (codex Phase-6c review MAJOR). Never
+ * shares an `sk` buffer across passes.
+ *
+ * @return 0 on success; -1 on any derivation fault.
+ */
+int az_account_derive_from_path(const uint32_t *bip32_path, size_t bip32_path_len,
+                                const uint8_t partial_address[32], uint8_t out_pkh[32],
+                                uint8_t out_addr[32]);

@@ -34,7 +34,6 @@
 #include "../l4/session.h"
 #include "../l4/wire.h"
 #include "../l4/deploy_address.h"
-#include "../l4/aztec_secret.h"
 #include "../l4/account_derive.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
@@ -256,34 +255,31 @@ int handler_begin_deploy_account(buffer_t *cdata) {
      * the privacy-sovereignty gate: the host can no longer deploy an account
      * with host-controlled viewing keys and have the device sign it.
      *
-     * Two independent passes (self-consistency vs fault injection), THEN host
-     * equality. Per codex P6 design: the host controls both claimed values, so
-     * "device == host" alone is not glitch-proof (a single faulted pass could
-     * be matched by attacker-chosen host values) -- the self-consistency check
-     * across independent passes is the integrity anchor. FINALIZE re-derives a
-     * third time before signing. Cache only PUBLIC outputs; sk + the viewing
-     * scalars are wiped and never persist in the session. */
-    uint8_t sk[32];
-    if (az_derive_master_secret(G_l4_deploy_session.bip32_path,
-                                G_l4_deploy_session.bip32_path_len, sk) != 0) {
-        explicit_bzero(sk, sizeof(sk));
-        return reject(SWO_UNKNOWN);
-    }
-
+     * Two FULLY-INDEPENDENT passes (self-consistency vs fault injection), THEN
+     * host equality. Per codex P6 design: the host controls both claimed values,
+     * so "device == host" alone is not glitch-proof -- the self-consistency
+     * check across independent passes is the integrity anchor. Each pass
+     * re-derives sk from the seed (codex Phase-6c review MAJOR: az_account_-
+     * derive_from_path never shares an sk buffer, so a fault in the BIP-32/
+     * SHA-512/reduce step can't poison both passes identically). FINALIZE
+     * re-derives a third time before signing. Cache only PUBLIC outputs; sk +
+     * viewing scalars are wiped inside each pass and never persist. */
     uint8_t pkh_pass1[32], addr_pass1[32];
     uint8_t pkh_pass2[32], addr_pass2[32];
-    if (az_account_derive_from_secret(sk, G_l4_deploy_session.partial_address_local,
-                                      pkh_pass1, addr_pass1) != 0 ||
-        az_account_derive_from_secret(sk, G_l4_deploy_session.partial_address_local,
-                                      pkh_pass2, addr_pass2) != 0) {
-        explicit_bzero(sk, sizeof(sk));
+    if (az_account_derive_from_path(G_l4_deploy_session.bip32_path,
+                                    G_l4_deploy_session.bip32_path_len,
+                                    G_l4_deploy_session.partial_address_local,
+                                    pkh_pass1, addr_pass1) != 0 ||
+        az_account_derive_from_path(G_l4_deploy_session.bip32_path,
+                                    G_l4_deploy_session.bip32_path_len,
+                                    G_l4_deploy_session.partial_address_local,
+                                    pkh_pass2, addr_pass2) != 0) {
         explicit_bzero(pkh_pass1, 32);
         explicit_bzero(addr_pass1, 32);
         explicit_bzero(pkh_pass2, 32);
         explicit_bzero(addr_pass2, 32);
         return reject(SWO_UNKNOWN);
     }
-    explicit_bzero(sk, sizeof(sk));
 
     /* Self-consistency (fault) -- an internal pass1/pass2 mismatch is NOT a
      * host disagreement, so it returns the generic fault SW (codex P6 trap). */
