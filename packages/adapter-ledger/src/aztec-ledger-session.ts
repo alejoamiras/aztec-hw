@@ -418,8 +418,11 @@ export class AztecLedgerSession {
     try {
       /* Fresh deploy method so its entrypoint snapshots the FROZEN provider
        * (same ordering rule as pass 1). Same `deployFee` (incl. the pinned
-       * txNonce) as the spy pass, so the framework recomputes the identical
-       * outer_hash and the frozen provider hands back the device witness. */
+       * txNonce), so the framework recomputes the identical INNER auth hash
+       * (the outer_hash the device signed); FrozenAuthWitnessProvider asserts
+       * that match and returns the device witness. NB (codex MINOR): only the
+       * inner auth hash is pinned here — the outer multicall wrapping may vary
+       * between passes, but pass-1's payload is discarded, so it's irrelevant. */
       const frozenDeployMethod = await this.accountManager.getDeployMethod();
       executionPayload = await frozenDeployMethod.request({
         deployer: AztecAddress.ZERO,

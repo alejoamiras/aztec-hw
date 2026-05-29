@@ -136,8 +136,10 @@ export function ConnectPanel({ state, setState }: Props) {
             Forget session
           </button>
           <span className="status muted">
-            Wipes the in-browser viewing keys (nothing is stored on disk). Reconnect your Ledger to
-            re-derive the same account — the device is your backup.
+            Clears the viewing keys held in this browser tab for the session, then reconnect your
+            Ledger and re-derive to get the <strong>same account back</strong> — the device (its
+            seed) is the backup; there's nothing extra to save. Your signing key never left the
+            device, so a thief who saw this tab could read, never spend.
           </span>
         </div>
       )}
