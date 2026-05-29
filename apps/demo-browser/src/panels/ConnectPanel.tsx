@@ -4,6 +4,7 @@
  */
 
 import {
+  clearAllCachedSecrets,
   createWebHidTransport,
   LedgerProvider,
   SpeculosTransport,
@@ -72,6 +73,15 @@ export function ConnectPanel({ state, setState }: Props) {
     }
   }
 
+  /* M8 P8.1 — wipe the only persisted artifact (the in-session viewing-key
+   * cache) and drop the session. The ephemeral PXE + wallet DB are in-memory,
+   * so this + a reload = a genuinely empty browser. Reconnecting the Ledger
+   * re-derives the identical account (reconnect == recovery). */
+  function onForget() {
+    clearAllCachedSecrets();
+    setState({ kind: 'idle' });
+  }
+
   return (
     <section className="panel">
       <h2>1. Connect</h2>
@@ -120,6 +130,17 @@ export function ConnectPanel({ state, setState }: Props) {
                 : 'Connects + verifies your device. Onboarding is the next step.'}
         </span>
       </div>
+      {isConnected && (
+        <div className="row">
+          <button type="button" onClick={onForget} className="secondary">
+            Forget session
+          </button>
+          <span className="status muted">
+            Wipes the in-browser viewing keys (nothing is stored on disk). Reconnect your Ledger to
+            re-derive the same account — the device is your backup.
+          </span>
+        </div>
+      )}
       {state.kind === 'error' && <div className="status err">{state.message}</div>}
     </section>
   );

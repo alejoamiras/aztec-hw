@@ -182,8 +182,37 @@ test('demo browser smoke', async ({ page }) => {
       const msg = await errBanner.innerText();
       console.log('\n=== CONNECT ERROR (expected) ===\n' + msg + '\n=== END ===\n');
     } else {
+      /* M8 P7.3: Connect now reaches the 'onboarding' state (transport open +
+       * verified) — the account address does NOT exist until the explicit
+       * "Derive viewing keys" step below. */
+      console.log('\n=== CONNECT OK (onboarding) ===\nTransport open; deriving next.\n');
+    }
+  });
+
+  await test.step('derive viewing keys (reveal auto-confirm)', async () => {
+    const errBanner = page.locator('.status.err').first();
+    if ((await errBanner.count()) > 0) {
+      console.log('\n=== SKIPPING DERIVE (Connect did not succeed) ===\n');
+      return;
+    }
+    await page.getByRole('button', { name: /Derive Aztec viewing keys/ }).click();
+    /* Reveal review screen: blind 4×right then both (mirrors provider.m8.test.ts
+     * makeApprover(4); the screen-walking approver races the renderer → 0x6985). */
+    await new Promise((r) => setTimeout(r, 1500));
+    for (let i = 0; i < 4; i++) {
+      await pressSpeculos('right');
+      await new Promise((r) => setTimeout(r, 450));
+    }
+    await pressSpeculos('both');
+    await page.waitForFunction(
+      () => !!document.querySelector('.address') || !!document.querySelector('.status.err'),
+      { timeout: 120_000 },
+    );
+    if ((await errBanner.count()) > 0) {
+      console.log('\n=== DERIVE ERROR ===\n' + (await errBanner.innerText()) + '\n=== END ===\n');
+    } else {
       const addr = await page.locator('.address').first().innerText();
-      console.log('\n=== CONNECT OK ===\nAddress: ' + addr + '\n=== END ===\n');
+      console.log('\n=== DERIVE OK ===\nAddress: ' + addr + '\n=== END ===\n');
     }
   });
 

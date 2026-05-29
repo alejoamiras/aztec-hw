@@ -16,6 +16,7 @@ import {
   AztecLedgerSession,
   cacheSecret,
   defaultAztecPath,
+  loadCachedSecret,
   revealMasterSecret,
 } from '@aztec-hwwallet-poc/adapter-ledger';
 import { useState } from 'react';
@@ -46,14 +47,22 @@ export function OnboardPanel({ state, setState }: Props) {
     if (state.kind !== 'onboarding') return;
     const { transport, nodeUrl, ledger } = state;
     try {
-      /* 1. Reveal the device's Aztec master secret (1 on-device approval). The
-       *    user approves on the device / Speculos UI — same as a deploy. */
-      setBusy('Approve the reveal on your device…');
-      const reveal = await revealMasterSecret(ledger, defaultAztecPath());
-      setChecksum(reveal.checksum);
-      /* 2. Cache in-session (in-memory / sessionStorage only — never disk). */
-      cacheSecret(reveal.secret);
-      /* 3. Recompute the pinned demo contract instances (PXE rejects
+      /* 1. Get the device's Aztec master secret. Reuse the in-session cache if
+       *    present (reconnect within a tab needs no re-approval); otherwise
+       *    reveal on-device (1 approval) + cache. "Forget session" clears the
+       *    cache, so the next onboard re-reveals from the device — that's the
+       *    re-derivation that makes reconnect == recovery. */
+      let secret = loadCachedSecret();
+      if (secret) {
+        setChecksum('cached');
+      } else {
+        setBusy('Approve the reveal on your device…');
+        const reveal = await revealMasterSecret(ledger, defaultAztecPath());
+        setChecksum(reveal.checksum);
+        cacheSecret(reveal.secret); // in-memory / sessionStorage only — never disk
+        secret = reveal.secret;
+      }
+      /* 2. Recompute the pinned demo contract instances (PXE rejects
        *    address-only overrides — full instances required). */
       setBusy('Building session (PXE + WASM prover)…');
       const [usdc, dripper, fpc] = await Promise.all([
@@ -61,12 +70,12 @@ export function OnboardPanel({ state, setState }: Props) {
         dripperInstance(),
         sponsoredFpcInstance(),
       ]);
-      /* 4. Build the session WITH the device secret. Deterministic salt is the
+      /* 3. Build the session WITH the device secret. Deterministic salt is the
        *    default, so this exact account reproduces on every reconnect. */
       const session = await AztecLedgerSession.connect({
         nodeUrl,
         transport: ledger,
-        secret: reveal.secret,
+        secret,
         tokenArtifact: TOKEN_ARTIFACT,
         dripperArtifact: DRIPPER_ARTIFACT,
         sponsoredFpcArtifact: SPONSORED_FPC_ARTIFACT,
