@@ -16,6 +16,7 @@
 #include "../../src/crypto/grumpkin/g1_generator.h"
 #include "../../src/crypto/grumpkin/mul_generator.h"
 #include "../../src/crypto/grumpkin/point.h"
+#include "../../src/l4/account_keys.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -141,13 +142,64 @@ static int mode_fq_wide_reduce(int argc, char **argv) {
   return 0;
 }
 
+/* pubkeys-hash <npk_x npk_y ivpk_x ivpk_y ovpk_x ovpk_y tpk_x tpk_y> (8 hex32)
+ * -> publicKeysHash. Exercises az_account_public_keys_hash (M8 P6). */
+static int mode_pubkeys_hash(int argc, char **argv) {
+  if (argc != 8) {
+    fprintf(stderr, "pubkeys-hash needs 8 hex32 (npk/ivpk/ovpk/tpk x,y)\n");
+    return 2;
+  }
+  az_affine_t pk[4];
+  for (int i = 0; i < 4; i++) {
+    if (parse_hex32(argv[i * 2], pk[i].x) != 0 || parse_hex32(argv[i * 2 + 1], pk[i].y) != 0) {
+      fprintf(stderr, "bad hex32 at pubkey %d\n", i);
+      return 2;
+    }
+  }
+  uint8_t out[32];
+  if (az_account_public_keys_hash(&pk[0], &pk[1], &pk[2], &pk[3], out) != 0) {
+    fprintf(stderr, "public_keys_hash failed\n");
+    return 2;
+  }
+  print_hex32(out);
+  return 0;
+}
+
+/* address <publicKeysHash> <partial_address> <ivpk_x> <ivpk_y> -> address.
+ * Exercises az_account_address (M8 P6). */
+static int mode_address(int argc, char **argv) {
+  if (argc != 4) {
+    fprintf(stderr, "address needs publicKeysHash partial ivpk_x ivpk_y (4 hex32)\n");
+    return 2;
+  }
+  uint8_t pkh[32], partial[32];
+  az_affine_t ivpk;
+  if (parse_hex32(argv[0], pkh) != 0 || parse_hex32(argv[1], partial) != 0 ||
+      parse_hex32(argv[2], ivpk.x) != 0 || parse_hex32(argv[3], ivpk.y) != 0) {
+    fprintf(stderr, "bad hex32 input\n");
+    return 2;
+  }
+  uint8_t out[32];
+  if (az_account_address(pkh, partial, &ivpk, out) != 0) {
+    fprintf(stderr, "address derivation failed\n");
+    return 2;
+  }
+  print_hex32(out);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
-    fprintf(stderr, "usage: %s mul <hex32>... | fq-wide-reduce <hex128> | smoke\n", argv[0]);
+    fprintf(stderr,
+            "usage: %s mul <hex32>... | fq-wide-reduce <hex128> | "
+            "pubkeys-hash <8 hex32> | address <4 hex32> | smoke\n",
+            argv[0]);
     return 1;
   }
   if (strcmp(argv[1], "mul") == 0) return mode_mul(argc - 2, argv + 2);
   if (strcmp(argv[1], "fq-wide-reduce") == 0) return mode_fq_wide_reduce(argc - 2, argv + 2);
+  if (strcmp(argv[1], "pubkeys-hash") == 0) return mode_pubkeys_hash(argc - 2, argv + 2);
+  if (strcmp(argv[1], "address") == 0) return mode_address(argc - 2, argv + 2);
   if (strcmp(argv[1], "smoke") == 0) return mode_smoke();
   fprintf(stderr, "unknown mode: %s\n", argv[1]);
   return 1;
