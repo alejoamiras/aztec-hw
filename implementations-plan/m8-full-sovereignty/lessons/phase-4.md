@@ -83,6 +83,43 @@ the gk_fq one. Three fields in play; keep them straight:
 4. End-to-end (BIP-32 child → pubkey → secret) only verifiable on Speculos;
    the math is validated, the glue is not.
 
+## Codex review outcome (session 019e73ce) — BLOCKER-FOUND, fixed
+
+Verdict: **BLOCKER-FOUND.** `fr_from_bytes_wide_be` confirmed algebraically
+sound; host parity coverage judged correct. But the derivation source was
+broken:
+
+1. **BLOCKER — secret derived from PUBLIC material.** The original derivation
+   hashed `pubkey_x || pubkey_y`, but `GET_PUBLIC_KEY` already returns X||Y with
+   NO confirmation. A hostile host could call GET_PUBLIC_KEY, compute
+   `SHA-512(domain||X||Y) mod Fr` offline, and recover the "secret" + viewing
+   keys WITHOUT the reveal gate — collapsing the feature's security premise.
+   (Opus's original spec text had the same X||Y slip; I propagated it.) **Fix:**
+   derive from the BIP-32 PRIVATE child scalar — `SHA-512(DOMAIN || privkey_d) mod
+   Fr` via `bip32_derive_init_privkey_256`. SHA-512 is one-way, so the gated
+   disclosure doesn't leak the signing key, but the secret is now underivable
+   without the device seed. Host reference + tests updated to
+   `deriveMasterSecretFromPrivkey`. **Phase 6 unaffected** — it verifies
+   `sk → publicKeysHash/address` for arbitrary `sk` (golden vectors), independent
+   of how `sk` is obtained.
+2. **MAJOR — unverified NBGL enums.** Switched `TYPE_OPERATION` /
+   `STATUS_TYPE_OPERATION_*` to the app-proven `TYPE_TRANSACTION` /
+   `STATUS_TYPE_TRANSACTION_*` (the OPERATION variants might not exist in this
+   SDK = hard compile failure). Slightly-off success wording accepted.
+3. **MINOR — looser path gate.** Bumped the `< 2` prefix check to
+   `< L4_MIN_BIP32_PATH` (5), matching the deploy/authwit policy.
+4. **MINOR — incomplete wipe.** `explicit_bzero` now covers `cdigest` and
+   `s_checksum` (both secret-derived) for a consistent discipline.
+5. **NIT — comment** `[0..2]` → `[0..1] (2 bytes)`.
+
+Re-validated: typecheck clean, master-secret.test.ts 7 pass. The derivation
+formula in the tests now hashes the privkey scalar; the device sources it from
+BIP-32 (Speculos-verified later).
+
+Still flagged for Speculos: `bip32_derive_init_privkey_256` exact prototype +
+`cx_ecfp_256_private_key_t.d_len` field (standard crypto_helpers.h, but unbuilt
+here), plus the cx_hash_sha512 / NBGL symbols from the original list.
+
 ## Why not also build the device handler host-side?
 
 It depends on BOLOS (`os.h`, `cx.h`, `io.h`, NBGL) which has no host build. The

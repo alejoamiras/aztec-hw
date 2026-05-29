@@ -87,7 +87,9 @@ int ui_display_master_secret_reveal(void) {
     g_pair_list.smallCaseForValue = false;
     g_pair_list.wrapping = true;
 
-    nbgl_useCaseReview(TYPE_OPERATION,
+    /* Codex Phase-4 review MAJOR: TYPE_TRANSACTION is the proven review type
+     * used elsewhere in the app; TYPE_OPERATION was unverified for this SDK. */
+    nbgl_useCaseReview(TYPE_TRANSACTION,
                        &g_pair_list,
                        &MS_REVEAL_ICON,
                        "Reveal Aztec viewing key",

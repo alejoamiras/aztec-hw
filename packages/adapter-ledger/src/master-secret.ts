@@ -2,22 +2,27 @@
  * M8 Phase 4 — Aztec master-secret derivation (host reference + spec).
  *
  * The device's `INS_GET_AZTEC_MASTER_SECRET` returns a 32-byte Aztec `Fr`
- * derived deterministically from the BIP-32 secp256k1 child pubkey:
+ * derived deterministically from the BIP-32 secp256k1 child PRIVATE key:
  *
- *   master_secret = SHA-512( DOMAIN ‖ pubkey_x(32) ‖ pubkey_y(32) ) mod Fr
+ *   master_secret = SHA-512( DOMAIN ‖ privkey_d(32) ) mod Fr
  *
  * where DOMAIN = "aztec-master-secret-v1\0" (23 bytes incl. trailing NUL) and
  * Fr is the BN254 scalar field (0x...f0000001) — the field Aztec's
  * `deriveKeys(secretKey: Fr)` consumes. The reduction is a wide reduction of
  * the 512-bit SHA-512 output mod a ~254-bit prime (bias ≤ 2^-256).
  *
- * This module is the executable SPEC: the device composes `cx_hash_sha512`
- * (a trusted BOLOS primitive) with `fr_from_bytes_wide_be` (host-parity-tested
- * in `master-secret.test.ts`). It is NOT a second crypto implementation that
- * could drift — `Fr.fromBufferReduce` IS Aztec's own reduction.
+ * IMPORTANT (codex Phase-4 review BLOCKER): the secret hashes the PRIVATE key,
+ * NOT the public key. Hashing the pubkey would be insecure — `GET_PUBLIC_KEY`
+ * hands the host X‖Y with no confirmation, so a hostile host could recompute
+ * the "secret" offline and bypass the reveal gate. SHA-512 is one-way, so
+ * disclosing `H(DOMAIN ‖ privkey)` (gated by user approval) does not leak the
+ * signing key, but the result is underivable without the device.
  *
- * Anti-circularity: the reduction reference is `@aztec/foundation` Fr; SHA-512
- * is Node's standard `crypto`. No PoC crypto here.
+ * Production note: the host NEVER derives the master secret itself (it has no
+ * private key) — it calls the INS and feeds the result to `deriveKeys`. The
+ * functions here exist only as the executable SPEC / test reference. The
+ * reduction reference is `@aztec/foundation` Fr (`Fr.fromBufferReduce` is
+ * Aztec's own); SHA-512 is Node's standard `crypto`. No PoC crypto here.
  */
 import { createHash } from 'node:crypto';
 import { Fr } from '@aztec/foundation/curves/bn254';
@@ -52,18 +57,19 @@ export function reduceWideToFr(wide: Uint8Array): Uint8Array {
 }
 
 /**
- * Full master-secret derivation from a secp256k1 pubkey (x, y), each 32 BE
- * bytes. Returns the 32-byte Aztec `Fr` master secret. This is the reference
- * the device's INS_GET_AZTEC_MASTER_SECRET handler must match.
+ * Master-secret derivation from a secp256k1 PRIVATE key scalar (32 BE bytes).
+ * Returns the 32-byte Aztec `Fr` master secret. This is the reference the
+ * device's INS_GET_AZTEC_MASTER_SECRET handler must match (the device sources
+ * `privkey` from BIP-32; tests supply a known scalar). Test/spec only — the
+ * production host has no private key and instead calls the INS.
  */
-export function deriveMasterSecretFromPubkeyXY(x: Uint8Array, y: Uint8Array): Uint8Array {
-  if (x.length !== 32 || y.length !== 32) {
-    throw new Error(`pubkey coords must be 32 bytes each, got x=${x.length} y=${y.length}`);
+export function deriveMasterSecretFromPrivkey(privkey: Uint8Array): Uint8Array {
+  if (privkey.length !== 32) {
+    throw new Error(`privkey must be 32 bytes, got ${privkey.length}`);
   }
-  const input = new Uint8Array(AZTEC_MASTER_SECRET_DOMAIN.length + 64);
+  const input = new Uint8Array(AZTEC_MASTER_SECRET_DOMAIN.length + 32);
   input.set(AZTEC_MASTER_SECRET_DOMAIN, 0);
-  input.set(x, AZTEC_MASTER_SECRET_DOMAIN.length);
-  input.set(y, AZTEC_MASTER_SECRET_DOMAIN.length + 32);
+  input.set(privkey, AZTEC_MASTER_SECRET_DOMAIN.length);
   return reduceWideToFr(sha512(input));
 }
 

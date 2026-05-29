@@ -41,6 +41,7 @@
 #include "../globals.h"
 #include "../sw.h"
 #include "../ui/display.h"
+#include "../l4/wire.h"
 #include "../crypto/poseidon2/fr.h"
 
 /* "aztec-master-secret-v1" is 22 chars; in a [23] array the literal zero-fills
@@ -64,31 +65,46 @@ static int ct_memcmp32(const uint8_t a[32], const uint8_t b[32]) {
 
 static void disarm(void) {
     explicit_bzero(s_secret, sizeof(s_secret));
+    /* Checksum is non-secret (a SHA-256 prefix the host also computes), but
+     * it's derived from the secret -- wipe it too for a consistent discipline
+     * (codex Phase-4 review MINOR). The UI already copied it into its own
+     * buffer before display, so wiping here doesn't blank the shown value. */
+    explicit_bzero(s_checksum, sizeof(s_checksum));
     s_armed = false;
 }
 
 /* Derive the master secret into `out32` from the path in G_context. Returns 0
- * on success. Touches only stack + out; no globals beyond G_context (read). */
+ * on success. Touches only stack + out; no globals beyond G_context (read).
+ *
+ * Codex Phase-4 review BLOCKER: the secret MUST depend on NON-PUBLIC material.
+ * Hashing the PUBLIC key (X||Y) was broken -- GET_PUBLIC_KEY hands the host
+ * those bytes with no confirmation, so the host could recompute the "secret"
+ * offline and bypass this reveal gate entirely. We instead hash the BIP-32
+ * PRIVATE child scalar. SHA-512 is one-way, so disclosing
+ * H(DOMAIN || privkey) (gated by user confirmation) does NOT leak the signing
+ * key, but the result is underivable without the device seed. The signing key
+ * and the master secret are domain-separated uses of the same child key
+ * (acceptable for PoC; a dedicated derivation path is a cleaner production
+ * hardening). */
 static int derive_master_secret(uint8_t out32[32]) {
-    uint8_t raw_pubkey[65];
+    cx_ecfp_256_private_key_t privkey;
     uint8_t chain_code[32];
-    cx_err_t err = bip32_derive_get_pubkey_256(CX_CURVE_256K1,
-                                               G_context.bip32_path,
-                                               G_context.bip32_path_len,
-                                               raw_pubkey,
-                                               chain_code,
-                                               CX_SHA512);
+    cx_err_t err = bip32_derive_init_privkey_256(CX_CURVE_256K1,
+                                                 G_context.bip32_path,
+                                                 G_context.bip32_path_len,
+                                                 &privkey,
+                                                 chain_code);
     explicit_bzero(chain_code, sizeof(chain_code));
-    if (err != CX_OK || raw_pubkey[0] != 0x04) {
-        explicit_bzero(raw_pubkey, sizeof(raw_pubkey));
+    if (err != CX_OK || privkey.d_len != 32) {
+        explicit_bzero(&privkey, sizeof(privkey));
         return -1;
     }
 
-    /* input = DOMAIN(23) || X(32) || Y(32) = 87 bytes. raw_pubkey[1..65) is X||Y. */
-    uint8_t input[23 + 64];
+    /* input = DOMAIN(23) || privkey_d(32) = 55 bytes. */
+    uint8_t input[23 + 32];
     memcpy(input, MASTER_SECRET_DOMAIN, 23);
-    memcpy(input + 23, &raw_pubkey[1], 64);
-    explicit_bzero(raw_pubkey, sizeof(raw_pubkey));
+    memcpy(input + 23, privkey.d, 32);
+    explicit_bzero(&privkey, sizeof(privkey));
 
     uint8_t digest[64];
     if (cx_hash_sha512(input, sizeof(input), digest, sizeof(digest)) != 64) {
@@ -114,8 +130,9 @@ int handler_get_aztec_master_secret(buffer_t *cdata) {
     if (!buffer_read_u8(cdata, &G_context.bip32_path_len)) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
     }
-    /* Need at least the 44'/AZTEC' prefix to gate the reveal to Aztec paths. */
-    if (G_context.bip32_path_len < 2) {
+    /* Match the deploy/authwit path policy (codex Phase-4 review MINOR): require
+     * the full canonical Aztec path length, not just the 2-element prefix. */
+    if (G_context.bip32_path_len < L4_MIN_BIP32_PATH) {
         return io_send_sw(SW_INVALID_PATH_SCHEME);
     }
     if (G_context.bip32_path_len > MAX_BIP32_PATH_LEN) {
@@ -154,13 +171,14 @@ int handler_get_aztec_master_secret(buffer_t *cdata) {
     }
     explicit_bzero(pass2, sizeof(pass2));
 
-    /* Confirmation checksum: SHA-256(CHECKSUM_TAG || secret)[0..2] as 4 hex. */
+    /* Confirmation checksum: SHA-256(CHECKSUM_TAG || secret)[0..1] -> 4 hex. */
     uint8_t cinput[19 + 32];
     memcpy(cinput, CHECKSUM_TAG, 19);
     memcpy(cinput + 19, pass1, 32);
     uint8_t cdigest[32];
     if (cx_hash_sha256(cinput, sizeof(cinput), cdigest, sizeof(cdigest)) != 32) {
         explicit_bzero(cinput, sizeof(cinput));
+        explicit_bzero(cdigest, sizeof(cdigest));
         explicit_bzero(pass1, sizeof(pass1));
         return io_send_sw(SWO_UNKNOWN);
     }
@@ -170,6 +188,8 @@ int handler_get_aztec_master_secret(buffer_t *cdata) {
     s_checksum[2] = HEXC[(cdigest[1] >> 4) & 0x0f];
     s_checksum[3] = HEXC[cdigest[1] & 0x0f];
     s_checksum[4] = '\0';
+    /* cdigest is derived from the secret -- wipe (codex Phase-4 review MINOR). */
+    explicit_bzero(cdigest, sizeof(cdigest));
 
     memcpy(s_secret, pass1, 32);
     explicit_bzero(pass1, sizeof(pass1));
@@ -188,17 +208,19 @@ int master_secret_reveal_approved(void) {
     int rc = io_send_response_pointer(response, sizeof(response), SWO_SUCCESS);
     explicit_bzero(response, sizeof(response));
     /* M6.11 regression guard -- dismiss the NBGL page after the reveal.
-     * STATUS_TYPE_OPERATION_SIGNED renders a generic "done" screen (this is a
-     * key reveal, not a tx sign). Verify the enum name on the first Speculos
-     * build; fall back to STATUS_TYPE_TRANSACTION_SIGNED if unavailable. */
-    nbgl_useCaseReviewStatus(STATUS_TYPE_OPERATION_SIGNED, ui_menu_main);
+     * Codex Phase-4 review MAJOR: use the PROVEN STATUS_TYPE_TRANSACTION_*
+     * enums (used throughout the app) rather than the unverified OPERATION_*
+     * variants, which would be a hard compile failure if absent in this SDK.
+     * The "Transaction signed" wording is mildly off for a reveal; a custom
+     * status string is a polish item for the Speculos pass. */
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_menu_main);
     return rc;
 }
 
 int master_secret_reveal_rejected(void) {
     disarm();
     int rc = io_send_sw(SW_USER_REJECTED);
-    nbgl_useCaseReviewStatus(STATUS_TYPE_OPERATION_REJECTED, ui_menu_main);
+    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_menu_main);
     return rc;
 }
 

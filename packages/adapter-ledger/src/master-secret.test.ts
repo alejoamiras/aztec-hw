@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import {
   AZTEC_MASTER_SECRET_DOMAIN,
-  deriveMasterSecretFromPubkeyXY,
+  deriveMasterSecretFromPrivkey,
   reduceWideToFr,
 } from './master-secret.ts';
 
@@ -84,12 +84,11 @@ describe('fr_from_bytes_wide_be host parity', () => {
   });
 });
 
-describe('master-secret derivation formula', () => {
-  test('deriveMasterSecretFromPubkeyXY is deterministic + in Fr range', () => {
-    const x = new Uint8Array(randomBytes(32));
-    const y = new Uint8Array(randomBytes(32));
-    const a = deriveMasterSecretFromPubkeyXY(x, y);
-    const b = deriveMasterSecretFromPubkeyXY(x, y);
+describe('master-secret derivation formula (privkey-based)', () => {
+  test('deriveMasterSecretFromPrivkey is deterministic + in Fr range', () => {
+    const priv = new Uint8Array(randomBytes(32));
+    const a = deriveMasterSecretFromPrivkey(priv);
+    const b = deriveMasterSecretFromPrivkey(priv);
     expect(Buffer.from(a).toString('hex')).toBe(Buffer.from(b).toString('hex'));
     expect(a.length).toBe(32);
     /* Result must be < Fr.MODULUS (canonical). */
@@ -97,28 +96,28 @@ describe('master-secret derivation formula', () => {
     expect(asBig < Fr.MODULUS).toBe(true);
   });
 
-  test('different pubkeys derive different secrets', () => {
-    const x1 = new Uint8Array(32).fill(1);
-    const x2 = new Uint8Array(32).fill(2);
-    const y = new Uint8Array(32).fill(3);
-    const s1 = Buffer.from(deriveMasterSecretFromPubkeyXY(x1, y)).toString('hex');
-    const s2 = Buffer.from(deriveMasterSecretFromPubkeyXY(x2, y)).toString('hex');
+  test('different private keys derive different secrets', () => {
+    const p1 = new Uint8Array(32).fill(1);
+    const p2 = new Uint8Array(32).fill(2);
+    const s1 = Buffer.from(deriveMasterSecretFromPrivkey(p1)).toString('hex');
+    const s2 = Buffer.from(deriveMasterSecretFromPrivkey(p2)).toString('hex');
     expect(s1).not.toBe(s2);
   });
 
   test('derivation = device-equivalent compose (sha512 then device wide-reduce)', () => {
-    /* Proves the device path: cx_hash_sha512(DOMAIN‖x‖y) then
+    /* Proves the device path: cx_hash_sha512(DOMAIN‖privkey) then
      * fr_from_bytes_wide_be == our reference. We compute SHA-512 in TS (= the
-     * trusted BOLOS primitive) and feed the digest to the device wide-reduce. */
-    const x = new Uint8Array(randomBytes(32));
-    const y = new Uint8Array(randomBytes(32));
-    const input = new Uint8Array(AZTEC_MASTER_SECRET_DOMAIN.length + 64);
+     * trusted BOLOS primitive) and feed the digest to the device wide-reduce.
+     * The device sources `privkey` from BIP-32; here we supply a known scalar.
+     * (The privkey→secret link is what makes the secret non-public — codex
+     * Phase-4 BLOCKER fix.) */
+    const priv = new Uint8Array(randomBytes(32));
+    const input = new Uint8Array(AZTEC_MASTER_SECRET_DOMAIN.length + 32);
     input.set(AZTEC_MASTER_SECRET_DOMAIN, 0);
-    input.set(x, AZTEC_MASTER_SECRET_DOMAIN.length);
-    input.set(y, AZTEC_MASTER_SECRET_DOMAIN.length + 32);
+    input.set(priv, AZTEC_MASTER_SECRET_DOMAIN.length);
     const digest = new Uint8Array(createHash('sha512').update(input).digest());
     const deviceComposed = deviceWideReduce(digest);
-    const reference = Buffer.from(deriveMasterSecretFromPubkeyXY(x, y)).toString('hex');
+    const reference = Buffer.from(deriveMasterSecretFromPrivkey(priv)).toString('hex');
     expect(deviceComposed).toBe(reference);
   });
 });
