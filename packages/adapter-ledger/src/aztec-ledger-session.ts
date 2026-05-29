@@ -58,7 +58,7 @@ import { AuthWitness } from '@aztec-hwwallet-poc/core';
 import { LedgerEcdsaKAccountContract } from './account-contract.ts';
 import { defaultAztecPath } from './apdu.ts';
 import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
-import { type DeployContext, defaultDeployPath } from './deploy-context.ts';
+import type { DeployContext } from './deploy-context.ts';
 import { FrozenAuthWitnessProvider } from './frozen-auth-witness-provider.ts';
 import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
 import { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
@@ -92,6 +92,9 @@ export interface AztecLedgerSessionDeps {
   readonly secret: Fr;
   /** Account-deploy salt Fr. */
   readonly salt: Fr;
+  /** M9 A2: the resolved BIP-32 path — the SINGLE source of truth for the
+   * signing pubkey, authwit path, deploy context, and secret-cache key. */
+  readonly bip32Path: readonly number[];
   /**
    * Live USDC contract instance — actual deployed shape (publicKeys,
    * initHash, salt, address). PXE rejects address-only overrides.
@@ -219,9 +222,13 @@ export class AztecLedgerSession {
     const session = await SessionEmbeddedWallet.createEphemeral(opts.nodeUrl, {
       proverEnabled: opts.proverEnabled ?? true,
     });
-    const accountContract = new LedgerEcdsaKAccountContract(opts.transport, {
-      bip32Path: opts.bip32Path ?? defaultAztecPath(),
-    });
+    /* M9 A2: resolve the BIP-32 path ONCE — the single source of truth for this
+     * account. The account contract (signing pubkey + authwit path), the deploy
+     * context, and the secret-cache key all flow from this one value, so a stale
+     * or divergent index can't slip in (opus MAJOR: `deployAccount` used to
+     * hardcode `defaultDeployPath(0)` independently of the connected account). */
+    const bip32Path = opts.bip32Path ?? defaultAztecPath();
+    const accountContract = new LedgerEcdsaKAccountContract(opts.transport, { bip32Path });
     const ledgerProvider = accountContract.getProvider();
     const secret = opts.secret ?? Fr.random();
     /* M8 P7.2: deterministic salt by default so the SAME device reproduces the
@@ -275,6 +282,7 @@ export class AztecLedgerSession {
       ledgerProvider,
       secret,
       salt,
+      bip32Path,
       usdcInstance: opts.usdcInstance,
       dripperInstance: opts.dripperInstance,
       sponsoredFpcInstance: opts.sponsoredFpcInstance,
@@ -379,7 +387,11 @@ export class AztecLedgerSession {
     /* Build the DeployContext for the device. The device re-derives + verifies
      * publicKeysHash + address (P6c) and recomputes the deploy outer_hash from
      * this txNonce (P6d); the host-supplied fields are cross-checked, not trusted. */
-    const path = defaultDeployPath(0);
+    /* M9 A2: the deploy context path MUST be the session's configured path
+     * (was hardcoded `defaultDeployPath(0)` — opus MAJOR: that diverges from
+     * the account's signing/authwit path for any account index ≠ 0, and the
+     * device would reject with 0x6F0E). Single source = this.deps.bip32Path. */
+    const path = this.deps.bip32Path;
     const publicKeysHash = await this.completeAddress.publicKeys.hash();
     const deployCtx: DeployContext = {
       profileId: 0, // DEPLOY_ACCOUNT_ECDSAK_V1
@@ -464,6 +476,12 @@ export class AztecLedgerSession {
   get internalDeps(): Readonly<Omit<AztecLedgerSessionDeps, 'secret'>> {
     const { secret: _secret, ...rest } = this.deps;
     return rest;
+  }
+
+  /** M9 A2: the account's resolved BIP-32 path — single source of truth
+   * (signing pubkey, authwit path, deploy context, secret-cache key all use it). */
+  get bip32Path(): readonly number[] {
+    return this.deps.bip32Path;
   }
 
   /** The deployed account address (deterministic from secret + salt + signing pubkey). */

@@ -20,14 +20,7 @@
  * FINALIZE_DEPLOY_AND_SIGN only adds claimed_outer_hash.
  */
 
-import {
-  AZTEC_COIN_TYPE_HARDENED,
-  CURVE_ID,
-  FR_BYTES,
-  hardened,
-  MANIFEST_VERSION,
-  PATH_SCHEME,
-} from './apdu.ts';
+import { CURVE_ID, defaultAztecPath, FR_BYTES, MANIFEST_VERSION, PATH_SCHEME } from './apdu.ts';
 
 export interface DeployContext {
   /** Index into CS_DEPLOY_PROFILES — must match the manifest. v0: 0. */
@@ -104,12 +97,10 @@ export function encodeBeginDeployAccountBody(ctx: DeployContext): Uint8Array {
   return out;
 }
 
-/** Helper: default Aztec deploy path. Matches `defaultAztecPath()` in apdu.ts
- * but exported here for the deploy-flow ergonomics (same shape; v0 uses the
- * exact same BIP-32 schema for sign + deploy). */
+/** M9 A2: `defaultDeployPath` now DELEGATES to `defaultAztecPath` — there is ONE
+ * path implementation (opus MAJOR: two byte-identical helpers invited drift, and
+ * the deploy flow used to call this one independently of the account). Kept as a
+ * thin re-export for call-site compatibility (provider.m8.test.ts, the index). */
 export function defaultDeployPath(account = 0): readonly number[] {
-  if (!Number.isInteger(account) || account < 0 || account > 0x7fff_ffff) {
-    throw new Error(`account must be a uint31, got ${account}`);
-  }
-  return [hardened(44), AZTEC_COIN_TYPE_HARDENED, hardened(account), 0x0000_0000, 0x0000_0000];
+  return defaultAztecPath(account);
 }
