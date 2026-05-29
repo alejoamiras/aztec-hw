@@ -69,6 +69,18 @@ function toBE32(value: { toBuffer(): Buffer }): Uint8Array {
   return new Uint8Array(value.toBuffer());
 }
 
+/**
+ * Deterministic account-deploy salt (M8 P7.2). The Ledger is the wallet: one
+ * account per device path, reproducible across reconnects. A RANDOM salt would
+ * change the derived address on every connect (plan-audit BLOCKER 1) — onboarding
+ * could show one address while the next session resolves a different, empty
+ * account. Fixed `Fr.ZERO` makes the address recompute from (device secret,
+ * signing pubkey, salt) alone with zero persisted state — which is also why
+ * recovery needs no sidecar. `connect()` still accepts an explicit `salt`
+ * override (tests pin their own).
+ */
+export const DEFAULT_ACCOUNT_SALT: Fr = Fr.ZERO;
+
 export interface AztecLedgerSessionDeps {
   /** Ephemeral wallet (PXE + wallet DB) for the session. */
   readonly session: SessionEmbeddedWallet;
@@ -157,7 +169,8 @@ export interface AztecLedgerSessionConnectOptions {
   readonly sponsoredFpcArtifact: ContractArtifact;
   /** Live SponsoredFPC address (slot 2 in M5 manifest; salt=0 protocol-pinned). */
   readonly sponsoredFpcAddress: AztecAddress;
-  /** Optional pre-chosen account salt. Defaults to a fresh Fr.random(). */
+  /** Optional pre-chosen account salt. Defaults to DEFAULT_ACCOUNT_SALT
+   * (deterministic — reproducible address across reconnects; M8 P7.2). */
   readonly salt?: Fr;
   /** Optional pre-chosen master secret. Defaults to a fresh Fr.random(). */
   readonly secret?: Fr;
@@ -211,7 +224,11 @@ export class AztecLedgerSession {
     });
     const ledgerProvider = accountContract.getProvider();
     const secret = opts.secret ?? Fr.random();
-    const salt = opts.salt ?? Fr.random();
+    /* M8 P7.2: deterministic salt by default so the SAME device reproduces the
+     * SAME account on every connect (reconnect == recovery). Random salt was the
+     * plan-audit BLOCKER. Onboarding passes the device secret as `opts.secret`;
+     * tests may pin their own `opts.salt`. */
+    const salt = opts.salt ?? DEFAULT_ACCOUNT_SALT;
 
     const accountManager = await AccountManager.create(session, secret, accountContract, salt);
     const accountAddress = accountManager.address;
@@ -426,12 +443,15 @@ export class AztecLedgerSession {
   }
 
   /**
-   * Read-only view of the session deps. Internal — exposed for tests and
-   * for the demo UI to render fee-payer/address metadata. The `runRecipe`
-   * implementation in M6.3.next reads from this same field.
+   * Read-only view of the session deps for rendering metadata (instances,
+   * fee-payer, artifacts). M8 P7.2 (impl-audit `bb56tmdxj` MAJOR): the
+   * viewing-root `secret` is STRIPPED — it must not be reachable via any public
+   * accessor. The PXE receives it internally during `connect()`
+   * (registerExternalAccount / registerContract); nothing outside needs it back.
    */
-  get internalDeps(): Readonly<AztecLedgerSessionDeps> {
-    return this.deps;
+  get internalDeps(): Readonly<Omit<AztecLedgerSessionDeps, 'secret'>> {
+    const { secret: _secret, ...rest } = this.deps;
+    return rest;
   }
 
   /** The deployed account address (deterministic from secret + salt + signing pubkey). */

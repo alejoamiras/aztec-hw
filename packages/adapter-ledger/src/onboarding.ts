@@ -1,0 +1,57 @@
+/**
+ * M8 P7.1 — onboarding: reveal the device's Aztec master secret so the browser
+ * session derives the SAME account the device verifies at deploy time.
+ *
+ * Why this is load-bearing: `AztecLedgerSession.connect()` defaults the session
+ * secret to `Fr.random()`. Under M8 the device derives publicKeysHash + address
+ * from its OWN seed and rejects host mismatches (0x6F0F / 0x6F0E), so a random
+ * secret makes every deploy reject. The session secret MUST be the device's
+ * master secret. This is a deliberate, user-approved disclosure of the VIEWING
+ * root (not spend authority): the device shows a high-friction reveal screen
+ * and the host feeds the result into Aztec's `deriveKeys()`.
+ *
+ * Recovery is the same seam re-run: reconnect the device → reveal again → the
+ * deterministic derivation reproduces the identical account (see
+ * implementations-plan/m8-full-sovereignty/phase-7-8-plan.md).
+ */
+import { Fr } from '@aztec/foundation/curves/bn254';
+import { defaultAztecPath } from './apdu.ts';
+import { masterSecretChecksum } from './master-secret.ts';
+import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
+import type { LedgerTransport } from './transport.ts';
+
+export interface RevealedMasterSecret {
+  /** The 32-byte Aztec `Fr` master secret (already canonical, < Fr modulus). */
+  readonly secret: Fr;
+  /**
+   * 4-hex confirmation checksum the device ALSO displays. The UI shows this so
+   * the user can cross-check the device returned the same secret the host got.
+   * (Typo/integrity check — not an authenticity proof.)
+   */
+  readonly checksum: string;
+}
+
+/**
+ * Reveal the device's Aztec master secret for `bip32Path` (one device approval).
+ *
+ * The caller passes the returned `secret` straight into
+ * `AztecLedgerSession.connect({ secret, salt, bip32Path })` at the SAME path so
+ * the derived account matches what the device verifies. `opts.autoConfirm`
+ * drives the on-device approval under Speculos in tests.
+ */
+export async function revealMasterSecret(
+  transport: LedgerTransport,
+  bip32Path: readonly number[] = defaultAztecPath(),
+  opts: SignOuterHashOptions = {},
+): Promise<RevealedMasterSecret> {
+  const provider = new LedgerProvider(transport);
+  const bytes = await provider.getAztecMasterSecret(bip32Path, opts);
+  if (bytes.length !== 32) {
+    throw new Error(`master secret must be 32 bytes, got ${bytes.length}`);
+  }
+  // The device already reduced mod Fr, so the value is canonical; `fromBuffer`
+  // (which asserts < modulus) is the right call and doubles as an invariant check.
+  const secret = Fr.fromBuffer(Buffer.from(bytes));
+  const checksum = masterSecretChecksum(bytes);
+  return { secret, checksum };
+}

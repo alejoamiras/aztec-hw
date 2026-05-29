@@ -39,6 +39,7 @@ export {
   AztecLedgerSession,
   type AztecLedgerSessionConnectOptions,
   type AztecLedgerSessionDeps,
+  DEFAULT_ACCOUNT_SALT,
   type PhaseId,
   type SubmitOptions,
   type SubmitResult,
@@ -54,6 +55,7 @@ export {
   FrozenWitnessMismatchError,
   FrozenWitnessUsedError,
 } from './frozen-auth-witness-provider.ts';
+export { type RevealedMasterSecret, revealMasterSecret } from './onboarding.ts';
 export {
   LedgerProvider,
   type LedgerPublicKey,
@@ -61,6 +63,12 @@ export {
   type SignOuterHashOptions,
   type VersionInfo,
 } from './provider.ts';
+export {
+  cacheSecret,
+  clearAllCachedSecrets,
+  clearCachedSecret,
+  loadCachedSecret,
+} from './secret-cache.ts';
 export { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
 export {
   type ButtonId,
