@@ -8,8 +8,8 @@
  *
  * Flow mirrors the deploy review: the handler derives + arms the secret and
  * shows the NBGL reveal screen, returning 0 (response deferred). The UI's
- * confirm/reject callback then calls back into the *_approved/*_rejected
- * functions to emit the response.
+ * confirm/reject callback then calls back into the approved + rejected
+ * functions below to emit the response.
  */
 #pragma once
 

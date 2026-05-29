@@ -185,11 +185,53 @@ NITs:
   drift between passes. Operationally a non-issue within a sub-second deploy;
   noted as the one remaining (benign) drift edge.
 
-## Pending to close Phase 6
+## 6e — Speculos device validation (DONE — built + ran the real app)
 
-1. **Codex review of 6c** (the device wiring).
-2. ~~6d — deploy outer_hash recompute~~ DONE (see 6d section above).
-3. **Speculos integration**: deploy flow end-to-end + adversarial (swap
-   publicKeysHash / expected_address → device rejects at the right SW). Plus the
-   Phase 4/6 BOLOS-symbol checks (cx_hash_sha512, bip32_derive_init_privkey_256,
-   NBGL enums).
+Earlier I hand-waved the device code as "Speculos-pending" without trying to
+build it. User pushed; Docker was started; the wall came down.
+
+- **Built under the real Ledger SDK** via the CI image
+  `ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder-lite` +
+  `make BOLOS_SDK=/opt/nanosplus-secure-sdk`. ALL 13 M8 objects compiled + the
+  app LINKED (162KB nanos2 elf). Every BOLOS symbol I'd flagged as "verify on
+  first build" resolved: cx_hash_sha512, bip32_derive_init_privkey_256,
+  cx_ecfp_256_private_key_t (.d/.d_len), STATUS_TYPE_TRANSACTION_*,
+  TYPE_TRANSACTION. The thousands of LSP "os.h not found" diagnostics were ALL
+  false (no BOLOS SDK on the LSP include path). One real warning (a `/*` inside
+  a comment in get_aztec_master_secret.h) — fixed.
+  - macOS note: the venv Speculos can't run (QEMU needs libc.so.6 = Linux);
+    use the Docker Speculos image (`ghcr.io/ledgerhq/speculos`), which is what
+    the project + CI use anyway.
+- **Ran on Speculos** (`docker run ... speculos ... --model nanosp /app/app.elf`)
+  and drove it via the TS SpeculosTransport:
+  - Baseline regression: `provider.test.ts` 9/9 (version/caps/pubkey/sign/
+    dispatcher/deploy-profile) — the M8 app is a clean superset of M7.
+  - **publicKeysHash gate (6c):** BEGIN_DEPLOY with a wrong publicKeysHash →
+    `0x6F0F`. The device derived its OWN pkh from the emulator seed (full
+    Grumpkin + poseidon2) and rejected the mismatch. (This test was the M7-era
+    "accepts garbage ctx" test — flipped to assert the M8 rejection.)
+  - **address gate (6c):** GET_AZTEC_MASTER_SECRET → device sk → host-derive the
+    CORRECT pkh → BEGIN with correct pkh + wrong expectedAddress → `0x6F0E`. The
+    device passed the pkh check, derived the real address, rejected the wrong
+    one. Proves the full stage chain runs on-device.
+  - **GET_AZTEC_MASTER_SECRET reveal (Phase 4):** navigated the NBGL reveal UI
+    (right×4 → both; the device showed the path + a 4-hex confirm checksum
+    `f92b`), returned a deterministic 32-byte Fr that `deriveKeys` accepts; two
+    reveals identical. `provider.m8.test.ts` 3/3.
+
+So the entire M8 device crypto — Grumpkin EC, master-secret + viewing-key
+derivation, publicKeysHash, address, the verification gates, the reveal INS —
+RUNS correctly on the emulated Nano S+, not merely host-parity. Per-test bun
+timeout must be raised (`--timeout 60000`); the reveal compute + UI nav under
+amd64 emulation exceeds the 5s default.
+
+## Pending to close Phase 6 / M8
+
+1. ~~Codex review of 6c~~ DONE (LGTM-WITH-NITS, folded).
+2. ~~6d — deploy outer_hash recompute~~ DONE.
+3. ~~Speculos integration (build + gates + reveal)~~ DONE (see 6e above).
+4. STILL OPEN (needs a fully valid deploy ctx + button approval, or the browser
+   demo): the POSITIVE BEGIN→FINALIZE→sign happy path on-device (6d outer_hash
+   check firing on a real claimed_outer_hash + the deploy-review UI sign), and
+   the frontend + Playwright full deploy on testnet (the safe-v4 hero demo).
+   Phase 5 real-Nano-S+ perf remains deferred.

@@ -160,7 +160,13 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
    *   - BEGIN_DEPLOY_ACCOUNT with an unknown profile_id returns 0x6F0D
    *   - FINALIZE_DEPLOY_AND_SIGN before BEGIN returns 0x6F11
    */
-  test('BEGIN_DEPLOY_ACCOUNT accepts the registered profile and returns 0x9000', async () => {
+  /* M8 P6c: BEGIN_DEPLOY_ACCOUNT now DERIVES its own publicKeysHash from the
+   * device seed and rejects a host-supplied value that doesn't match. A
+   * canonical-but-wrong publicKeysHash (fill 0x06) cannot equal the device's
+   * real derivation, so the device rejects with SW_DEPLOY_PUBKEY_HASH_MISMATCH
+   * BEFORE any UI. (Under M7 this same garbage context was accepted — the
+   * privacy-attack gap this test now proves is closed.) */
+  test('BEGIN_DEPLOY_ACCOUNT rejects a wrong publicKeysHash with 0x6F0F (M8 gate)', async () => {
     const ctx = {
       profileId: 0,
       bip32Path: AZTEC_PATH,
@@ -171,18 +177,15 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
       publicKeysHash: new Uint8Array(32).fill(0x06),
       expectedAddress: new Uint8Array(32).fill(0x07),
     };
-    /* Force the canonical-Fr check on by zeroing the high byte (already 0 for
-     * fill(0x02) since the BE fill puts 0x02 in [0]; canonical Fr requires
-     * the value < curve modulus, so high-bit-clear is enough). */
+    /* Canonical-Fr (high byte clear) so the device gets past the framing
+     * checks and into the device-vs-host equality gate. */
     ctx.chainId[0] = 0x00;
     ctx.protocolVersion[0] = 0x00;
     ctx.txNonce[0] = 0x00;
     ctx.salt[0] = 0x00;
     ctx.publicKeysHash[0] = 0x00;
     ctx.expectedAddress[0] = 0x00;
-    await expect(provider.beginDeployAccount(ctx)).resolves.toBeUndefined();
-    /* Tidy up: send an ABORT to leave the device clean for the next test. */
-    await provider.abortAuthwit();
+    await expect(provider.beginDeployAccount(ctx)).rejects.toThrow('SW=0x6f0f');
   });
 
   test('BEGIN_DEPLOY_ACCOUNT rejects an unknown profile_id with 0x6F0D', async () => {
