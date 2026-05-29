@@ -130,6 +130,11 @@ typedef struct {
 
     /* From FINALIZE_DEPLOY_AND_SIGN. */
     uint8_t claimed_outer_hash[L4_FR_BYTES];
+    /* True once FINALIZE_DEPLOY_AND_SIGN has stored claimed_outer_hash. A
+     * proper state bit instead of zero-scanning the hash (codex P6d review
+     * NIT): Fr(0) is a valid canonical hash value, so "all zero" must not be
+     * conflated with "not received". Cleared by l4_session_reset (struct zero). */
+    bool claimed_outer_hash_received;
 } l4_deploy_session_t;
 
 extern l4_deploy_session_t G_l4_deploy_session;

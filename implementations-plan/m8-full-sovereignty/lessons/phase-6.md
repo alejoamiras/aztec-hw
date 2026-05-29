@@ -160,6 +160,31 @@ sponsor selector matches the manifest pin.
 bogus outer_hash is also caught by the frozen-witness pass-2 on host, or fails
 on-chain). The hard sovereignty boundary is 6c (protocol-key spoofing).
 
+## 6d codex review (session XIr9ICRE) — LGTM-WITH-NITS
+
+No blockers/majors. Codex re-verified against the INSTALLED 4.2.1 (correcting
+its own earlier clone-based "use from:NO_FROM" advice): deployer:ZERO is the
+right host input; the deploy authwit is exactly one private
+`sponsor_unconditionally()` + four `FunctionCall.empty()` padders; private
+zero-arg `args_hash = Fr(0)` is intentional; `consumer = address_local` correct;
+6d placement uses BEGIN-populated fields + compares the same `claimed_outer_hash`
+that gets signed; multicall wrapping happens AFTER the fee authwit so it doesn't
+rewrite the hash. The nonce fix is confirmed correct end-to-end
+(feeEntrypointOptions.txNonce -> meta-payment -> wrapExecutionPayload ->
+EncodedAppEntrypointCalls.create).
+
+NITs:
+- (fixed) `claim_present` zero-scanned `claimed_outer_hash` — Fr(0) is a valid
+  hash, so "all zero" must not mean "not received". Replaced with an explicit
+  `claimed_outer_hash_received` state bit (set in handler_finalize_deploy_and_sign,
+  cleared by l4_session_reset). Pre-existing M7 P3 issue; hardened now.
+- (accepted) feePaymentMethodOptions + cancellable aren't hash-bound (only
+  txNonce is) — they're harmless belt-and-suspenders, left explicit.
+- (documented) chainInfo comes from the framework's internal getChainInfo() per
+  request() pass, not our cached value — a theoretical mid-flight chainId/version
+  drift between passes. Operationally a non-issue within a sub-second deploy;
+  noted as the one remaining (benign) drift edge.
+
 ## Pending to close Phase 6
 
 1. **Codex review of 6c** (the device wiring).

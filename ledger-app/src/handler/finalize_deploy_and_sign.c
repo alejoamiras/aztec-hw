@@ -113,6 +113,7 @@ int handler_finalize_deploy_and_sign(buffer_t *cdata) {
     if (!l4_fr_is_canonical(G_l4_deploy_session.claimed_outer_hash)) {
         return reject(SW_HASH_MISMATCH);
     }
+    G_l4_deploy_session.claimed_outer_hash_received = true;
 
     /* The actual sign step waits for user approval; the UI flow was
      * already entered from BEGIN_DEPLOY_ACCOUNT (review screen visible).
@@ -126,19 +127,11 @@ int handler_finalize_deploy_and_sign(buffer_t *cdata) {
 }
 
 int finalize_deploy_after_approval(void) {
-    /* Without an outer_hash claim we have nothing to sign. The host
-     * MUST have streamed FINALIZE before user-approve so this slot
-     * is populated; otherwise we reject. (In practice the host
-     * sequences BEGIN → FINALIZE → user-approve, but checking is cheap
-     * and the cost of approving an empty claim is non-zero.) */
-    bool claim_present = false;
-    for (size_t i = 0; i < L4_FR_BYTES; i++) {
-        if (G_l4_deploy_session.claimed_outer_hash[i] != 0) {
-            claim_present = true;
-            break;
-        }
-    }
-    if (!claim_present) {
+    /* Without an outer_hash claim we have nothing to sign. The host MUST stream
+     * FINALIZE before user-approve so the slot is populated; otherwise reject.
+     * Use the explicit state bit, not a zero-scan: Fr(0) is a valid canonical
+     * hash and must not be conflated with "not received" (codex P6d review). */
+    if (!G_l4_deploy_session.claimed_outer_hash_received) {
         return reject(SW_HASH_MISMATCH);
     }
 
