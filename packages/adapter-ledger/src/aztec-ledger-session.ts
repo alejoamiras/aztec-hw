@@ -8,10 +8,12 @@
  *  - Pinned contract instances for the demo (USDC, Dripper, SponsoredFPC).
  *
  * Two submission paths:
- *  1. `deployAccount()` — uses the framework's standard `BaseWallet.sendTx`
- *     path. Random `txNonce` is fine because the user blind-signs the deploy
- *     outer_hash once on-device. This matches every other Aztec wallet's
- *     first-time UX.
+ *  1. `deployAccount()` — two-pass CLEAR-signed deploy (M8). A spy auth
+ *     provider captures the framework's deploy outer_hash; the device verifies
+ *     its own publicKeysHash + address + recomputes the outer_hash (P6), signs;
+ *     a FrozenAuthWitnessProvider replays the device witness on the second
+ *     `request()`. The deploy authwit nonce is PINNED (feeEntrypointOptions.
+ *     txNonce) so both passes + the device agree on the hash.
  *  2. `submitClearSignedIntent(exec)` — bypasses `BaseWallet.sendTx` (which
  *     hardcodes `txNonce: Fr.random()` at base_wallet.ts:180) and runs the
  *     9-step recipe to pre-sign on-device with clear-signing, then hand
