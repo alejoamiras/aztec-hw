@@ -48,6 +48,10 @@ static void fr_inverse(fr_t *out, const fr_t *a) {
     }
   }
   fr_set(out, &result);
+  /* M8 P7.0: base = a = the (secret-derived) Z coordinate; result accumulates a
+   * function of it. Scrub both before return. */
+  grumpkin_secure_wipe(&result, sizeof(result));
+  grumpkin_secure_wipe(&base, sizeof(base));
 }
 
 /* ---- point operations -------------------------------------------------- */
@@ -118,6 +122,19 @@ void grumpkin_point_double(grumpkin_point_t *out, const grumpkin_point_t *p) {
   fr_set(&out->x, &X3);
   fr_set(&out->y, &Y3);
   fr_set(&out->z, &Z3);
+
+  /* M8 P7.0: scrub the secret-derived doubling temporaries. */
+  grumpkin_secure_wipe(&A, sizeof(A));
+  grumpkin_secure_wipe(&B, sizeof(B));
+  grumpkin_secure_wipe(&C, sizeof(C));
+  grumpkin_secure_wipe(&D, sizeof(D));
+  grumpkin_secure_wipe(&E, sizeof(E));
+  grumpkin_secure_wipe(&F, sizeof(F));
+  grumpkin_secure_wipe(&X3, sizeof(X3));
+  grumpkin_secure_wipe(&Y3, sizeof(Y3));
+  grumpkin_secure_wipe(&Z3, sizeof(Z3));
+  grumpkin_secure_wipe(&t0, sizeof(t0));
+  grumpkin_secure_wipe(&t1, sizeof(t1));
 }
 
 void grumpkin_point_add_affine(grumpkin_point_t *out, const grumpkin_point_t *p, const fr_t *qx,
@@ -148,6 +165,13 @@ void grumpkin_point_add_affine(grumpkin_point_t *out, const grumpkin_point_t *p,
       /* p == −Q → infinity. */
       grumpkin_point_set_infinity(out);
     }
+    /* M8 P7.0: scrub the temporaries live on this early-return path. */
+    grumpkin_secure_wipe(&Z1Z1, sizeof(Z1Z1));
+    grumpkin_secure_wipe(&U2, sizeof(U2));
+    grumpkin_secure_wipe(&S2, sizeof(S2));
+    grumpkin_secure_wipe(&H, sizeof(H));
+    grumpkin_secure_wipe(&r, sizeof(r));
+    grumpkin_secure_wipe(&t0, sizeof(t0));
     return;
   }
 
@@ -181,6 +205,22 @@ void grumpkin_point_add_affine(grumpkin_point_t *out, const grumpkin_point_t *p,
   fr_set(&out->x, &X3);
   fr_set(&out->y, &Y3);
   fr_set(&out->z, &Z3);
+
+  /* M8 P7.0: scrub the secret-derived mixed-add temporaries. */
+  grumpkin_secure_wipe(&Z1Z1, sizeof(Z1Z1));
+  grumpkin_secure_wipe(&U2, sizeof(U2));
+  grumpkin_secure_wipe(&S2, sizeof(S2));
+  grumpkin_secure_wipe(&H, sizeof(H));
+  grumpkin_secure_wipe(&HH, sizeof(HH));
+  grumpkin_secure_wipe(&I, sizeof(I));
+  grumpkin_secure_wipe(&J, sizeof(J));
+  grumpkin_secure_wipe(&r, sizeof(r));
+  grumpkin_secure_wipe(&V, sizeof(V));
+  grumpkin_secure_wipe(&X3, sizeof(X3));
+  grumpkin_secure_wipe(&Y3, sizeof(Y3));
+  grumpkin_secure_wipe(&Z3, sizeof(Z3));
+  grumpkin_secure_wipe(&t0, sizeof(t0));
+  grumpkin_secure_wipe(&t1, sizeof(t1));
 }
 
 bool grumpkin_point_to_affine_be(uint8_t out_x[32], uint8_t out_y[32], const grumpkin_point_t *p) {
@@ -197,6 +237,11 @@ bool grumpkin_point_to_affine_be(uint8_t out_x[32], uint8_t out_y[32], const gru
   fr_mul(&y, &p->y, &zinv3);
   fr_to_bytes_be(out_x, &x);
   fr_to_bytes_be(out_y, &y);
+  /* M8 P7.0: zinv* are functions of the secret-derived Z; scrub them. (x,y are
+   * the public output coords, written to out_x/out_y.) */
+  grumpkin_secure_wipe(&zinv, sizeof(zinv));
+  grumpkin_secure_wipe(&zinv2, sizeof(zinv2));
+  grumpkin_secure_wipe(&zinv3, sizeof(zinv3));
   return true;
 }
 

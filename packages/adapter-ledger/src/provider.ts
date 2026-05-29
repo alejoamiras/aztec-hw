@@ -85,8 +85,10 @@ export class LedgerProvider {
    * Takes an autoConfirm hook because — unlike GET_PUBLIC_KEY — the reveal
    * gates on user approval (Speculos drives it in tests).
    *
-   * Derivation (see master-secret.ts for the host reference + spec):
-   *   secret = SHA-512("aztec-master-secret-v1\0" ‖ pubkey_x ‖ pubkey_y) mod Fr
+   * Derivation (see master-secret.ts for the host reference + spec). The device
+   * hashes the PRIVATE child key, not the pubkey — hashing the pubkey would let
+   * a host read the reveal input via GET_PUBLIC_KEY and bypass the gate:
+   *   secret = SHA-512("aztec-master-secret-v1\0" ‖ privkey_d(32)) mod Fr
    */
   async getAztecMasterSecret(
     bip32Path: readonly number[],

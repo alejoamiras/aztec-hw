@@ -2,9 +2,11 @@
  * INS_GET_AZTEC_MASTER_SECRET (M8 P4).
  *
  * Derives the 32-byte Aztec master secret (an Fr) from the BIP-32 secp256k1
- * child pubkey:
+ * child PRIVATE key (hashing the PRIVATE key, not the pubkey, is what keeps the
+ * reveal gate meaningful — GET_PUBLIC_KEY would otherwise leak the input and
+ * let a host bypass this screen; see aztec_secret.c + codex P4 review):
  *
- *   secret = SHA-512(DOMAIN || pubkey_x(32) || pubkey_y(32)) mod Fr
+ *   secret = SHA-512(DOMAIN || privkey_d(32)) mod Fr   (55-byte preimage)
  *   DOMAIN = "aztec-master-secret-v1" + one NUL byte (23 bytes total)
  *
  * Fr is the BN254 scalar field (poseidon2 fr_t / AZ_FR_P, 0x...f0000001) --

@@ -57,5 +57,11 @@ bool grumpkin_scalar_mul_generator(uint8_t out_x[32], uint8_t out_y[32],
     }
   }
 
-  return grumpkin_point_to_affine_be(out_x, out_y, &acc);
+  bool ok = grumpkin_point_to_affine_be(out_x, out_y, &acc);
+  /* M8 P7.0: scrub the secret-derived accumulator + addend before return. The
+   * caller (account_derive.c) wipes the scalar; these are the [k_partial]·G
+   * points that would otherwise persist on the stack past the APDU. */
+  grumpkin_secure_wipe(&acc, sizeof(acc));
+  grumpkin_secure_wipe(&tmp, sizeof(tmp));
+  return ok;
 }

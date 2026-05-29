@@ -38,9 +38,25 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "../poseidon2/fr.h"
+
+/**
+ * Zero a secret-bearing EC stack temporary. A `volatile` byte loop the compiler
+ * may not elide (dead-store elimination can drop a plain `memset`). Used instead
+ * of `explicit_bzero` because these sources are ALSO host-compiled
+ * (`tests/grumpkin_host`) under `-std=c11 -Werror`, where `explicit_bzero` is
+ * not declared by `<string.h>` and would be an implicit-declaration error.
+ * Identical behaviour on device and host. (M8 P7.0 — impl-audit `bb56tmdxj`:
+ * scrub the scalar-mult/inversion temporaries so no secret-derived value
+ * survives the APDU on the stack.)
+ */
+static inline void grumpkin_secure_wipe(void *p, size_t n) {
+  volatile unsigned char *vp = (volatile unsigned char *)p;
+  while (n-- > 0) *vp++ = 0;
+}
 
 /** Jacobian Grumpkin point over the base field (= poseidon2 `fr_t`). */
 typedef struct {

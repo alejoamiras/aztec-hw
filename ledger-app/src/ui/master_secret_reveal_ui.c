@@ -93,8 +93,8 @@ int ui_display_master_secret_reveal(void) {
                        &g_pair_list,
                        &MS_REVEAL_ICON,
                        "Reveal Aztec viewing key",
-                       "This exposes note visibility, not spending",
-                       "Reveal viewing key for this account?",
+                       "Lets this computer see your notes. Not spending.",
+                       "Reveal viewing key to this computer?",
                        on_reveal_choice);
     return 0;
 }
