@@ -51,6 +51,10 @@ The device now recomputes its OWN account address at FINALIZE and cross-checks i
 ## smoke.e2e fix (M9 A staleness)
 M9 A's deployed-detection correctly HIDES the Deploy button for an on-chain account, but smoke.e2e blocked 15min on `deployBtn.click()`. FIX: skip Deploy when `count()===0` → proceed to Drip (still exercises FINALIZE → B3). Drip is the cleanest B3 test (consumer check is the sole gate).
 
-## Validation
+## Validation — COMPLETE (committed f8811be, tagged safe-v6)
 - Device builds clean (nanos2, -Werror); host tsc + biome clean; adapter unit tests 85 pass / 0 fail (canonical-path tightening broke nothing).
-- smoke.e2e (B3 drip → FINALIZE → cross-check ×2) in flight (task bp2zqi0dj). Earlier v1 smoke confirmed the recompute is correct (transfer/drip signed, no 0x6F12).
+- Full e2e matrix GREEN on the final B3 elf (f8811be):
+  - **smoke.e2e**: CONNECT OK → DERIVE OK → DEPLOY SKIPPED (M9 A) → **DRIP OK**, no 0x6F12, 0 console/page errors. Drip went through FINALIZE → B3 cross-check ×2 (pre-UI + pre-sign) → device signed → tx included. Proves the recompute is byte-correct AND consumer == account (self-spend).
+  - **onboard.e2e**: 13.5s, `0x0aa630…773b`.
+  - **reconnect.e2e**: 26.6s, addrA == addrB (wipe→reconnect reproduces the same account — recovery intact).
+- NOTE: B3's REJECTION path (0x6F12 on a deliberately mismatched consumer) is not yet e2e-covered — happy path only. Deferred follow-up (would need a crafted-consumer authwit against Speculos).
