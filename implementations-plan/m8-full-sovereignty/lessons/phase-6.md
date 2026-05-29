@@ -222,8 +222,23 @@ build it. User pushed; Docker was started; the wall came down.
 So the entire M8 device crypto — Grumpkin EC, master-secret + viewing-key
 derivation, publicKeysHash, address, the verification gates, the reveal INS —
 RUNS correctly on the emulated Nano S+, not merely host-parity. Per-test bun
-timeout must be raised (`--timeout 60000`); the reveal compute + UI nav under
+timeout must be raised (`--timeout 90000`); the reveal compute + UI nav under
 amd64 emulation exceeds the 5s default.
+
+**FULL happy path also validated (path A complete).** `provider.m8.test.ts`:
+- positive BEGIN accept — a fully-correct ctx (publicKeysHash + address derived
+  from the device's revealed secret + signing pubkey via the genuine Aztec
+  instance derivation) is ACCEPTED. Proves device-derivation == Aztec reference
+  for the real emulator seed, BOTH stages (the positive counterpart to the
+  0x6F0F / 0x6F0E rejects).
+- BEGIN → FINALIZE → deploy-review UI (navigated) → device SIGNS → the returned
+  ECDSA sig VERIFIES over sha256(outer_hash) against the device signing pubkey
+  (the EcdsaKAccount in-circuit check). End-to-end deploy authorization.
+- 6d gate — FINALIZE with a wrong claimed_outer_hash → device recomputes the
+  real one + refuses to sign → 0x6F01.
+Full adapter-ledger suite (host parity + Speculos device): 99 pass / 1 skip /
+0 fail / 4901 expect, 19 files. NBGL approvers use hardcoded right-press counts
+(reveal=4, deploy=5); the screen-aware variant raced the renderer.
 
 ## Pending to close Phase 6 / M8
 
