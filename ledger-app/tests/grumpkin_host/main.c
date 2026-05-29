@@ -17,6 +17,7 @@
 #include "../../src/crypto/grumpkin/mul_generator.h"
 #include "../../src/crypto/grumpkin/point.h"
 #include "../../src/l4/account_keys.h"
+#include "../../src/l4/deploy_outer_hash.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -188,11 +189,43 @@ static int mode_address(int argc, char **argv) {
   return 0;
 }
 
+/* deploy-outer-hash <consumer> <chain> <version> <tx_nonce> <sponsor_fpc> (5 hex32)
+ * <selector_u32_decimal> -> deploy authwit outer_hash. Exercises
+ * az_deploy_compute_outer_hash (M8 P6d). */
+static int mode_deploy_outer_hash(int argc, char **argv) {
+  if (argc != 6) {
+    fprintf(stderr, "deploy-outer-hash needs consumer chain version tx_nonce fpc (5 hex32) + selector_u32\n");
+    return 2;
+  }
+  uint8_t consumer[32], chain[32], version[32], tx_nonce[32], fpc[32];
+  if (parse_hex32(argv[0], consumer) != 0 || parse_hex32(argv[1], chain) != 0 ||
+      parse_hex32(argv[2], version) != 0 || parse_hex32(argv[3], tx_nonce) != 0 ||
+      parse_hex32(argv[4], fpc) != 0) {
+    fprintf(stderr, "bad hex32 input\n");
+    return 2;
+  }
+  char *end = NULL;
+  unsigned long sel = strtoul(argv[5], &end, 10);
+  if (end == argv[5] || sel > 0xffffffffUL) {
+    fprintf(stderr, "bad selector u32\n");
+    return 2;
+  }
+  uint8_t out[32];
+  if (az_deploy_compute_outer_hash(consumer, chain, version, tx_nonce, fpc, (uint32_t)sel, out) !=
+      0) {
+    fprintf(stderr, "deploy outer_hash failed\n");
+    return 2;
+  }
+  print_hex32(out);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     fprintf(stderr,
             "usage: %s mul <hex32>... | fq-wide-reduce <hex128> | "
-            "pubkeys-hash <8 hex32> | address <4 hex32> | smoke\n",
+            "pubkeys-hash <8 hex32> | address <4 hex32> | "
+            "deploy-outer-hash <5 hex32> <selector_u32> | smoke\n",
             argv[0]);
     return 1;
   }
@@ -200,6 +233,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "fq-wide-reduce") == 0) return mode_fq_wide_reduce(argc - 2, argv + 2);
   if (strcmp(argv[1], "pubkeys-hash") == 0) return mode_pubkeys_hash(argc - 2, argv + 2);
   if (strcmp(argv[1], "address") == 0) return mode_address(argc - 2, argv + 2);
+  if (strcmp(argv[1], "deploy-outer-hash") == 0) return mode_deploy_outer_hash(argc - 2, argv + 2);
   if (strcmp(argv[1], "smoke") == 0) return mode_smoke();
   fprintf(stderr, "unknown mode: %s\n", argv[1]);
   return 1;

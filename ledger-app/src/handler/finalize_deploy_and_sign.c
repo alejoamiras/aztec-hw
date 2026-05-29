@@ -28,6 +28,7 @@
 #include "../l4/wire.h"
 #include "../l4/deploy_address.h"
 #include "../l4/account_derive.h"
+#include "../l4/deploy_outer_hash.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
 #include "nbgl_use_case.h"
@@ -213,6 +214,30 @@ int finalize_deploy_after_approval(void) {
     }
     explicit_bzero(p6_pkh, 32);
     explicit_bzero(p6_addr, 32);
+
+    /* --- M8 P6d: recompute the deploy authwit outer_hash from device-authored
+     * values and verify it against the host claim BEFORE signing. The deploy
+     * authwit is the account entrypoint wrapping one sponsor_unconditionally()
+     * call; the device reconstructs it from the device-verified address
+     * (consumer = address_local), the manifest-pinned sponsor FPC + selector,
+     * and the session chain/version/tx_nonce. This closes the last blind-sign:
+     * the device now signs a hash it authored, not one the host asserted. */
+    uint8_t recomputed_outer[L4_FR_BYTES];
+    if (az_deploy_compute_outer_hash(G_l4_deploy_session.address_local,
+                                     G_l4_deploy_session.chain_id,
+                                     G_l4_deploy_session.protocol_version,
+                                     G_l4_deploy_session.tx_nonce,
+                                     profile->sponsor_fpc_address,
+                                     profile->sponsor_selector_u32,
+                                     recomputed_outer) != 0) {
+        explicit_bzero(recomputed_outer, sizeof(recomputed_outer));
+        return reject(SWO_UNKNOWN);
+    }
+    if (ct_memcmp32(recomputed_outer, G_l4_deploy_session.claimed_outer_hash) != 0) {
+        explicit_bzero(recomputed_outer, sizeof(recomputed_outer));
+        return reject(SW_HASH_MISMATCH);
+    }
+    explicit_bzero(recomputed_outer, sizeof(recomputed_outer));
 
     /* --- Sign sha256(claimed_outer_hash) with duplicate-signing -------
      * Sign the LOCAL claimed_outer_hash variable, not the mutable

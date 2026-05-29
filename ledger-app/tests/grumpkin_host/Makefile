@@ -20,6 +20,7 @@ SRCS := \
 	$(GRUMPKIN_DIR)/g1_generator.c \
 	$(GRUMPKIN_DIR)/mul_generator.c \
 	$(L4_DIR)/account_keys.c \
+	$(L4_DIR)/deploy_outer_hash.c \
 	main.c
 
 OUT := grumpkin_cli

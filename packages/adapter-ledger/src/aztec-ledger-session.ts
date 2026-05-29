@@ -305,6 +305,24 @@ export class AztecLedgerSession {
     const deployMethod = await this.accountManager.getDeployMethod();
     const chainInfo = await this.getChainInfo();
 
+    /* DETERMINISTIC deploy authwit nonce. The deploy authwit is the account
+     * entrypoint wrapping the sponsor fee call; its tx nonce defaults to
+     * `Fr.random()` inside the framework (EncodedAppEntrypointCalls.create).
+     * We MUST pin it via `feeEntrypointOptions.txNonce` and reuse the SAME
+     * value in both request() passes — otherwise the spy pass and the frozen
+     * pass would compute DIFFERENT outer_hashes and FrozenAuthWitnessProvider
+     * would reject (this was a latent bug in the two-pass flow). The device
+     * also needs this exact nonce to recompute + verify the outer_hash (P6d). */
+    const txNonce = Fr.random();
+    const deployFee = {
+      paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress),
+      feeEntrypointOptions: {
+        txNonce,
+        feePaymentMethodOptions: AccountFeePaymentMethodOptions.EXTERNAL,
+        cancellable: false,
+      },
+    };
+
     /* Pass 1: spy AuthWitnessProvider captures the framework's outer_hash. */
     step('build', 'Computing deploy outer_hash (host)…');
     let capturedHash: Fr | undefined;
@@ -318,10 +336,7 @@ export class AztecLedgerSession {
     };
     accountContract.setAuthWitnessOverride(spyProvider);
     try {
-      await deployMethod.request({
-        deployer: AztecAddress.ZERO,
-        fee: { paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress) },
-      });
+      await deployMethod.request({ deployer: AztecAddress.ZERO, fee: deployFee });
     } finally {
       accountContract.setAuthWitnessOverride(null);
     }
@@ -332,12 +347,11 @@ export class AztecLedgerSession {
       );
     }
 
-    /* Build the DeployContext for the device. Phase 6 will close the
-     * publicKeysHash + expectedAddress trust gap; in Phase 1 these are
-     * still host-supplied (matches M7 P3 trust model). */
+    /* Build the DeployContext for the device. The device re-derives + verifies
+     * publicKeysHash + address (P6c) and recomputes the deploy outer_hash from
+     * this txNonce (P6d); the host-supplied fields are cross-checked, not trusted. */
     const path = defaultDeployPath(0);
     const publicKeysHash = await this.completeAddress.publicKeys.hash();
-    const txNonce = Fr.random();
     const deployCtx: DeployContext = {
       profileId: 0, // DEPLOY_ACCOUNT_ECDSAK_V1
       bip32Path: path,
@@ -361,9 +375,12 @@ export class AztecLedgerSession {
     accountContract.setAuthWitnessOverride(frozen);
     let executionPayload: ExecutionPayload;
     try {
+      /* Same `deployFee` (incl. the pinned txNonce) as the spy pass, so the
+       * framework recomputes the identical outer_hash and the frozen provider
+       * hands back the device witness. */
       executionPayload = await deployMethod.request({
         deployer: AztecAddress.ZERO,
-        fee: { paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress) },
+        fee: deployFee,
       });
     } finally {
       accountContract.setAuthWitnessOverride(null);

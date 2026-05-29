@@ -109,13 +109,61 @@ sequential), and all 3 BOLOS prototypes against the actual Ledger SDK headers
   `claimed_outer_hash`. 6c closes protocol-key spoofing; 6d closes blind-signing
   of a bad outer hash. Building 6d next.
 
+## 6d — deploy outer_hash recompute (codex 6d consult + my parallel trace)
+
+Codex consult + my independent trace of the installed 4.2.1 deploy path
+triangulated to the same structure (codex's version-specific advice was wrong —
+it read the newer aztec-packages *clone*; I verified the installed dep):
+
+**The deploy authwit = the account entrypoint wrapping ONE `sponsor_unconditionally()`
+call** (PRIVATE, 0 args, to = sponsor FPC), same SIGNATURE_PAYLOAD / AUTHWIT_OUTER
+construction as transfers:
+- call 0: args_hash = Fr(0), selector = sponsor_selector (0x23d77f89), target =
+  sponsor_fpc, is_public = false, hide_msg_sender = false, is_static = false
+- calls 1-4: canonical padding (args_hash = poseidon2([0], PUBLIC_CALLDATA), ...)
+- consumer = the new account address = device-verified `address_local`
+- The ctor is NOT in this authwit (it rides in the multicall-wrapped payload).
+
+**TWO bugs/findings the 6d trace surfaced (both real):**
+
+1. **Installed 4.2.1 gates the self-paid path on `deployer === ZERO`** (not
+   `from === NO_FROM`, which is the newer clone). So Phase 1's `deployer: ZERO`
+   is correct; `from` isn't read. Confirmed Phase 1 is NOT broken on that axis.
+2. **LATENT PHASE 1 BUG (fixed here):** the deploy authwit nonce defaults to
+   `Fr.random()` per `request()` call (encoding.js:67). My two-pass flow (spy
+   captures hash in pass 1, frozen provider asserts it in pass 2) would get
+   DIFFERENT nonces -> FrozenWitnessMismatchError -> the deploy would throw on
+   testnet. Never caught (Phase 1 is Speculos/testnet-pending). Fix: pin a
+   deterministic `txNonce` via `fee.feeEntrypointOptions.txNonce` reused across
+   BOTH passes (and fed to the device). This fixes Phase 1 AND enables 6d.
+
+**Files:**
+- `l4/deploy_outer_hash.{c,h}` (NEW, host-buildable — poseidon2 only):
+  `az_deploy_compute_outer_hash(consumer, chain, version, tx_nonce, sponsor_fpc,
+  sponsor_selector)` synthesizes the sponsor authwit + computes outer_hash.
+- `handler/finalize_deploy_and_sign.c`: after the 6c recompute, recompute the
+  deploy outer_hash from device-authored values + compare to claimed_outer_hash
+  (-> SW_HASH_MISMATCH) BEFORE signing. Closes the last blind-sign: the device
+  now signs a hash it authored.
+- `aztec-ledger-session.ts deployAccount`: deterministic txNonce via
+  feeEntrypointOptions in both passes (the Phase 1 fix + 6d enabler).
+- `grumpkin_host` CLI `deploy-outer-hash` mode + `deploy-outer-hash-parity.test.ts`:
+  16 random vectors, device byte-exact vs the REAL @aztec
+  DefaultAccountEntrypoint.wrapExecutionPayload (computed offline, no node).
+
+**Validation:** full M8 suite 18 pass / 1091 expect; typecheck clean. The
+device deploy outer_hash matches the genuine entrypoint for 16 vectors + the
+sponsor selector matches the manifest pin.
+
+**Security framing (codex + me agree):** 6d is defense-in-depth + restores the
+"device authors the signed hash" invariant — not a brand-new hard boundary (a
+bogus outer_hash is also caught by the frozen-witness pass-2 on host, or fails
+on-chain). The hard sovereignty boundary is 6c (protocol-key spoofing).
+
 ## Pending to close Phase 6
 
 1. **Codex review of 6c** (the device wiring).
-2. **6d — deploy outer_hash recompute** (Phase 1 deferred): FINALIZE must
-   reconstruct the canonical deploy call list (init + sponsor) from device-
-   authored values and recompute outer_hash, comparing to claimed_outer_hash
-   before signing. Codex P6 design #5: ship in this phase.
+2. ~~6d — deploy outer_hash recompute~~ DONE (see 6d section above).
 3. **Speculos integration**: deploy flow end-to-end + adversarial (swap
    publicKeysHash / expected_address → device rejects at the right SW). Plus the
    Phase 4/6 BOLOS-symbol checks (cx_hash_sha512, bip32_derive_init_privkey_256,
