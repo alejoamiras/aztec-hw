@@ -52,8 +52,7 @@
 #define VC_PAIR_CAPACITY 32u
 
 /* Static label/value string pools. RAM cost ~4 KB. */
-static char g_path_str[160];
-static char g_account_str[80];
+static char g_account_str[80]; /* "0x" + 64 hex + NUL = 67 */
 static char g_chain_str[80];
 static char g_calls_count_str[16];
 static char g_outer_str[80];
@@ -94,6 +93,21 @@ static void short_hex_field(char *out, size_t out_len, const uint8_t bytes[32]) 
     hex_n(out + 13, bytes + 28, 4);
 }
 
+/* M9 B3: full 0x + 64-hex address for the verified `From` header (address-first
+ * — humans verify an account by its whole address, not a truncated prefix that
+ * could be ground to collide). NBGL wraps the value across lines on small
+ * screens. */
+static void full_hex_address(char *out, size_t out_len, const uint8_t bytes[32]) {
+    if (out_len < 67) {
+        out[0] = '\0';
+        return;
+    }
+    out[0] = '0';
+    out[1] = 'x';
+    hex_n(out + 2, bytes, 32);
+}
+
+/* Small Fr (chain id / version) → "0x.. (N)"; large → short hex. */
 static void fr_as_u32_or_hex(char *out, size_t out_len, const uint8_t bytes[32]) {
     bool fits = true;
     for (int i = 0; i < 28; i++) {
@@ -106,25 +120,6 @@ static void fr_as_u32_or_hex(char *out, size_t out_len, const uint8_t bytes[32])
     } else {
         short_hex_field(out, out_len, bytes);
     }
-}
-
-static bool format_bip32_path(char *out, size_t out_len) {
-    if (out_len < 2) return false;
-    out[0] = 'm';
-    out[1] = '\0';
-    size_t cur = 1;
-    for (size_t i = 0; i < G_l4_session.bip32_path_len; i++) {
-        const uint32_t p = G_l4_session.bip32_path[i];
-        const uint32_t v = p & 0x7FFFFFFFu;
-        const char *suffix = (p & 0x80000000u) ? "'" : "";
-        if (cur >= out_len) return false;
-        const size_t avail = out_len - cur;
-        const int n = snprintf(out + cur, avail, "/%u%s", (unsigned)v, suffix);
-        if (n < 0) return false;
-        if ((size_t)n >= avail) return false;
-        cur += (size_t)n;
-    }
-    return true;
 }
 
 static void format_mode(char *out, size_t out_len, uint8_t flags) {
@@ -271,20 +266,24 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
 }
 
 int ui_display_verified_calls(void) {
-    if (!format_bip32_path(g_path_str, sizeof(g_path_str))) {
-        return finalize_rejected();
-    }
-    short_hex_field(g_account_str, sizeof(g_account_str), G_l4_session.consumer);
+    /* M9 B3: lead with the device-VERIFIED account address as `From` (full
+     * 0x+64-hex, address-first). FINALIZE already cross-checked
+     * G_l4_session.consumer == this account's recomputed address, so this is a
+     * device-proven value, not a host claim. The raw BIP-32 path is dropped
+     * (humans verify the account by its address, not its derivation path), but
+     * `Chain` stays so the user can still spot a "right tx, wrong chain"
+     * mismatch (codex post-impl MEDIUM); the outer_hash pair at the tail covers
+     * paranoid byte-level checks. */
+    full_hex_address(g_account_str, sizeof(g_account_str), G_l4_session.consumer);
     fr_as_u32_or_hex(g_chain_str, sizeof(g_chain_str), G_l4_session.chain_id);
     snprintf(g_calls_count_str, sizeof(g_calls_count_str), "%u",
              (unsigned)G_l4_session.call_count);
     short_hex_field(g_outer_str, sizeof(g_outer_str), G_l4_session.outer_hash);
 
     size_t n_pairs = 0;
-    g_pairs[n_pairs].item = "Path";     g_pairs[n_pairs].value = g_path_str;        n_pairs++;
-    g_pairs[n_pairs].item = "Account";  g_pairs[n_pairs].value = g_account_str;     n_pairs++;
-    g_pairs[n_pairs].item = "Chain";    g_pairs[n_pairs].value = g_chain_str;       n_pairs++;
-    g_pairs[n_pairs].item = "Calls";    g_pairs[n_pairs].value = g_calls_count_str; n_pairs++;
+    g_pairs[n_pairs].item = "From (verified)"; g_pairs[n_pairs].value = g_account_str;     n_pairs++;
+    g_pairs[n_pairs].item = "Chain";           g_pairs[n_pairs].value = g_chain_str;       n_pairs++;
+    g_pairs[n_pairs].item = "Calls";           g_pairs[n_pairs].value = g_calls_count_str; n_pairs++;
 
     for (uint8_t i = 0; i < G_l4_session.call_count && n_pairs + 5 <= VC_PAIR_CAPACITY; i++) {
         n_pairs += render_call_pairs(i, n_pairs);

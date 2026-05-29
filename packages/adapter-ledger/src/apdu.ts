@@ -126,6 +126,29 @@ export function defaultAztecPath(account = 0): readonly number[] {
   return [hardened(44), AZTEC_COIN_TYPE_HARDENED, hardened(account), 0x0000_0000, 0x0000_0000];
 }
 
+/**
+ * Assert a BIP-32 path is the exact canonical Aztec shape
+ * `m/44'/AZTEC'/<acct>'/0/0` that the device enforces (M9 B3 — the reveal,
+ * deploy AND authwit handlers all reject anything else with 0x6F03). Throwing
+ * here lets the host fail fast with a legible message instead of bouncing off
+ * an opaque device status word (codex post-impl LOW: the encoder previously
+ * accepted 5..10 components, drifting from the device's exact-5 requirement).
+ */
+export function assertCanonicalAztecPath(path: readonly number[]): void {
+  const ok =
+    path.length === 5 &&
+    path[0] === hardened(44) &&
+    path[1] === AZTEC_COIN_TYPE_HARDENED &&
+    ((path[2] ?? 0) & 0x8000_0000) !== 0 && // account component hardened (undefined → fails)
+    path[3] === 0x0000_0000 &&
+    path[4] === 0x0000_0000;
+  if (!ok) {
+    throw new Error(
+      `bip32 path must be canonical m/44'/AZTEC'/<acct>'/0/0, got [${path.join(', ')}]`,
+    );
+  }
+}
+
 export interface AzManifestHeader {
   /** Bumps when the manifest wire layout changes. Device rejects unknown versions. */
   readonly manifestVersion: number;

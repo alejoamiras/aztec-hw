@@ -222,7 +222,16 @@ test('demo browser smoke', async ({ page }) => {
       console.log('\n=== SKIPPING DEPLOY (Connect did not succeed) ===\n');
       return;
     }
+    /* M9 A: an already-deployed account hides the Deploy button (AccountPanel
+     * shows "✓ on-chain"). The deterministic salt means the demo account stays
+     * deployed on testnet across runs, so Deploy is normally absent here — only
+     * drive it when present, otherwise proceed straight to Drip (which still
+     * exercises the FINALIZE/authwit path, incl. the M9 B3 consumer check). */
     const deployBtn = page.getByRole('button', { name: 'Deploy account' });
+    if ((await deployBtn.count()) === 0) {
+      console.log('\n=== DEPLOY SKIPPED (account already on-chain, M9 A) ===\n');
+      return;
+    }
     await deployBtn.click();
     const deployScreens: string[] = [];
     const confirmPromise = autoConfirmSpeculos(120_000, deployScreens);

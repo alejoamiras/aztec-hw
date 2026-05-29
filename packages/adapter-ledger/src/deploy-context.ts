@@ -20,7 +20,14 @@
  * FINALIZE_DEPLOY_AND_SIGN only adds claimed_outer_hash.
  */
 
-import { CURVE_ID, defaultAztecPath, FR_BYTES, MANIFEST_VERSION, PATH_SCHEME } from './apdu.ts';
+import {
+  assertCanonicalAztecPath,
+  CURVE_ID,
+  defaultAztecPath,
+  FR_BYTES,
+  MANIFEST_VERSION,
+  PATH_SCHEME,
+} from './apdu.ts';
 
 export interface DeployContext {
   /** Index into CS_DEPLOY_PROFILES — must match the manifest. v0: 0. */
@@ -44,9 +51,9 @@ export function encodeBeginDeployAccountBody(ctx: DeployContext): Uint8Array {
   if (!Number.isInteger(ctx.profileId) || ctx.profileId < 0 || ctx.profileId > 0xff) {
     throw new Error(`profileId must be a uint8, got ${ctx.profileId}`);
   }
-  if (ctx.bip32Path.length < 5 || ctx.bip32Path.length > 10) {
-    throw new Error(`deploy bip32 path must be 5..10 components, got ${ctx.bip32Path.length}`);
-  }
+  /* M9 B3 (codex post-impl LOW): match the device's canonical-path requirement
+   * host-side (BEGIN_DEPLOY_ACCOUNT rejects non-canonical with 0x6F03). */
+  assertCanonicalAztecPath(ctx.bip32Path);
   for (const f of [
     ctx.chainId,
     ctx.protocolVersion,

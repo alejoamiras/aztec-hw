@@ -25,6 +25,7 @@ import {
   type AzCall,
   type AzKeyPath,
   type AzManifestHeader,
+  assertCanonicalAztecPath,
   CALL_FLAG,
   CURVE_ID,
   FR_BYTES,
@@ -211,9 +212,10 @@ export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manif
 /** Serialize an `AzManifestHeader` to the wire bytes BEGIN_AUTHWIT expects. */
 export function encodeBeginAuthwitBody(header: AzManifestHeader): Uint8Array {
   const { key } = header;
-  if (key.path.length < 5 || key.path.length > 10) {
-    throw new Error(`L4 bip32 path must be 5..10 components, got ${key.path.length}`);
-  }
+  /* M9 B3 (codex post-impl LOW): the device's BEGIN_AUTHWIT now requires the
+   * exact canonical path; match it host-side so a bad path fails fast here
+   * rather than as an opaque 0x6F03 from the device. */
+  assertCanonicalAztecPath(key.path);
   const out = new Uint8Array(1 + 1 + 1 + 1 + key.path.length * 4 + FR_BYTES * 4 + 1);
   let off = 0;
   out[off++] = header.manifestVersion;

@@ -55,6 +55,14 @@ int handler_begin_authwit(buffer_t *cdata) {
     if (G_l4_session.bip32_path[1] != AZTEC_COIN_TYPE_HARDENED) {
         return reject(SW_INVALID_PATH_SCHEME);
     }
+    /* M9 B3: the authwit now drives the device-VERIFIED `From` (FINALIZE
+     * recomputes this account's address from the path and cross-checks it
+     * against `consumer`). Enforce the full canonical shape
+     * m/44'/AZTEC'/<acct>'/0/0 — same gate as deploy/reveal (codex MAJOR). */
+    if (path_len != 5u || (G_l4_session.bip32_path[2] & 0x80000000u) == 0u ||
+        G_l4_session.bip32_path[3] != 0u || G_l4_session.bip32_path[4] != 0u) {
+        return reject(SW_INVALID_PATH_SCHEME);
+    }
 
     if (!buffer_read_bytes(cdata, G_l4_session.consumer, L4_FR_BYTES)) {
         return reject(SWO_WRONG_DATA_LENGTH);

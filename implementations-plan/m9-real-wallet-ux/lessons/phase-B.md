@@ -34,5 +34,23 @@ All 3 findings folded + validated:
 
 Validation: clean nanos2 build (only the 2 handlers recompiled); **onboard.e2e green 13.3s, same `0x0aa630…`** — the canonical gate ACCEPTS the legit `defaultAztecPath(0)` (= `[44',AZTEC',0',0,0]`); a non-canonical path now rejects by construction. tsc + biome clean on the 2 host files. codex "looks sound" on A1 cache-by-pubkey, no `default`-cache reuse, A3 gate semantics.
 
-## Pending audits
-- B3 needs its own codex post-impl audit after implementation.
+## B3 — IMPLEMENTED (device-verified `From`)
+The device now recomputes its OWN account address at FINALIZE and cross-checks it against the signed `consumer`; the review leads with that verified address. NO wire change.
+- **finalize_and_sign.c**: `b3_verify_consumer_is_this_account()` = derive secp256k1 signing pubkey from `G_l4_session.bip32_path` → `az_deploy_compute_partial_address(…, salt=Fr.ZERO, CS_DEPLOY_PROFILES[0])` → `az_account_derive_from_path(path, partial, pkh, addr)` → `ct_memcmp32(addr, consumer)`; reject `SW_AUTHWIT_CONSUMER_MISMATCH (0x6F12)`. Mirrors the proven deploy Phase-6. All intermediates `explicit_bzero`'d.
+- **begin_authwit.c**: enforce canonical `m/44'/AZTEC'/<acct>'/0/0` (matches the other handlers).
+- **verified_calls_ui.c**: header leads with `From (verified)` = full 0x+64-hex of `consumer`; dropped raw `Path`.
+- **Security value**: for **drip** (not a 4-arg transfer), `from==consumer` is NOT checked at APPEND_CALL, so B3's `consumer==account` is the ONLY device gate proving self-spend. For transfers it's defense-in-depth.
+
+## codex post-impl audit of B3 — FOLDED (verdict CHANGES-NEEDED; session 019e75ea)
+- **MAJOR** (signer-path not rebound before signing): the pre-UI check proved `account(path)==consumer`, but signing re-reads `G_l4_session.bip32_path`; pass-3 rebinds only `consumer`. FIX: re-run `b3_verify_consumer_is_this_account()` in `finalize_after_approval()` just before the ECDSA (mirrors deploy's pre-sign Phase-6 recheck) → binds the SIGNER PATH to the verified account + forces an instruction-skip attack to bypass two sites.
+- **MEDIUM** (dropped `Chain` = UX-security regression): restored a compact `Chain` pair (kept `Path` dropped — that's the M9-B win). Replay/domain still cryptographically bound via chain_id/version inside outer_hash.
+- **MEDIUM** (profile0/zero-salt footgun): documented hard in `sw.h` — `0x6F12` means EITHER wrong consumer OR an unsupported template/salt; the device can't distinguish. All demo accounts are profile-0/zero-salt so it only fires on genuine mismatch.
+- **LOW** (host/device path drift): host encoder allowed 5..10 components; device requires exactly 5. Added `assertCanonicalAztecPath()` in `apdu.ts`, used in `encodeBeginAuthwitBody` + `encodeBeginDeployAccountBody` → host fails fast instead of opaque 0x6F03.
+- codex "looks fine": no host-TOCTOU on signed `consumer` (pass-3 signs the rechecked outer); wipe discipline OK; full-64-hex `From` is the right display.
+
+## smoke.e2e fix (M9 A staleness)
+M9 A's deployed-detection correctly HIDES the Deploy button for an on-chain account, but smoke.e2e blocked 15min on `deployBtn.click()`. FIX: skip Deploy when `count()===0` → proceed to Drip (still exercises FINALIZE → B3). Drip is the cleanest B3 test (consumer check is the sole gate).
+
+## Validation
+- Device builds clean (nanos2, -Werror); host tsc + biome clean; adapter unit tests 85 pass / 0 fail (canonical-path tightening broke nothing).
+- smoke.e2e (B3 drip → FINALIZE → cross-check ×2) in flight (task bp2zqi0dj). Earlier v1 smoke confirmed the recompute is correct (transfer/drip signed, no 0x6F12).

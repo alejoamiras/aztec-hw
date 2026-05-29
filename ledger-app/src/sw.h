@@ -27,4 +27,15 @@
 #define SW_DEPLOY_PUBKEY_HASH_MISMATCH    0x6F0F  // reserved: fires under §7 lift
 #define SW_DEPLOY_CONTEXT_TWICE           0x6F10  // BEGIN_DEPLOY_ACCOUNT sent twice in one session
 #define SW_DEPLOY_CONTEXT_WRONG_STATE     0x6F11  // BEGIN_DEPLOY before GET_VERSION or after auth
+/* M9 B3 — device-verified `From` on authwit. The device recomputes its OWN
+ * account address from the signing path (partial) + viewing keys (pkh) and
+ * cross-checks it against the signed `consumer`. Fires when they differ.
+ * v0 SCOPE CAVEAT (codex post-impl MEDIUM): the recompute assumes the sole
+ * supported account template — CS_DEPLOY_PROFILES[0] (EcdsaKAccount) with
+ * salt = Fr.ZERO. So this SW means EITHER "consumer is not the account this key
+ * controls" OR "the account uses a non-default template/salt this device build
+ * cannot verify". The device cannot tell the two apart (it has no per-account
+ * template oracle), so both fail closed here. Every demo account is profile-0 /
+ * zero-salt, so in practice this only fires on a genuine consumer mismatch. */
+#define SW_AUTHWIT_CONSUMER_MISMATCH      0x6F12
 #define SW_USER_REJECTED                  0x6985

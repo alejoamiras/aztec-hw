@@ -27,6 +27,9 @@
 #include "../l4/session.h"
 #include "../l4/wire.h"
 #include "../l4/parity.h"
+#include "../l4/deploy_address.h"
+#include "../l4/account_derive.h"
+#include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
 #include "nbgl_use_case.h"
 
@@ -77,6 +80,88 @@ static void low_s_normalize(uint8_t *s) {
     }
 }
 
+/* M9 B3: secp256k1 signing pubkey (X,Y) from the AUTHWIT session path. Mirror
+ * of begin_deploy_account.c's derive_signing_pubkey_xy, but reads
+ * G_l4_session.bip32_path. (This is the 3rd copy of the same 6-line derivation;
+ * a follow-up should unify deploy + authwit into one shared l4 helper. Kept
+ * local here to avoid destabilizing the proven deploy path in the B3 change.) */
+static int derive_signing_pubkey_xy_session(uint8_t out_x[32], uint8_t out_y[32]) {
+    uint8_t raw[65]; /* 0x04 || X(32) || Y(32) */
+    uint8_t chain_code[32];
+    cx_err_t err = bip32_derive_get_pubkey_256(CX_CURVE_256K1,
+                                               G_l4_session.bip32_path,
+                                               G_l4_session.bip32_path_len,
+                                               raw, chain_code, CX_SHA512);
+    explicit_bzero(chain_code, sizeof(chain_code));
+    if (err != CX_OK) {
+        explicit_bzero(raw, sizeof(raw));
+        return -1;
+    }
+    if (raw[0] != 0x04) {
+        explicit_bzero(raw, sizeof(raw));
+        return -1;
+    }
+    memcpy(out_x, &raw[1], 32);
+    memcpy(out_y, &raw[33], 32);
+    explicit_bzero(raw, sizeof(raw));
+    return 0;
+}
+
+/* M9 B3: recompute THIS account's address from the signing path (partial) +
+ * viewing keys (pkh) and cross-check it against the signed `consumer`. Returns
+ * the SW to reject with, or 0 on a verified match. `consumer` is the first
+ * field of outer_hash (parity.c) and is re-verified before signing (pass 3), so
+ * it cannot drift after this check — proving the account we authorize for is
+ * the one this key controls. This is the ONLY consumer gate for non-transfer
+ * verbs (drip); for transfers APPEND_CALL already pins from == consumer, so
+ * together they give from == consumer == account (self-spend only; delegated
+ * spend is rejected at APPEND_CALL with SW_DELEGATED_SPEND_UNSUPPORTED).
+ *
+ * salt = Fr.ZERO (the demo's deterministic DEFAULT_ACCOUNT_SALT), profile 0
+ * (the sole EcdsaKAccount template). An account deployed with a different
+ * salt/profile recomputes to a different address and fails closed; a glitched
+ * recompute also fails closed (reject, never a false accept). */
+static int b3_verify_consumer_is_this_account(void) {
+    static const uint8_t B3_ZERO_SALT[32] = {0};
+    const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(0);
+    if (profile == NULL) return SW_UNKNOWN_PROFILE_ID;
+
+    uint8_t pk_x[32], pk_y[32];
+    if (derive_signing_pubkey_xy_session(pk_x, pk_y) != 0) {
+        explicit_bzero(pk_x, 32);
+        explicit_bzero(pk_y, 32);
+        return SWO_UNKNOWN;
+    }
+
+    uint8_t args_hash[32], init_hash[32], partial[32];
+    int rc = az_deploy_compute_partial_address(pk_x, pk_y, profile->ctor_selector_u32,
+                                               B3_ZERO_SALT, profile->deployer,
+                                               profile->account_class_id, args_hash,
+                                               init_hash, partial);
+    explicit_bzero(pk_x, 32);
+    explicit_bzero(pk_y, 32);
+    explicit_bzero(args_hash, 32);
+    explicit_bzero(init_hash, 32);
+    if (rc != 0) {
+        explicit_bzero(partial, 32);
+        return SWO_UNKNOWN;
+    }
+
+    uint8_t pkh[32], addr[32];
+    rc = az_account_derive_from_path(G_l4_session.bip32_path, G_l4_session.bip32_path_len,
+                                     partial, pkh, addr);
+    explicit_bzero(partial, 32);
+    explicit_bzero(pkh, 32);
+    if (rc != 0) {
+        explicit_bzero(addr, 32);
+        return SWO_UNKNOWN;
+    }
+
+    int mismatch = ct_memcmp32(addr, G_l4_session.consumer);
+    explicit_bzero(addr, 32);
+    return (mismatch != 0) ? SW_AUTHWIT_CONSUMER_MISMATCH : 0;
+}
+
 int handler_finalize_and_sign(buffer_t *cdata) {
     if (G_l4_session.state != L4_CALLS_COMPLETE) return reject(SWO_INVALID_INS);
 
@@ -120,6 +205,14 @@ int handler_finalize_and_sign(buffer_t *cdata) {
     memcpy(G_l4_session.outer_hash, computed_outer, L4_FR_BYTES);
     memcpy(G_l4_session.inner_hash, computed_inner, L4_FR_BYTES);
 
+    /* M9 B3: device-VERIFIED `From`. Recompute this account's address and
+     * cross-check it against `consumer` BEFORE showing the review, so the
+     * address the UI presents as `From` is device-proven, not host-asserted. */
+    int b3_sw = b3_verify_consumer_is_this_account();
+    if (b3_sw != 0) {
+        return reject((uint16_t)b3_sw);
+    }
+
     /* UI calls finalize_after_approval / finalize_rejected on user choice. */
     return ui_display_verified_calls();
 }
@@ -136,6 +229,20 @@ int finalize_after_approval(void) {
     }
     if (ct_memcmp32(recheck_outer, G_l4_session.claimed_outer_hash) != 0) {
         return reject(SW_HASH_MISMATCH);
+    }
+
+    /* M9 B3 (codex post-impl MAJOR): re-run the consumer cross-check HERE, just
+     * before signing, not only before the UI. Pass 3 above rebinds `consumer`
+     * to outer_hash, but the signature below derives from G_l4_session.bip32_path
+     * — so without this, a fault that mutates the signer path between the
+     * pre-UI check and the signature would sign with a key we never verified
+     * against `consumer`. Re-deriving account(path) == consumer here binds the
+     * SIGNER PATH to the verified account, mirroring the deploy's pre-sign
+     * Phase-6 recheck (finalize_deploy_and_sign.c). Also forces an
+     * instruction-skip attack to bypass the gate at two distinct sites. */
+    int b3_sw = b3_verify_consumer_is_this_account();
+    if (b3_sw != 0) {
+        return reject((uint16_t)b3_sw);
     }
 
     /* Sign sha256(recheck_outer) — sign the JUST-VALIDATED local value, NOT
