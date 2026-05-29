@@ -4,7 +4,7 @@
  *
  *   - Address: 8 leading + 6 trailing hex (56 bits — codex+opus agreed,
  *     locked at approval gate; 6+4 was 40 bits / brute-forceable)
- *   - Path:    full BIP-32 path (cheaper attack than breaking secp256k1)
+ *   - Account: "#N" — the human account index (M9 B1; was the BIP-32 path)
  *   - Fee:     "Sponsored (testnet)"
  *
  * Pubkey fingerprint + class-id were deliberately dropped at approval
@@ -40,7 +40,7 @@
 #endif
 
 static char g_addr_str[32];     /* "0xAABBCCDDEEFFGGHH…IIJJKKLLMMNN" + NUL: 8+1+6+ellipsis(3)+'0x'(2)+NUL */
-static char g_path_str[128];
+static char g_account_str[16];  /* M9 B1: "#N" — the human account index, not the BIP-32 path. */
 static char g_fee_str[40];
 
 static nbgl_layoutTagValueList_t g_pair_list;
@@ -74,23 +74,13 @@ static void address_8_6(char *out, size_t out_len, const uint8_t bytes[32]) {
     out[p] = '\0';
 }
 
-static bool format_bip32_path(char *out, size_t out_len) {
-    if (out_len < 2) return false;
-    out[0] = 'm';
-    out[1] = '\0';
-    size_t cur = 1;
-    for (size_t i = 0; i < G_l4_deploy_session.bip32_path_len; i++) {
-        const uint32_t p = G_l4_deploy_session.bip32_path[i];
-        const uint32_t v = p & 0x7FFFFFFFu;
-        const char *suffix = (p & 0x80000000u) ? "'" : "";
-        if (cur >= out_len) return false;
-        const size_t avail = out_len - cur;
-        const int n = snprintf(out + cur, avail, "/%u%s", (unsigned)v, suffix);
-        if (n < 0) return false;
-        if ((size_t)n >= avail) return false;
-        cur += (size_t)n;
-    }
-    return true;
+/* M9 B1: the human account index — the hardened account component of
+ * m/44'/AZTEC'/<account>'/0/0 (component 2). The user thinks "Account #N",
+ * not in BIP-32 paths. */
+static uint32_t deploy_account_index(void) {
+    return (G_l4_deploy_session.bip32_path_len > 2)
+               ? (G_l4_deploy_session.bip32_path[2] & 0x7FFFFFFFu)
+               : 0;
 }
 
 static void on_review_choice(bool confirm) {
@@ -102,9 +92,8 @@ static void on_review_choice(bool confirm) {
 }
 
 int ui_display_deploy_review(void) {
-    if (!format_bip32_path(g_path_str, sizeof(g_path_str))) {
-        return finalize_deploy_rejected();
-    }
+    /* M9 B1: show "Account #N" instead of the BIP-32 path. */
+    snprintf(g_account_str, sizeof(g_account_str), "#%u", (unsigned)deploy_account_index());
     /* M8 P6 (codex trap #1): display the DEVICE-derived + verified address
      * (address_local), NOT the host-claimed expected_address. BEGIN already
      * proved they're equal; showing the device-authored value means the user
@@ -114,9 +103,9 @@ int ui_display_deploy_review(void) {
     snprintf(g_fee_str, sizeof(g_fee_str), "Sponsored (testnet)");
 
     size_t n = 0;
-    g_pairs[n].item = "Address"; g_pairs[n].value = g_addr_str; n++;
-    g_pairs[n].item = "Path";    g_pairs[n].value = g_path_str; n++;
-    g_pairs[n].item = "Fee";     g_pairs[n].value = g_fee_str;  n++;
+    g_pairs[n].item = "Address"; g_pairs[n].value = g_addr_str;    n++;
+    g_pairs[n].item = "Account"; g_pairs[n].value = g_account_str; n++;
+    g_pairs[n].item = "Fee";     g_pairs[n].value = g_fee_str;     n++;
 
     memset(&g_pair_list, 0, sizeof(g_pair_list));
     g_pair_list.pairs = g_pairs;

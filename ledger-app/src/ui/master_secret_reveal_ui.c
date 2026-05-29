@@ -39,28 +39,16 @@
 #define MS_REVEAL_ICON  C_app_aztec_64px
 #endif
 
-static char g_path_str[128];
+static char g_account_str[16];  /* M9 B2: "#N" — the human account index, not the path. */
 static char g_confirm_str[8];
 
 static nbgl_layoutTagValueList_t g_pair_list;
 static nbgl_layoutTagValue_t g_pairs[2];
 
-static bool format_bip32_path(char *out, size_t out_len) {
-    if (out_len < 2) return false;
-    out[0] = 'm';
-    out[1] = '\0';
-    size_t cur = 1;
-    for (uint8_t i = 0; i < G_context.bip32_path_len; i++) {
-        const uint32_t p = G_context.bip32_path[i];
-        const uint32_t v = p & 0x7FFFFFFFu;
-        const char *suffix = (p & 0x80000000u) ? "'" : "";
-        if (cur >= out_len) return false;
-        const size_t avail = out_len - cur;
-        const int n = snprintf(out + cur, avail, "/%u%s", (unsigned)v, suffix);
-        if (n < 0 || (size_t)n >= avail) return false;
-        cur += (size_t)n;
-    }
-    return true;
+/* M9 B2: the human account index — the hardened account component of
+ * m/44'/AZTEC'/<account>'/0/0 (component 2). */
+static uint32_t reveal_account_index(void) {
+    return (G_context.bip32_path_len > 2) ? (G_context.bip32_path[2] & 0x7FFFFFFFu) : 0;
 }
 
 static void on_reveal_choice(bool confirm) {
@@ -72,13 +60,12 @@ static void on_reveal_choice(bool confirm) {
 }
 
 int ui_display_master_secret_reveal(void) {
-    if (!format_bip32_path(g_path_str, sizeof(g_path_str))) {
-        return master_secret_reveal_rejected();
-    }
+    /* M9 B2: show "Account #N" (the human index) instead of the BIP-32 path. */
+    snprintf(g_account_str, sizeof(g_account_str), "#%u", (unsigned)reveal_account_index());
     snprintf(g_confirm_str, sizeof(g_confirm_str), "%s", master_secret_checksum_str());
 
     size_t n = 0;
-    g_pairs[n].item = "Path";    g_pairs[n].value = g_path_str;    n++;
+    g_pairs[n].item = "Account"; g_pairs[n].value = g_account_str; n++;
     g_pairs[n].item = "Confirm"; g_pairs[n].value = g_confirm_str; n++;
 
     memset(&g_pair_list, 0, sizeof(g_pair_list));
