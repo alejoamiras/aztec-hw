@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M8 Full Sovereignty — Phase 7 &amp; 8 in plain language</title>
+<style>
+  :root {
+    --ink: #1c1c1e;
+    --soft: #5c5c66;
+    --line: #e6e6ea;
+    --bg: #fbfbfc;
+    --accent: #3a5bd9;
+    --good: #2e7d52;
+    --warn: #9a6a00;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.65;
+    margin: 0;
+    padding: 0 1.25rem;
+  }
+  main { max-width: 46rem; margin: 0 auto; padding: 3.5rem 0 6rem; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
+  h2 {
+    font-size: 1.3rem; margin: 3rem 0 0.8rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--line); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 1.02rem; margin: 1.8rem 0 0.3rem; }
+  p, li { color: var(--ink); }
+  .lede { font-size: 1.15rem; color: var(--soft); margin: 0.5rem 0 0; }
+  .tag {
+    display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--accent); background: #eef1fd;
+    padding: 0.15rem 0.5rem; border-radius: 999px; margin-bottom: 1.2rem;
+  }
+  .soft { color: var(--soft); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.1rem 1.3rem; margin: 1rem 0;
+  }
+  .why {
+    border-left: 3px solid var(--accent); background: #f6f8ff;
+    padding: 0.6rem 1rem; margin: 0.8rem 0; border-radius: 0 8px 8px 0;
+  }
+  .why strong { color: var(--accent); }
+  .flag {
+    border-left: 3px solid var(--warn); background: #fff9ec;
+    padding: 0.6rem 1rem; margin: 0.8rem 0; border-radius: 0 8px 8px 0;
+  }
+  .flag strong { color: var(--warn); }
+  .analogy { font-style: italic; color: var(--soft); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em;
+    background: #f0f0f3; padding: 0.1rem 0.35rem; border-radius: 5px;
+  }
+  ul { padding-left: 1.2rem; }
+  li { margin: 0.3rem 0; }
+  .steps { counter-reset: step; list-style: none; padding-left: 0; }
+  .steps li { position: relative; padding-left: 2.4rem; margin: 0.9rem 0; }
+  .steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 0.05rem;
+    width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 0.85rem; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .links a { color: var(--accent); text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+  footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--line); color: var(--soft); font-size: 0.9rem; }
+  .pill { font-size:0.78rem; padding:0.1rem 0.45rem; border-radius:6px; background:#eef6f0; color:var(--good); font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+
+  <span class="tag">Milestone 8 · Full Sovereignty</span>
+  <h1>Your Ledger <em>is</em> your Aztec account</h1>
+  <p class="lede">Phase 7 &amp; 8, explained for a smart friend who isn't a cryptographer.</p>
+
+  <h2>The one-sentence goal</h2>
+  <p>
+    Make it so that <strong>everything about your private Aztec account comes from your hardware wallet</strong> —
+    not just the key that spends your money, but also the keys that let you <em>see</em> your money — and prove it with
+    a worst-case test: wipe the computer clean, plug the Ledger back in, and watch the exact same account reappear.
+  </p>
+
+  <div class="why">
+    <strong>Why this matters.</strong> A hardware wallet (a Ledger) is a tiny sealed device that holds your secret
+    keys so that even a hacked computer can't steal them. On most blockchains the Ledger only does one job:
+    <em>sign</em> a transaction. But Aztec is <strong>private</strong> — to even read your own balance you need extra
+    "viewing keys." The big question of M8: can the Ledger be the trustworthy home for <em>those</em> too? If yes, the
+    device alone is your whole wallet, and you never have to trust the computer.
+  </div>
+
+  <h2>What the device can already do (Phases 0–6, built &amp; tested)</h2>
+  <p>
+    We taught the Ledger to grow its <em>own</em> viewing keys from its secret seed, entirely on-chip, and to
+    <strong>refuse to create an account unless the computer's numbers exactly match the device's own</strong>. A
+    scammer can no longer slip in their own viewing keys during setup — the device checks the math itself and rejects
+    mismatches. <span class="pill">proven on a real emulated device</span>
+  </p>
+  <p class="soft">
+    So the hard cryptography is done and verified. What's left is the <em>human</em> half: actually using those device
+    keys in the browser, and proving you can always get back in. That's Phase 7 and 8.
+  </p>
+
+  <h2>Phase 7 — Onboarding (being handed the keys)</h2>
+  <p class="analogy">
+    Connecting is plugging in the device and being shown which key is which. There's nothing extra to file away
+    afterwards — the device already remembers everything.
+  </p>
+
+  <h3>"Derive my viewing keys"</h3>
+  <p>
+    The first time you connect, you press a clearly-labelled button. The Ledger hands the <em>viewing</em> keys to the
+    browser (so it can show your private balance) while the <em>spending</em> key stays sealed inside forever. One
+    deliberate tap, clearly worded — never silent, so a scam site can't trick you into it.
+  </p>
+  <div class="flag">
+    <strong>The surprise we found.</strong> Today the browser was quietly inventing <em>random</em> keys instead of
+    asking the Ledger. With the new Phase-6 safety checks, that random key gets <strong>rejected by the device every
+    single time</strong>. So onboarding isn't decoration — it's the missing wire that makes the whole milestone
+    actually work. It was the headline finding of the code review, and it's exactly what Phase 7 fixes.
+  </div>
+
+  <h3>The backup? There isn't a separate one — and that's the point</h3>
+  <p>
+    Every Ledger is already backed up the day you set it up: you write down <em>its</em> 24-word recovery phrase. Your
+    Aztec viewing keys are grown from that same seed in a fixed, repeatable way. So the device (or any device restored
+    from its phrase) can always re-grow the <strong>identical</strong> keys.
+  </p>
+  <div class="why">
+    <strong>So we deliberately removed the extra backup.</strong> An earlier draft made a separate 24-word Aztec phrase
+    plus a little "note card" file. The owner pointed out that's redundant with the Ledger's own backup — and keeping
+    the viewing root on paper is <em>weaker</em> than keeping it only on the device. Less to build, less to lose,
+    better security.
+  </div>
+
+  <h2>Phase 8 — The clean-machine test (the hero moment)</h2>
+  <p class="analogy">
+    Wipe everything off the computer. Reload. Plug the Ledger back in, tap "derive" once… and your account and balance
+    are simply there again.
+  </p>
+  <ol class="steps">
+    <li>Wipe all the browser's saved data — as blank as a brand-new machine.</li>
+    <li>Reconnect the Ledger and tap "derive viewing keys" once.</li>
+    <li>The device re-grows the exact same keys; the app recomputes the exact same account address.</li>
+    <li>Your balance reappears — and because the Ledger is plugged in, you can <strong>spend again too</strong>, not
+        just look.</li>
+  </ol>
+  <div class="why">
+    <strong>Why this is stronger than "type your words on a new laptop."</strong> The secret never sits on a disk or a
+    piece of paper waiting to be stolen — it's re-grown fresh from the sealed device each session and forgotten when
+    you close the tab. The device is the single source of truth. Lost the physical Ledger? Restore it from its own
+    recovery phrase onto a new one — same seed, same Aztec account. The Aztec layer needs <strong>nothing extra</strong>.
+  </div>
+
+  <h2>The handful of decisions worth understanding</h2>
+
+  <div class="card">
+    <h3>The "salt" that makes it all work</h3>
+    <p class="soft">
+      An account's address is mixed from your keys plus a tiny pinch called "salt." It used to be <em>random</em>, so
+      reconnecting would have produced a <strong>different address</strong> and shown an empty account. The fix —
+      using a fixed, predictable salt — is the small change that makes "plug back in → same account" true every time.
+      It's now the most load-bearing piece of the whole plan. The plan review caught this before we wrote any code.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>We dropped the device-less viewing path (for now)</h3>
+    <p class="soft">
+      We considered letting someone see a balance on a machine with <em>no</em> Ledger at all (handy for, say, showing
+      an auditor). It's a genuinely cool Aztec capability — but it means putting the viewing key somewhere off the
+      device, which fights the "device is the only home" idea. The ability still exists under the hood; we just won't
+      ship a button for it. Simpler, and truer to the security story.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Two device tweaks we chose <em>not</em> to do</h3>
+    <ul class="soft">
+      <li><strong>No extra locks on the "derive" screen</strong> — just clearer wording ("this lets this computer see
+          your private balance"). Extra locks mean re-opening already-tested device code for little real gain in a
+          demo.</li>
+      <li><strong>No re-engineering of the key recipe</strong> — a "cleaner" version exists, but it would force
+          re-testing all the device cryptography, and its only benefit appears if the device itself is fully hacked —
+          at which point you've already lost everything.</li>
+    </ul>
+  </div>
+
+  <h2>How we pressure-tested the plan</h2>
+  <p>
+    We asked a second, different AI (Codex) to <strong>try to break things</strong> — twice: once on the code already
+    written, once on the plan. It found real holes (the salt mistake; a wrong assumption about how recovery finds your
+    notes). Then the owner — who knows the Aztec internals cold — corrected three more assumptions and, in doing so,
+    let us <strong>delete about 60% of the remaining work</strong> while making the story better. Good planning looks
+    like throwing away the parts you don't need.
+  </p>
+
+  <h2>Genuinely solved, no longer worried about</h2>
+  <ul>
+    <li><strong>How a fresh wallet finds your old notes:</strong> the Aztec library handles it automatically once the
+        wallet is set up correctly — no custom machinery needed.</li>
+    <li><strong>Speed:</strong> finding the notes is fast; no special timing tricks required.</li>
+    <li><strong>What we still verify carefully:</strong> that the re-grown address matches the original exactly,
+        byte for byte. If it ever didn't, that's a loud error — never quietly the wrong account.</li>
+  </ul>
+
+  <footer class="links">
+    <p>Companion to the full plan: <a href="phase-7-8-plan.md">phase-7-8-plan.md</a> ·
+       milestone umbrella: <a href="plan.md">plan.md</a> ·
+       debugging logs: <a href="./lessons/">lessons/</a></p>
+    <p>Plain-language companion · kept in step with the plan it explains.</p>
+  </footer>
+
+</main>
+</body>
+</html>

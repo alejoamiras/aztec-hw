@@ -33,7 +33,14 @@ decisive calls, all adopted:
    Never cache sk / viewing scalars / pubkeys; FINALIZE re-derives from seed.
 4. **Secret hygiene:** sk + 4 viewing scalars stack-local only; explicit_bzero
    the privkey struct, chaincode, SHA-512 in/out, fr_t sk, gk_fq_t scalars,
-   scalar encodings. No secret survives an APDU.
+   scalar encodings. **(M8 P7.0 — impl-audit `bb56tmdxj` MINOR)** the original
+   "No secret survives an APDU" was an overclaim: the Grumpkin EC layer left its
+   secret-derived temporaries un-scrubbed. Now fixed — `mul_generator` wipes
+   `acc`/`tmp`, the Fermat inverse wipes `result`/`base`, `to_affine` wipes
+   `zinv*`, and `point_double`/`point_add_affine` wipe their intermediates, all
+   via the portable `grumpkin_secure_wipe` (a volatile loop — `explicit_bzero`
+   isn't host-portable under `-std=c11`). Validated: grumpkin parity 6/6 (656
+   assertions) + clean nanos2 device build.
 5. **Deferred outer_hash recompute** must land in the same phase (6d) — else
    FINALIZE still signs a host-claimed outer_hash blind.
 6. **Traps:** display `address_local` not host `expected_address`; reject
