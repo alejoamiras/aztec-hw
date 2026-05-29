@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M9 Real-wallet UX — in plain language</title>
+<style>
+  :root { --ink:#1c1c1e; --soft:#5c5c66; --line:#e6e6ea; --bg:#fbfbfc; --accent:#3a5bd9; --good:#2e7d52; --warn:#9a6a00; }
+  * { box-sizing: border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--ink); background:var(--bg); line-height:1.65; margin:0; padding:0 1.25rem; }
+  main { max-width:46rem; margin:0 auto; padding:3.5rem 0 6rem; }
+  h1 { font-size:1.9rem; line-height:1.25; margin:0 0 .4rem; letter-spacing:-.01em; }
+  h2 { font-size:1.3rem; margin:3rem 0 .8rem; padding-top:1.5rem; border-top:1px solid var(--line); letter-spacing:-.01em; }
+  h3 { font-size:1.02rem; margin:1.6rem 0 .3rem; }
+  .lede { font-size:1.15rem; color:var(--soft); margin:.5rem 0 0; }
+  .tag { display:inline-block; font-size:.72rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--accent); background:#eef1fd; padding:.15rem .5rem; border-radius:999px; margin-bottom:1.2rem; }
+  .soft { color:var(--soft); }
+  .why { border-left:3px solid var(--accent); background:#f6f8ff; padding:.6rem 1rem; margin:.8rem 0; border-radius:0 8px 8px 0; }
+  .why strong { color:var(--accent); }
+  .flag { border-left:3px solid var(--warn); background:#fff9ec; padding:.6rem 1rem; margin:.8rem 0; border-radius:0 8px 8px 0; }
+  .flag strong { color:var(--warn); }
+  .analogy { font-style:italic; color:var(--soft); }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em; background:#f0f0f3; padding:.1rem .35rem; border-radius:5px; }
+  pre { background:#1c1c1e; color:#e9e9ee; padding:1rem 1.1rem; border-radius:10px; overflow-x:auto; font-size:.8rem; line-height:1.5; }
+  .links a { color:var(--accent); text-decoration:none; }
+  .links a:hover { text-decoration:underline; }
+  footer { margin-top:4rem; padding-top:1.5rem; border-top:1px solid var(--line); color:var(--soft); font-size:.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">Milestone 9 · Real-wallet UX</span>
+  <h1>Make the Ledger feel like a real Aztec wallet</h1>
+  <p class="lede">Multiple accounts, and a device that talks in addresses — not in cryptic paths.</p>
+
+  <h2>The one-sentence goal</h2>
+  <p>
+    M8 proved the Ledger <em>can</em> be your whole Aztec wallet. M9 makes it pleasant: hold <strong>more than one
+    account</strong> on the same device, and make every screen the Ledger shows speak the language you actually
+    recognize — <strong>your account address</strong>.
+  </p>
+
+  <h2>1. More than one account</h2>
+  <p class="analogy">
+    Like the "Account 1 / Account 2 / Account 3" you already see in other Ledger apps.
+  </p>
+  <p>
+    Your Ledger can grow a whole family of accounts from its one seed, just by changing a small number (the
+    "account index"): index 0, index 1, index 2… Each index gives a completely separate Aztec account, and — because
+    it's deterministic — the same index always re-grows the same account. So "Account #1" is always your Account #1,
+    on any computer, forever.
+  </p>
+  <div class="why">
+    <strong>Why an index, not a saved file.</strong> We could have let each account use a random "salt" and saved it
+    somewhere — but then losing that file loses the account. An index is a tiny number that's part of the standard
+    derivation, re-grown from the device every time. Nothing to save, nothing to lose — same principle as M8.
+  </div>
+  <p>
+    The app will also <strong>notice when an account is already set up on the network</strong> and skip the "Deploy"
+    step — so you're not offered to create an account that already exists (which is exactly what blocked deploying a
+    fresh one for the demo).
+  </p>
+
+  <h2>2. The device speaks addresses, not paths</h2>
+  <p>
+    Today some device screens show the technical derivation <em>path</em> (<code>m/44'/…</code>). Nobody thinks in
+    paths. People think: "I'm signing as <strong>this account</strong>." So every review screen will lead with
+    <strong>Account #N</strong> and your account <strong>address</strong> (shown short, like
+    <code>0x0aa630…3dbe</code>), and the path drops out of the way.
+  </p>
+  <pre>
+ Send USDC
+ ┌────────────┐  ┌──────────────┐  ┌────────────┐  ┌────────────┐  ┌──────────────┐
+ │  «Aztec»   │  │ From         │  │ To         │  │ Amount     │  │ Send USDC?   │
+ │  Send      │► │ Account #1   │► │ 0x9f21…    │► │ 100 USDC   │► │  ◉ yes / ✗   │
+ │  USDC      │  │ 0x0aa630…✓   │  │ …cd34 ✓    │  │            │  │              │
+ └────────────┘  └──────────────┘  └────────────┘  └────────────┘  └──────────────┘
+  </pre>
+  <div class="why">
+    <strong>The honest, careful bit.</strong> The little ✓ matters: the device doesn't just <em>print</em> the address
+    the computer claims — it <strong>re-computes the address itself</strong> and refuses to continue if the computer
+    lied. (It already does this when creating an account; M9 brings the same guarantee to sending.) A wallet that
+    shows you an address it didn't verify is a wallet that can be tricked into showing you a safe-looking lie.
+  </div>
+
+  <h2>3. Being honest about where your "viewing key" lives</h2>
+  <div class="flag">
+    <strong>A truthfulness fix.</strong> Our second-opinion review (Codex) caught us slightly over-claiming. The key
+    that lets the browser <em>read</em> your private balance has to live in the browser's memory while you use it —
+    there's no way around that (the browser needs it to decrypt your notes). So we'll stop implying it's locked away
+    or "never touches the computer." What stays true and important: your <strong>spending</strong> key never leaves
+    the Ledger, so the worst a hacked browser can do is <em>peek</em>, never <em>spend</em>. "Forget session" clears
+    what it can and the wording will say exactly that — no more, no less.
+  </div>
+
+  <h2>4. A demo page that tells the story</h2>
+  <p>
+    No flashy redesign — we keep the current clean look and spend the effort where it counts: an account picker, clear
+    "is this deployed yet?" states, and a recovery moment that's obvious on camera — <em>wipe everything → reconnect
+    the Ledger → your account and balance come back</em>. The point of the page is to make the sovereignty story
+    legible to someone watching for the first time.
+  </p>
+
+  <h2>How it's built (the order)</h2>
+  <ul class="soft">
+    <li><strong>Accounts first:</strong> the index picker, "already deployed?" detection, and a fix so each account's
+        keys are cached separately (a different account/device always asks the Ledger fresh).</li>
+    <li><strong>Easy screens next:</strong> drop the path from the create-account and reveal screens (they already
+        show the address).</li>
+    <li><strong>The careful screen:</strong> teach the device to verify + show the sending account's address — the one
+        real piece of device work.</li>
+    <li><strong>Then the page polish + the honesty wording.</strong></li>
+  </ul>
+
+  <h2>What we're double-checking</h2>
+  <ul>
+    <li>That adding a field to the "sign these calls" message doesn't quietly break the existing send/deploy flows.</li>
+    <li>That "is this account deployed?" is a reliable signal (and doesn't hide a needed Deploy).</li>
+    <li>That we're not now <em>under</em>-claiming — i.e. there isn't a real way to protect the viewing key better
+        that we're waving away.</li>
+  </ul>
+
+  <footer class="links">
+    <p>Companion to <a href="plan.md">plan.md</a> · builds on <a href="../m8-full-sovereignty/eli5.html">M8</a> ·
+       device-screen designs live in the plan.</p>
+    <p>Plain-language companion · kept in step with the plan it explains.</p>
+  </footer>
+</main>
+</body>
+</html>
