@@ -321,7 +321,6 @@ export class AztecLedgerSession {
     const accountContract = this.deps.accountContract;
 
     step('build', 'Building deploy method…');
-    const deployMethod = await this.accountManager.getDeployMethod();
     const chainInfo = await this.getChainInfo();
 
     /* DETERMINISTIC deploy authwit nonce. The deploy authwit is the account
@@ -342,7 +341,17 @@ export class AztecLedgerSession {
       },
     };
 
-    /* Pass 1: spy AuthWitnessProvider captures the framework's outer_hash. */
+    /* Pass 1: spy AuthWitnessProvider captures the framework's outer_hash.
+     *
+     * CRITICAL ORDERING (codex-confirmed root cause): `getDeployMethod()` →
+     * `getAccount()` SNAPSHOTS `getAuthWitnessProvider()` into the entrypoint at
+     * build time (@aztec/accounts account_contract.ts:25-31 — the entrypoint's
+     * `this.auth` is fixed then; it is NOT re-queried per createAuthWit). So the
+     * override MUST be installed BEFORE the deploy method is built, and a FRESH
+     * deploy method is built per pass. Installing it after `getDeployMethod()`
+     * left the entrypoint on the default DEVICE provider, so neither the spy nor
+     * the frozen override ever fired ("did not capture" in-browser; a device-APDU
+     * timeout headless). */
     step('build', 'Computing deploy outer_hash (host)…');
     let capturedHash: Fr | undefined;
     const spyProvider: AuthWitnessProvider = {
@@ -355,14 +364,15 @@ export class AztecLedgerSession {
     };
     accountContract.setAuthWitnessOverride(spyProvider);
     try {
-      await deployMethod.request({ deployer: AztecAddress.ZERO, fee: deployFee });
+      const spyDeployMethod = await this.accountManager.getDeployMethod();
+      await spyDeployMethod.request({ deployer: AztecAddress.ZERO, fee: deployFee });
     } finally {
       accountContract.setAuthWitnessOverride(null);
     }
     if (!capturedHash) {
       throw new Error(
         'deployAccount: spy AuthWitnessProvider did not capture an outer_hash — ' +
-          'deployMethod.request() bypassed auth (would be a framework regression).',
+          'override not installed before getDeployMethod() (ordering bug).',
       );
     }
 
@@ -394,10 +404,12 @@ export class AztecLedgerSession {
     accountContract.setAuthWitnessOverride(frozen);
     let executionPayload: ExecutionPayload;
     try {
-      /* Same `deployFee` (incl. the pinned txNonce) as the spy pass, so the
-       * framework recomputes the identical outer_hash and the frozen provider
-       * hands back the device witness. */
-      executionPayload = await deployMethod.request({
+      /* Fresh deploy method so its entrypoint snapshots the FROZEN provider
+       * (same ordering rule as pass 1). Same `deployFee` (incl. the pinned
+       * txNonce) as the spy pass, so the framework recomputes the identical
+       * outer_hash and the frozen provider hands back the device witness. */
+      const frozenDeployMethod = await this.accountManager.getDeployMethod();
+      executionPayload = await frozenDeployMethod.request({
         deployer: AztecAddress.ZERO,
         fee: deployFee,
       });
