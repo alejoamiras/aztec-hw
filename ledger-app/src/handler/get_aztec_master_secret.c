@@ -42,11 +42,8 @@
 #include "../sw.h"
 #include "../ui/display.h"
 #include "../l4/wire.h"
-#include "../crypto/poseidon2/fr.h"
+#include "../l4/aztec_secret.h"
 
-/* "aztec-master-secret-v1" is 22 chars; in a [23] array the literal zero-fills
- * index 22, giving the 23-byte DOMAIN (incl. trailing NUL) the host mirrors. */
-static const uint8_t MASTER_SECRET_DOMAIN[23] = "aztec-master-secret-v1";
 static const uint8_t CHECKSUM_TAG[19] = "aztec-vk-confirm-v1"; /* 19 chars, no NUL needed */
 
 /* Armed across the deferred UI confirm. Secret material -- wiped on emit. */
@@ -73,53 +70,11 @@ static void disarm(void) {
     s_armed = false;
 }
 
-/* Derive the master secret into `out32` from the path in G_context. Returns 0
- * on success. Touches only stack + out; no globals beyond G_context (read).
- *
- * Codex Phase-4 review BLOCKER: the secret MUST depend on NON-PUBLIC material.
- * Hashing the PUBLIC key (X||Y) was broken -- GET_PUBLIC_KEY hands the host
- * those bytes with no confirmation, so the host could recompute the "secret"
- * offline and bypass this reveal gate entirely. We instead hash the BIP-32
- * PRIVATE child scalar. SHA-512 is one-way, so disclosing
- * H(DOMAIN || privkey) (gated by user confirmation) does NOT leak the signing
- * key, but the result is underivable without the device seed. The signing key
- * and the master secret are domain-separated uses of the same child key
- * (acceptable for PoC; a dedicated derivation path is a cleaner production
- * hardening). */
+/* Derive the master secret for the path in G_context. Thin wrapper over the
+ * shared `az_derive_master_secret` (l4/aztec_secret.c) so the reveal INS and
+ * the Phase 6 deploy verification derive `sk` identically. */
 static int derive_master_secret(uint8_t out32[32]) {
-    cx_ecfp_256_private_key_t privkey;
-    uint8_t chain_code[32];
-    cx_err_t err = bip32_derive_init_privkey_256(CX_CURVE_256K1,
-                                                 G_context.bip32_path,
-                                                 G_context.bip32_path_len,
-                                                 &privkey,
-                                                 chain_code);
-    explicit_bzero(chain_code, sizeof(chain_code));
-    if (err != CX_OK || privkey.d_len != 32) {
-        explicit_bzero(&privkey, sizeof(privkey));
-        return -1;
-    }
-
-    /* input = DOMAIN(23) || privkey_d(32) = 55 bytes. */
-    uint8_t input[23 + 32];
-    memcpy(input, MASTER_SECRET_DOMAIN, 23);
-    memcpy(input + 23, privkey.d, 32);
-    explicit_bzero(&privkey, sizeof(privkey));
-
-    uint8_t digest[64];
-    if (cx_hash_sha512(input, sizeof(input), digest, sizeof(digest)) != 64) {
-        explicit_bzero(input, sizeof(input));
-        explicit_bzero(digest, sizeof(digest));
-        return -1;
-    }
-    explicit_bzero(input, sizeof(input));
-
-    fr_t reduced;
-    fr_from_bytes_wide_be(&reduced, digest);
-    explicit_bzero(digest, sizeof(digest));
-    fr_to_bytes_be(out32, &reduced);
-    explicit_bzero(&reduced, sizeof(reduced));
-    return 0;
+    return az_derive_master_secret(G_context.bip32_path, G_context.bip32_path_len, out32);
 }
 
 int handler_get_aztec_master_secret(buffer_t *cdata) {

@@ -87,14 +87,16 @@ void l4_session_reset(void);
  *
  * `partial_address_local` is the DEVICE-recomputed (poseidon2-chain)
  * value derived from BIP-32 signing pubkey + manifest-pinned class id +
- * salt + ctor selector + Noir-ABI-encoded ctor args. The device CANNOT
- * complete the final Grumpkin EC step in v0 (deferred to M8), so the
- * `expected_address` field is stored for UI display + outer-hash binding
- * but is NOT cryptographically refuted on device.
+ * salt + ctor selector + Noir-ABI-encoded ctor args.
  *
- * Trust model: device verifies signing-pubkey/path binding + manifest-
- * pinned class + 3-pass fault recompute. Does NOT defend against host-
- * supplied protocol-key spoofing. See plan.md §8.1.
+ * M8 P6: the device now completes the Grumpkin EC step too — it derives its
+ * own viewing keys from its seed, computes `public_keys_hash_local` +
+ * `address_local`, and verifies the host-supplied `public_keys_hash` /
+ * `expected_address` against them in BEGIN (rejecting on mismatch). So the
+ * host-supplied fields are now cryptographically REFUTED, not merely stored.
+ * Trust model: device verifies signing-pubkey/path + manifest-pinned class +
+ * 3-pass partial recompute + device-derived publicKeysHash/address equality.
+ * The M7 "does not defend against protocol-key spoofing" caveat is closed.
  */
 typedef struct {
     /* From BEGIN_DEPLOY_ACCOUNT */
@@ -116,6 +118,15 @@ typedef struct {
     uint8_t args_hash_local[L4_FR_BYTES];  /* poseidon2(pubkey_64_bytefrs, FUNCTION_ARGS) */
     uint8_t init_hash_local[L4_FR_BYTES];
     uint8_t partial_address_local[L4_FR_BYTES];
+
+    /* M8 P6 — device-DERIVED + verified account identity. These are the
+     * device's own publicKeysHash + address (from its seed-derived viewing
+     * keys), already cross-checked against the host-supplied public_keys_hash /
+     * expected_address in BEGIN. PUBLIC values (codex P6 design: never cache the
+     * secret sk or viewing scalars). FINALIZE re-derives from the seed and
+     * compares against these before signing; the UI displays address_local. */
+    uint8_t public_keys_hash_local[L4_FR_BYTES];
+    uint8_t address_local[L4_FR_BYTES];
 
     /* From FINALIZE_DEPLOY_AND_SIGN. */
     uint8_t claimed_outer_hash[L4_FR_BYTES];

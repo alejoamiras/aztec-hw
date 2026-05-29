@@ -105,7 +105,11 @@ int ui_display_deploy_review(void) {
     if (!format_bip32_path(g_path_str, sizeof(g_path_str))) {
         return finalize_deploy_rejected();
     }
-    address_8_6(g_addr_str, sizeof(g_addr_str), G_l4_deploy_session.expected_address);
+    /* M8 P6 (codex trap #1): display the DEVICE-derived + verified address
+     * (address_local), NOT the host-claimed expected_address. BEGIN already
+     * proved they're equal; showing the device-authored value means the user
+     * approves what the device computed, not what the host asserted. */
+    address_8_6(g_addr_str, sizeof(g_addr_str), G_l4_deploy_session.address_local);
     /* Profile-pinned fee semantics; v0 only supports sponsored deploys. */
     snprintf(g_fee_str, sizeof(g_fee_str), "Sponsored (testnet)");
 

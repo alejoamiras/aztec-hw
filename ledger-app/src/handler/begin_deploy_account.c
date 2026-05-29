@@ -8,12 +8,14 @@
  * payload + sponsor payload) is fully determined by the BEGIN inputs +
  * manifest-pinned profile — no extra host degrees of freedom at FINALIZE.
  *
- * Trust model (codex audit BLOCKER #2 corrected): v0 binds signing-key/
- * path + manifest-pinned class id + 3-pass fault recompute. It does NOT
- * cryptographically defend against host-supplied protocol-key spoofing
- * (publicKeys / ivpk_m). See plan.md §8.1 and the v0 device UI which
- * accompanies the address with the BIP-32 path so the user can spot
- * path mis-selection (the cheaper attack).
+ * Trust model (M8 P6 — privacy-sovereignty gap CLOSED): in addition to the
+ * signing-key/path binding + manifest-pinned class id + 3-pass partial-address
+ * fault recompute, the device now DERIVES its own viewing keys from its seed,
+ * computes publicKeysHash + address, and REJECTS if the host-supplied
+ * public_keys_hash / expected_address disagree (SW_DEPLOY_PUBKEY_HASH_MISMATCH /
+ * SW_DEPLOY_ADDRESS_MISMATCH). A hostile host can no longer get the device to
+ * sign a deploy carrying host-controlled protocol keys. (The old M7 v0 note
+ * that this was NOT defended is superseded.) See lessons/phase-6.md.
  */
 #include <stdint.h>
 #include <stdbool.h>
@@ -32,6 +34,8 @@
 #include "../l4/session.h"
 #include "../l4/wire.h"
 #include "../l4/deploy_address.h"
+#include "../l4/aztec_secret.h"
+#include "../l4/account_derive.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
 
@@ -245,6 +249,72 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     explicit_bzero(init_hash_pass2, 32);
     explicit_bzero(partial_pass1, 32);
     explicit_bzero(partial_pass2, 32);
+
+    /* --- M8 P6: device-derived publicKeysHash + address verification --------
+     * Derive the account's viewing keys from THIS device's seed and verify the
+     * host's claimed public_keys_hash + expected_address against them. This is
+     * the privacy-sovereignty gate: the host can no longer deploy an account
+     * with host-controlled viewing keys and have the device sign it.
+     *
+     * Two independent passes (self-consistency vs fault injection), THEN host
+     * equality. Per codex P6 design: the host controls both claimed values, so
+     * "device == host" alone is not glitch-proof (a single faulted pass could
+     * be matched by attacker-chosen host values) -- the self-consistency check
+     * across independent passes is the integrity anchor. FINALIZE re-derives a
+     * third time before signing. Cache only PUBLIC outputs; sk + the viewing
+     * scalars are wiped and never persist in the session. */
+    uint8_t sk[32];
+    if (az_derive_master_secret(G_l4_deploy_session.bip32_path,
+                                G_l4_deploy_session.bip32_path_len, sk) != 0) {
+        explicit_bzero(sk, sizeof(sk));
+        return reject(SWO_UNKNOWN);
+    }
+
+    uint8_t pkh_pass1[32], addr_pass1[32];
+    uint8_t pkh_pass2[32], addr_pass2[32];
+    if (az_account_derive_from_secret(sk, G_l4_deploy_session.partial_address_local,
+                                      pkh_pass1, addr_pass1) != 0 ||
+        az_account_derive_from_secret(sk, G_l4_deploy_session.partial_address_local,
+                                      pkh_pass2, addr_pass2) != 0) {
+        explicit_bzero(sk, sizeof(sk));
+        explicit_bzero(pkh_pass1, 32);
+        explicit_bzero(addr_pass1, 32);
+        explicit_bzero(pkh_pass2, 32);
+        explicit_bzero(addr_pass2, 32);
+        return reject(SWO_UNKNOWN);
+    }
+    explicit_bzero(sk, sizeof(sk));
+
+    /* Self-consistency (fault) -- an internal pass1/pass2 mismatch is NOT a
+     * host disagreement, so it returns the generic fault SW (codex P6 trap). */
+    if (ct_memcmp32(pkh_pass1, pkh_pass2) != 0 || ct_memcmp32(addr_pass1, addr_pass2) != 0) {
+        explicit_bzero(pkh_pass1, 32);
+        explicit_bzero(addr_pass1, 32);
+        explicit_bzero(pkh_pass2, 32);
+        explicit_bzero(addr_pass2, 32);
+        return reject(SW_HASH_MISMATCH);
+    }
+    explicit_bzero(pkh_pass2, 32);
+    explicit_bzero(addr_pass2, 32);
+
+    /* Host equality -- the sovereignty gate. */
+    if (ct_memcmp32(pkh_pass1, G_l4_deploy_session.public_keys_hash) != 0) {
+        explicit_bzero(pkh_pass1, 32);
+        explicit_bzero(addr_pass1, 32);
+        return reject(SW_DEPLOY_PUBKEY_HASH_MISMATCH);
+    }
+    if (ct_memcmp32(addr_pass1, G_l4_deploy_session.expected_address) != 0) {
+        explicit_bzero(pkh_pass1, 32);
+        explicit_bzero(addr_pass1, 32);
+        return reject(SW_DEPLOY_ADDRESS_MISMATCH);
+    }
+
+    /* Cache device-authored public values for FINALIZE's recompute + the UI.
+     * (pkh/addr are public; the bzero is tidy discipline, not a secrecy need.) */
+    memcpy(G_l4_deploy_session.public_keys_hash_local, pkh_pass1, 32);
+    memcpy(G_l4_deploy_session.address_local, addr_pass1, 32);
+    explicit_bzero(pkh_pass1, 32);
+    explicit_bzero(addr_pass1, 32);
 
     /* L4_DEPLOY_CONTEXT lives on the shared l4_state_e machine. */
     G_l4_session.state = L4_DEPLOY_CONTEXT;
