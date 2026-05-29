@@ -54,13 +54,13 @@ test('onboarding: connect → derive viewing keys → session address renders', 
     await page.getByRole('button', { name: 'Connect' }).click();
     // The OnboardPanel's derive button only appears once state === 'onboarding'
     // (transport open + GET_VERSION ok). Generous timeout for transport open.
-    await expect(page.getByRole('button', { name: /Derive Aztec viewing keys/ })).toBeVisible({
+    await expect(page.getByRole('button', { name: /Derive .* viewing keys/ })).toBeVisible({
       timeout: 30_000,
     });
   });
 
   await test.step('Derive viewing keys (reveal approved on Speculos)', async () => {
-    await page.getByRole('button', { name: /Derive Aztec viewing keys/ }).click();
+    await page.getByRole('button', { name: /Derive .* viewing keys/ }).click();
 
     /* Drive the reveal approval. nbgl_useCaseReview shows: intro → subtitle →
      * Path → Confirm → "Reveal viewing key to this computer?" → both. Mirrors

@@ -35,7 +35,7 @@ async function screen(): Promise<string> {
 
 async function onboardOnce(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  const derive = page.getByRole('button', { name: /Derive Aztec viewing keys/ });
+  const derive = page.getByRole('button', { name: /Derive .* viewing keys/ });
   await expect(derive).toBeVisible({ timeout: 30_000 });
   await derive.click();
   await new Promise((r) => setTimeout(r, 1500));

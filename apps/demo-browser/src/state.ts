@@ -68,6 +68,10 @@ export interface SessionRef {
   /** Set to a tx hash once deployAccount has run successfully. The
    * Deploy button reads this to disable itself — accounts deploy once. */
   deployedTxHash?: string;
+  /** M9 A3: true if the account was already initialized on-chain at onboard
+   * time (detected via the wallet init-status — e.g. a prior session deployed
+   * it, since the deterministic salt makes the address stable). Disables Deploy. */
+  alreadyDeployed?: boolean;
 }
 
 export interface SubmitStep {

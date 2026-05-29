@@ -99,6 +99,11 @@ export function OnboardPanel({ state, setState }: Props) {
         addressHex: session.address.toString(),
         session,
       };
+      /* M9 A3: detect whether this account is already on-chain (best-effort —
+       * a node round-trip; never fail onboarding on it). Drives the UI to skip
+       * Deploy for an account that already exists. */
+      setBusy('Checking on-chain status…');
+      ref.alreadyDeployed = await session.isDeployed().catch(() => false);
       setBusy(null);
       setState({ kind: 'ready', session: ref });
     } catch (e) {

@@ -195,7 +195,7 @@ test('demo browser smoke', async ({ page }) => {
       console.log('\n=== SKIPPING DERIVE (Connect did not succeed) ===\n');
       return;
     }
-    await page.getByRole('button', { name: /Derive Aztec viewing keys/ }).click();
+    await page.getByRole('button', { name: /Derive .* viewing keys/ }).click();
     /* Reveal review screen: blind 4×right then both (mirrors provider.m8.test.ts
      * makeApprover(4); the screen-walking approver races the renderer → 0x6985). */
     await new Promise((r) => setTimeout(r, 1500));

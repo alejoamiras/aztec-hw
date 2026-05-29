@@ -22,7 +22,11 @@ interface Props {
 export function AccountPanel({ state, setState }: Props) {
   const session = sessionFromState(state);
   const disabled = !session || state.kind === 'connecting' || state.kind === 'submitting';
-  const alreadyDeployed = Boolean(session?.deployedTxHash);
+  // M9 A3: disable Deploy if THIS session deployed (deployedTxHash) OR the
+  // account was already on-chain at onboard (alreadyDeployed, detected via
+  // init-status — e.g. a prior session deployed this deterministic address).
+  const alreadyDeployed = Boolean(session?.deployedTxHash) || Boolean(session?.alreadyDeployed);
+  const detectedOnChain = Boolean(session?.alreadyDeployed) && !session?.deployedTxHash;
 
   async function runAction(
     name: 'deploy' | 'drip',
@@ -87,6 +91,11 @@ export function AccountPanel({ state, setState }: Props) {
               Address
             </span>
             <span className="address">{session.addressHex}</span>
+            {detectedOnChain && (
+              <span className="status muted" title="Detected via on-chain init-status">
+                ✓ on-chain
+              </span>
+            )}
           </div>
           <div className="row">
             <button

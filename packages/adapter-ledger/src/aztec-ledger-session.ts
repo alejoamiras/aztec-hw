@@ -40,7 +40,7 @@ import {
 } from '@aztec/aztec.js/contracts';
 import { SponsoredFeePaymentMethod } from '@aztec/aztec.js/fee';
 import { waitForTx } from '@aztec/aztec.js/node';
-import { AccountManager } from '@aztec/aztec.js/wallet';
+import { AccountManager, ContractInitializationStatus } from '@aztec/aztec.js/wallet';
 import {
   AccountFeePaymentMethodOptions,
   DefaultAccountEntrypoint,
@@ -482,6 +482,20 @@ export class AztecLedgerSession {
    * (signing pubkey, authwit path, deploy context, secret-cache key all use it). */
   get bip32Path(): readonly number[] {
     return this.deps.bip32Path;
+  }
+
+  /**
+   * M9 A3: is THIS account already initialized on-chain? Uses the wallet's
+   * init-status (NOT `node.getContract`, which only means "publicly registered"
+   * and false-positives on registered-but-uninitialized accounts — opus MAJOR).
+   * The account instance is registered in `connect()`, so the private
+   * init-nullifier check gives a definitive INITIALIZED/UNINITIALIZED answer.
+   * Lets the UI skip Deploy for an account that already exists (e.g. a prior
+   * session's, since the deterministic salt makes the address stable).
+   */
+  async isDeployed(): Promise<boolean> {
+    const meta = await this.deps.session.getContractMetadata(this.accountAddress);
+    return meta.initializationStatus === ContractInitializationStatus.INITIALIZED;
   }
 
   /** The deployed account address (deterministic from secret + salt + signing pubkey). */
