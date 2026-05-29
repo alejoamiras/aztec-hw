@@ -28,6 +28,11 @@ typedef enum {
      * BEGIN and FINALIZE" desync class). */
     INS_BEGIN_DEPLOY_ACCOUNT = 0x10,
     INS_FINALIZE_DEPLOY_AND_SIGN = 0x11,
+    /* M8 P4 — reveal the 32-byte Aztec master secret (Fr) for a path after a
+     * high-friction on-device confirmation. Single-shot (no streaming). The
+     * host runs the result through Aztec deriveKeys() to reconstruct viewing
+     * keys. Discloses note-VIEWING capability, never spend authority. */
+    INS_GET_AZTEC_MASTER_SECRET = 0x12,
 } command_e;
 
 /**

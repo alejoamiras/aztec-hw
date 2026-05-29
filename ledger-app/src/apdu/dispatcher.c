@@ -35,6 +35,7 @@
 #include "../handler/abort_authwit.h"
 #include "../handler/begin_deploy_account.h"
 #include "../handler/finalize_deploy_and_sign.h"
+#include "../handler/get_aztec_master_secret.h"
 
 static buffer_t make_buf(const command_t *cmd) {
     buffer_t buf = {0};
@@ -150,6 +151,18 @@ int apdu_dispatcher(const command_t *cmd) {
             if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
             buf = make_buf(cmd);
             return handler_finalize_deploy_and_sign(&buf);
+
+        /* M8 P4 — master-secret reveal. Single-shot, path-only request like
+         * GET_PUBLIC_KEY; treat as an L4 boundary and reset any in-flight
+         * verified-calls session before handling. */
+        case INS_GET_AZTEC_MASTER_SECRET:
+            l4_session_reset();
+            if (cmd->p1 != 0 || cmd->p2 != 0) {
+                return reject_dispatch(SWO_INCORRECT_P1_P2);
+            }
+            if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
+            buf = make_buf(cmd);
+            return handler_get_aztec_master_secret(&buf);
 
         default:
             return reject_dispatch(SWO_INVALID_INS);

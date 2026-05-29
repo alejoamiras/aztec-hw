@@ -75,6 +75,36 @@ export class LedgerProvider {
   }
 
   /**
+   * M8 P4 — GET_AZTEC_MASTER_SECRET. Reveals the 32-byte Aztec master secret
+   * (an `Fr`) for the given BIP-32 path, AFTER a high-friction on-device
+   * confirmation (this discloses permanent note-VIEWING capability, though
+   * not spend authority). The host feeds the result to Aztec's `deriveKeys()`.
+   *
+   * Wire layout mirrors GET_PUBLIC_KEY (path-only: `[len, path…]`); the device
+   * enforces path canonicality (m/44'/AZTEC'/…) just like the deploy handler.
+   * Takes an autoConfirm hook because — unlike GET_PUBLIC_KEY — the reveal
+   * gates on user approval (Speculos drives it in tests).
+   *
+   * Derivation (see master-secret.ts for the host reference + spec):
+   *   secret = SHA-512("aztec-master-secret-v1\0" ‖ pubkey_x ‖ pubkey_y) mod Fr
+   */
+  async getAztecMasterSecret(
+    bip32Path: readonly number[],
+    opts: SignOuterHashOptions = {},
+  ): Promise<Uint8Array> {
+    const body = this.encodePath(bip32Path);
+    const r = await this.transport.send(
+      { ins: INS.GET_AZTEC_MASTER_SECRET, data: body },
+      opts.autoConfirm,
+    );
+    this.requireOk(r.sw, 'GET_AZTEC_MASTER_SECRET');
+    if (r.data.length !== FR_BYTES) {
+      throw new Error(`GET_AZTEC_MASTER_SECRET: expected 32 bytes, got ${r.data.length}`);
+    }
+    return r.data.slice(0, 32);
+  }
+
+  /**
    * L4 BEGIN_AUTHWIT — start a verified-calls session on the device.
    * Returns when the device has acknowledged the manifest header.
    */

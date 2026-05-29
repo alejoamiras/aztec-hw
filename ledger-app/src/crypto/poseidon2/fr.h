@@ -68,3 +68,10 @@ void fr_mul(fr_t *out, const fr_t *a, const fr_t *b);
 
 /* Montgomery squaring: out = a^2 · R^{-1} (mod p). */
 void fr_sqr(fr_t *out, const fr_t *a);
+
+/* Reduce a 64-byte big-endian integer mod p (WIDE reduction). Output is
+ * Montgomery form. Used by M8 to map a SHA-512 digest uniformly into Fr
+ * (the Aztec master-secret field) — reducing a 512-bit value mod a ~254-bit
+ * prime has bias <= 2^{-256}, cryptographically negligible. Unlike
+ * `fr_from_bytes_be` this never fails (any 64-byte input is valid). */
+void fr_from_bytes_wide_be(fr_t *out, const uint8_t bytes[64]);

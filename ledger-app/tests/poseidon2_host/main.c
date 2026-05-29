@@ -145,15 +145,47 @@ static int mode_smoke(void) {
     return 3;
 }
 
+/* wide-reduce <hex128> — reduce a 64-byte BE value mod p, print the 32-byte
+ * Montgomery-normalized result. Exercises fr_from_bytes_wide_be (M8 Phase 4). */
+static int mode_wide_reduce(int argc, char **argv) {
+    if (argc != 1) {
+        fprintf(stderr, "wide-reduce needs exactly one 128-hex (64-byte) arg\n");
+        return 2;
+    }
+    const char *hex = argv[0];
+    if (hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X')) hex += 2;
+    if (strlen(hex) != 128) {
+        fprintf(stderr, "wide-reduce arg must be 128 hex chars (64 bytes)\n");
+        return 2;
+    }
+    uint8_t wide[64];
+    for (int i = 0; i < 64; i++) {
+        int hi = hex_nibble(hex[i * 2]);
+        int lo = hex_nibble(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            fprintf(stderr, "bad hex in wide-reduce input\n");
+            return 2;
+        }
+        wide[i] = (uint8_t)((hi << 4) | lo);
+    }
+    fr_t r;
+    fr_from_bytes_wide_be(&r, wide);
+    uint8_t out[32];
+    fr_to_bytes_be(out, &r);
+    print_hex32(out);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <perm|hash|hash-sep|smoke> ...\n", argv[0]);
+        fprintf(stderr, "usage: %s <perm|hash|hash-sep|wide-reduce|smoke> ...\n", argv[0]);
         return 1;
     }
     const char *mode = argv[1];
     if (strcmp(mode, "perm") == 0) return mode_perm(argc - 2, argv + 2);
     if (strcmp(mode, "hash") == 0) return mode_hash(argc - 2, argv + 2, 0);
     if (strcmp(mode, "hash-sep") == 0) return mode_hash(argc - 2, argv + 2, 1);
+    if (strcmp(mode, "wide-reduce") == 0) return mode_wide_reduce(argc - 2, argv + 2);
     if (strcmp(mode, "smoke") == 0) return mode_smoke();
     fprintf(stderr, "unknown mode: %s\n", mode);
     return 1;

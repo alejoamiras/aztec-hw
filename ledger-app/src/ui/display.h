@@ -42,6 +42,14 @@ int ui_display_pubkey(void);
 int ui_display_deploy_review(void);
 
 /**
+ * M8 P4 — master-secret reveal review. Renders the BIP-32 path + a 4-hex
+ * confirmation checksum with explicit "viewing not spending" wording. Calls
+ * `master_secret_reveal_approved` / `master_secret_reveal_rejected` (in
+ * `handler/get_aztec_master_secret.h`) on user choice.
+ */
+int ui_display_master_secret_reveal(void);
+
+/**
  * Return the device to the idle home screen. Called from
  * `nbgl_useCaseReviewStatus(..., ui_menu_main)` after a successful
  * (or rejected) signing flow — without this, NBGL's review page

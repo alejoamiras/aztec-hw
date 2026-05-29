@@ -28,6 +28,10 @@ export const INS = {
    * but for the DEPLOY_ACCOUNT_ECDSAK_V1 profile, NOT a verb call. */
   BEGIN_DEPLOY_ACCOUNT: 0x10,
   FINALIZE_DEPLOY_AND_SIGN: 0x11,
+  /* M8 P4 — reveal the 32-byte Aztec master secret (Fr) for this path, after
+   * a high-friction on-device confirmation. The host runs it through Aztec's
+   * deriveKeys() to reconstruct the viewing keys. See master-secret.ts. */
+  GET_AZTEC_MASTER_SECRET: 0x12,
 } as const;
 
 export type Ins = (typeof INS)[keyof typeof INS];

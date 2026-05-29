@@ -240,6 +240,24 @@ void fr_from_u64(fr_t *out, uint64_t v) {
     fr_mul(out, &tmp, &AZ_FR_R2);
 }
 
+void fr_from_bytes_wide_be(fr_t *out, const uint8_t bytes[64]) {
+    /* Horner over the 64 input bytes, MSB first:
+     *   acc = ((... (b0 * 256 + b1) * 256 + b2) ... ) * 256 + b63   (mod p)
+     * Each fr_mul / fr_add keeps acc fully reduced (< p), so there is no
+     * CIOS input-range subtlety — this is correct for ANY 64-byte input.
+     * Cost ~128 fr_mul + 64 fr_add; called once per key derivation, so the
+     * simplicity is worth more than the speed of an R²-folding variant. */
+    fr_t acc, c256, term;
+    fr_zero(&acc);
+    fr_from_u64(&c256, 256);
+    for (int i = 0; i < 64; i++) {
+        fr_mul(&acc, &acc, &c256);
+        fr_from_u64(&term, bytes[i]);
+        fr_add(&acc, &acc, &term);
+    }
+    fr_set(out, &acc);
+}
+
 void fr_to_bytes_be(uint8_t bytes[AZ_FR_BYTE_LEN], const fr_t *a) {
     /* Mont-mul by {1,0,0,0} = literal "1" in normal form ⇒ leave Montgomery. */
     fr_t one_normal = {{ 1, 0, 0, 0 }};
