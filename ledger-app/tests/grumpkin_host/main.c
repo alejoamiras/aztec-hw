@@ -12,6 +12,7 @@
  * Each scalar is exactly 64 hex chars (32 bytes BE), optional "0x" prefix.
  * Exit codes: 0 = OK, 1 = bad usage, 2 = invalid input, 3 = smoke failure.
  */
+#include "../../src/crypto/grumpkin/fq.h"
 #include "../../src/crypto/grumpkin/g1_generator.h"
 #include "../../src/crypto/grumpkin/mul_generator.h"
 #include "../../src/crypto/grumpkin/point.h"
@@ -108,12 +109,45 @@ static int mode_smoke(void) {
   return 0;
 }
 
+/* fq-wide-reduce <hex128> — reduce a 64-byte BE value mod the Grumpkin scalar
+ * order, print the 32-byte result. Exercises gk_fq_from_bytes_wide_be, which
+ * Phase 6 uses for sha512ToGrumpkinScalar (viewing-key derivation). */
+static int mode_fq_wide_reduce(int argc, char **argv) {
+  if (argc != 1) {
+    fprintf(stderr, "fq-wide-reduce needs exactly one 128-hex (64-byte) arg\n");
+    return 2;
+  }
+  const char *hex = argv[0];
+  if (hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X')) hex += 2;
+  if (strlen(hex) != 128) {
+    fprintf(stderr, "fq-wide-reduce arg must be 128 hex chars (64 bytes)\n");
+    return 2;
+  }
+  uint8_t wide[64];
+  for (int i = 0; i < 64; i++) {
+    int hi = hex_nibble(hex[i * 2]);
+    int lo = hex_nibble(hex[i * 2 + 1]);
+    if (hi < 0 || lo < 0) {
+      fprintf(stderr, "bad hex in fq-wide-reduce input\n");
+      return 2;
+    }
+    wide[i] = (uint8_t)((hi << 4) | lo);
+  }
+  gk_fq_t r;
+  gk_fq_from_bytes_wide_be(&r, wide);
+  uint8_t out[32];
+  gk_fq_to_bytes_be(out, &r);
+  print_hex32(out);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
-    fprintf(stderr, "usage: %s mul <hex32>... | smoke\n", argv[0]);
+    fprintf(stderr, "usage: %s mul <hex32>... | fq-wide-reduce <hex128> | smoke\n", argv[0]);
     return 1;
   }
   if (strcmp(argv[1], "mul") == 0) return mode_mul(argc - 2, argv + 2);
+  if (strcmp(argv[1], "fq-wide-reduce") == 0) return mode_fq_wide_reduce(argc - 2, argv + 2);
   if (strcmp(argv[1], "smoke") == 0) return mode_smoke();
   fprintf(stderr, "unknown mode: %s\n", argv[1]);
   return 1;

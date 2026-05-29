@@ -220,6 +220,22 @@ void gk_fq_sqr(gk_fq_t *out, const gk_fq_t *a) {
   gk_fq_mul(out, a, a);
 }
 
+void gk_fq_from_bytes_wide_be(gk_fq_t *out, const uint8_t bytes[64]) {
+  /* Horner over the 64 input bytes, MSB first (same construction as poseidon2
+   * fr_from_bytes_wide_be, but mod the Grumpkin scalar order). Each step keeps
+   * acc < p, so there is no CIOS input-range subtlety. Called once per viewing
+   * scalar (4x per deploy verify); simplicity over the R^2-folding variant. */
+  gk_fq_t acc, c256, term;
+  gk_fq_zero(&acc);
+  gk_fq_from_u64(&c256, 256);
+  for (int i = 0; i < 64; i++) {
+    gk_fq_mul(&acc, &acc, &c256);
+    gk_fq_from_u64(&term, bytes[i]);
+    gk_fq_add(&acc, &acc, &term);
+  }
+  gk_fq_set(out, &acc);
+}
+
 bool gk_fq_from_bytes_be(gk_fq_t *out, const uint8_t bytes[AZ_FQ_BYTE_LEN]) {
   gk_fq_t tmp;
   for (int i = 0; i < AZ_FQ_NUM_LIMBS; i++) {

@@ -77,3 +77,10 @@ void gk_fq_mul(gk_fq_t *out, const gk_fq_t *a, const gk_fq_t *b);
 
 /** Montgomery squaring: out = a² · R⁻¹ (mod p). */
 void gk_fq_sqr(gk_fq_t *out, const gk_fq_t *a);
+
+/* Reduce a 64-byte big-endian integer mod p (WIDE reduction). Output is
+ * Montgomery form. Used by M8 Phase 6 to map a SHA-512 digest into a Grumpkin
+ * SCALAR (`sha512ToGrumpkinScalar`) when deriving the four viewing keys from
+ * the master secret. Mirrors poseidon2 `fr_from_bytes_wide_be` but mod the
+ * Grumpkin scalar order. Bias <= 2^{-256}; never fails. */
+void gk_fq_from_bytes_wide_be(gk_fq_t *out, const uint8_t bytes[64]);

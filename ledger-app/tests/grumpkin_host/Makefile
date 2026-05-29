@@ -11,6 +11,8 @@ GRUMPKIN_DIR := ../../src/crypto/grumpkin
 SRCS := \
 	$(POSEIDON2_DIR)/fr.c \
 	$(POSEIDON2_DIR)/fr_params.c \
+	$(GRUMPKIN_DIR)/fq.c \
+	$(GRUMPKIN_DIR)/fq_params.c \
 	$(GRUMPKIN_DIR)/point.c \
 	$(GRUMPKIN_DIR)/g1_generator.c \
 	$(GRUMPKIN_DIR)/mul_generator.c \
