@@ -124,6 +124,14 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     if (G_l4_deploy_session.bip32_path[1] != AZTEC_COIN_TYPE_HARDENED) {
         return reject(SW_INVALID_PATH_SCHEME);
     }
+    /* M9 (codex MAJOR): the deploy UI shows "Account #N" by masking path[2], so
+     * enforce the FULL canonical shape m/44'/AZTEC'/<acct>'/0/0 — else a host
+     * could pass a non-canonical path and the device would show a misleading #N. */
+    if (G_l4_deploy_session.bip32_path_len != 5u ||
+        (G_l4_deploy_session.bip32_path[2] & 0x80000000u) == 0u ||
+        G_l4_deploy_session.bip32_path[3] != 0u || G_l4_deploy_session.bip32_path[4] != 0u) {
+        return reject(SW_INVALID_PATH_SCHEME);
+    }
 
     /* Fr-canonical fields, fixed order: chain_id, protocol_version,
      * tx_nonce, salt, public_keys_hash, expected_address. */

@@ -108,6 +108,14 @@ int handler_get_aztec_master_secret(buffer_t *cdata) {
     if (G_context.bip32_path[1] != AZTEC_COIN_TYPE_HARDENED) {
         return io_send_sw(SW_INVALID_PATH_SCHEME);
     }
+    /* M9 (codex MAJOR): the reveal UI now shows "Account #N" by masking path[2],
+     * so enforce the FULL canonical shape m/44'/AZTEC'/<acct>'/0/0 — otherwise a
+     * host could pass a non-canonical path (e.g. unhardened account, or extra
+     * components) and the device would show a misleading #N. */
+    if (G_context.bip32_path_len != 5u || (G_context.bip32_path[2] & 0x80000000u) == 0u ||
+        G_context.bip32_path[3] != 0u || G_context.bip32_path[4] != 0u) {
+        return io_send_sw(SW_INVALID_PATH_SCHEME);
+    }
 
     /* Derive twice + compare (fault hardening). */
     uint8_t pass1[32];

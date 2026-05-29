@@ -103,7 +103,12 @@ export function OnboardPanel({ state, setState }: Props) {
        * a node round-trip; never fail onboarding on it). Drives the UI to skip
        * Deploy for an account that already exists. */
       setBusy('Checking on-chain status…');
-      ref.alreadyDeployed = await session.isDeployed().catch(() => false);
+      /* codex MINOR: cap the RPC so a sick node can't pin onboarding here —
+       * an 8s timeout falls back to "not detected" (just shows Deploy, harmless). */
+      ref.alreadyDeployed = await Promise.race([
+        session.isDeployed(),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8000)),
+      ]).catch(() => false);
       setBusy(null);
       setState({ kind: 'ready', session: ref });
     } catch (e) {

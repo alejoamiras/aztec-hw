@@ -227,7 +227,9 @@ export class AztecLedgerSession {
      * context, and the secret-cache key all flow from this one value, so a stale
      * or divergent index can't slip in (opus MAJOR: `deployAccount` used to
      * hardcode `defaultDeployPath(0)` independently of the connected account). */
-    const bip32Path = opts.bip32Path ?? defaultAztecPath();
+    // Copy the array (codex NIT): the caller owns `opts.bip32Path`; storing a
+    // copy means a later caller mutation can't reintroduce path drift.
+    const bip32Path: readonly number[] = [...(opts.bip32Path ?? defaultAztecPath())];
     const accountContract = new LedgerEcdsaKAccountContract(opts.transport, { bip32Path });
     const ledgerProvider = accountContract.getProvider();
     const secret = opts.secret ?? Fr.random();
