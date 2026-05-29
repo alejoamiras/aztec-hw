@@ -77,6 +77,35 @@ This is the single most important thing in Phase 3. The 256-vector parity test i
 - ⛔ NOT benchmarked on real hardware (Phase 5 deferred per user; Speculos
   timing is meaningless for EC perf).
 
+## Codex review outcome (session 019e73bc)
+
+Verdict: **CHANGES-NEEDED, but NO formula bug.** Codex independently verified
+`double` == EFD dbl-2009-l, `add_affine` == madd-2007-bl + barretenberg generic
+Jacobian, `fr_inverse` correct (right modulus `AZ_FR_P`, borrow-free `e[0]-=2`,
+valid square-and-multiply over Montgomery values), field choice correct, stack
+< 7 KB, no portability blocker. It re-ran smoke + the Bun parity suite locally;
+both passed.
+
+Findings, all addressed in the follow-up commit:
+
+1. **MAJOR — CT overstatement.** double-and-add-always is NOT fully
+   constant-time: leading-ZERO bits of `k` take the infinity fast-path in
+   `double(O)` / `add_affine(O,G)`, leaking the scalar's effective bit-length
+   (hotter than the rare `H==0` branch). Fix: softened the docs in
+   `mul_generator.{c,h}` + `point.h` to state plainly that the build is NOT
+   side-channel-resistant and the leak exists; the genuine fix (infinity-free
+   comb + constant-time fr layer) is Phase 9 / production. Per codex this
+   honest-doc approach is acceptable for a PoC.
+2. **MINOR — stale-binary false confidence.** Parity test only ran `make` if
+   the binary was absent. Fix: always `make` (incremental) in `beforeAll`.
+3. **MINOR — untested `H==0` branches.** Added vectors `k=order-1` (forces
+   p==-G → infinity branch) and `k=order+1` as literal ≥order bytes (forces
+   p==G → doubling branch, and the ≥order path). Both match bb.js. Parity
+   suite now 4 tests / 528 expect.
+
+What I did NOT change: the algorithm stays double-and-add-always (correct +
+validated). The CT improvement is deliberately deferred, not papered over.
+
 ## Deferred to later phases
 
 - `gk_fq_from_bytes_wide_be` (SHA-512 → Grumpkin scalar) — Phase 6 consumer.

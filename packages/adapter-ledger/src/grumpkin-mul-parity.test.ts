@@ -12,7 +12,6 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Fq, grumpkinMulGenerator, type Point } from './oracle/index.ts';
 
@@ -58,7 +57,10 @@ function fqToBeHex(scalar: Fq): string {
 }
 
 beforeAll(() => {
-  if (!existsSync(CLI)) buildCli();
+  /* Always run `make` — it is incremental (rebuilds only if a .c/.h is newer
+   * than the binary). Guarding on existsSync would silently test a STALE
+   * binary after a source edit (codex Phase-3 review MINOR — false confidence). */
+  buildCli();
 });
 
 afterAll(() => {
@@ -80,6 +82,31 @@ describe('Grumpkin [k]G host parity', () => {
       expect(device[i]!.x).toBe(ref.x);
       expect(device[i]!.y).toBe(ref.y);
     }
+  });
+
+  test('H==0 edge branches: k=order-1 (p=-G) and k=order+1 (p=G doubling)', async () => {
+    /* These exercise the two `H==0` paths in grumpkin_point_add_affine that the
+     * random-vector set never hits (codex Phase-3 review MINOR). The Grumpkin
+     * group order = Fq.MODULUS (the scalar field). */
+    const order = Fq.MODULUS;
+
+    /* k = order-1 → [order-1]G = -G. Valid Fq, normal path. The final add
+     * step hits acc == -G ... actually fires the p==-G (H==0,r!=0 → infinity)
+     * branch mid-loop. Compare against bb.js. */
+    const kMinus1 = new Fq(order - 1n);
+    const dMinus1 = runMul([fqToBeHex(kMinus1)])[0]!;
+    const rMinus1 = await referenceMul(kMinus1);
+    expect(dMinus1.x).toBe(rMinus1.x);
+    expect(dMinus1.y).toBe(rMinus1.y);
+
+    /* k = order+1 (>= order) passed as LITERAL bytes, bypassing Fq reduction,
+     * to exercise the >=order path + the p==G (H==0,r==0 → doubling) branch.
+     * [order+1]G == [1]G == G. */
+    const orderPlus1Hex = (order + 1n).toString(16).padStart(64, '0');
+    const dPlus1 = runMul([orderPlus1Hex])[0]!;
+    const refG = await referenceMul(new Fq(1n));
+    expect(dPlus1.x).toBe(refG.x);
+    expect(dPlus1.y).toBe(refG.y);
   });
 
   test('256 random scalars match bb.js byte-exact', async () => {

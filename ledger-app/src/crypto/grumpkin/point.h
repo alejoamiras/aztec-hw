@@ -25,12 +25,15 @@
  *
  * Threat-model note: the `fr_t` arithmetic reused here is documented in
  * `poseidon2/fr.h` as NON-constant-time (final conditional subtract branches
- * on data). For M8 PoC the constant-time property we DO hold is at the
- * scalar-mult layer: `grumpkin_scalar_mul_generator` performs the same
- * double-and-add-always sequence for every scalar bit (see mul_generator.c).
- * Per-limb mul timing leakage and the rare edge-case branches in
- * `grumpkin_point_add_affine` are accepted PoC limitations — production
- * hardening (constant-time fr layer + Donjon audit) is Phase 9 / post-M8.
+ * on data). The scalar-mult driver (mul_generator.c) is double-and-add-ALWAYS
+ * for every bit at-and-after the first set bit, but it is NOT fully
+ * constant-time: leading-zero bits of the scalar hit the infinity fast-paths
+ * in `double`/`add_affine`, leaking the scalar's effective bit-length (codex
+ * Phase-3 review MAJOR). Per-limb mul timing and the rare `H==0` edge branches
+ * in `grumpkin_point_add_affine` are also data-dependent. ALL of these are
+ * accepted PoC limitations — full side-channel resistance (constant-time fr
+ * layer + an infinity-free comb + Donjon audit) is Phase 9 / post-M8. This
+ * build is NOT side-channel-resistant.
  */
 #pragma once
 

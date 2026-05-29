@@ -2,10 +2,24 @@
  * Grumpkin fixed-base scalar mult [k]·G — double-and-add-always.
  *
  * Correctness-first algorithm choice (M8 PoC): the simplest construction that
- * is (a) obviously correct and (b) constant-time at the bit-processing layer.
- * For every one of the 256 scalar bits we ALWAYS perform one doubling and one
- * addition, then constant-time-select whether to keep the addition result.
- * No data-dependent loop bounds, no secret-dependent table indexing.
+ * is obviously correct. For every one of the 256 scalar bits we ALWAYS perform
+ * one doubling and one addition, then constant-time-select (bitmask cmov)
+ * whether to keep the addition result. No data-dependent loop bounds, no
+ * secret-dependent table indexing.
+ *
+ * **Constant-time caveat (codex Phase-3 review MAJOR).** This is NOT fully
+ * constant-time. While `acc` is still the point at infinity — i.e. for every
+ * leading-ZERO bit of `k` up to the first set bit — both `grumpkin_point_double`
+ * and `grumpkin_point_add_affine` take their infinity fast-path early returns.
+ * That makes the per-iteration work (and thus timing) depend on the leading-
+ * zero count of `k`, leaking its effective bit-length (a few top bits, on
+ * average < 2 bits for uniformly-random ~254-bit scalars). The CONSTANT part is
+ * the operation sequence for every bit AT-AND-AFTER the first set bit. Closing
+ * this fully (and the rare `H==0` data branches in add_affine) is Phase 9 /
+ * production hardening — the same rewrite that introduces the fixed-base comb
+ * removes the infinity short-circuits (start the accumulator at a fixed
+ * multiple of G and correct at the end). Do not represent this PoC build as
+ * side-channel-resistant.
  *
  * Perf: 256 doublings + 256 additions + 1 inversion ≈ a few thousand fr_mul.
  * The plan's fixed-base 4-bit signed-digit comb (precomputed window table)

@@ -14,10 +14,13 @@
  * [k mod order]·G because order·G = O.
  *
  * Constant-time posture: the driver is double-and-add-ALWAYS (see
- * mul_generator.c) — identical operation sequence for every scalar bit. The
- * underlying fr_t field ops are not constant-time at the micro level (see
- * point.h threat-model note); that residual leakage is an accepted PoC
- * limitation pending the production hardening pass.
+ * mul_generator.c) — identical operation sequence for every scalar bit AT AND
+ * AFTER the first set bit. It is NOT fully constant-time: leading-zero bits of
+ * `k` hit the infinity fast-path, leaking the scalar's effective bit-length
+ * (codex Phase-3 review MAJOR). The underlying fr_t field ops are also not
+ * micro-constant-time (point.h threat-model note). Both are accepted PoC
+ * limitations; full side-channel resistance is Phase 9 / production work. Do
+ * NOT represent this build as side-channel-resistant.
  */
 #pragma once
 
