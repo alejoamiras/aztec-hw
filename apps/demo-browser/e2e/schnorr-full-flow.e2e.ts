@@ -49,7 +49,11 @@ async function autoConfirmSpeculos(durationMs = 120_000, screenLog?: string[]): 
       await new Promise((r) => setTimeout(r, 500));
       continue;
     }
-    if (/Sign Aztec|^Approve$|Hold to sign/i.test(screen)) {
+    /* Approve prompt. The verified-calls review ends "Sign Aztec outer_hash?"; the
+     * deploy review's finish page is "Deploy your Aztec | account?" (NBGL finishTitle,
+     * BOTH = approve). Match "Deploy your Aztec" (note: NOT the "Deploy Aztec account"
+     * intro title — the finish page has the extra "your"). */
+    if (/Sign Aztec|Deploy your Aztec|^Approve$|Hold to sign/i.test(screen)) {
       await pressSpeculos('both');
       await new Promise((r) => setTimeout(r, 800));
       continue;
