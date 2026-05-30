@@ -69,5 +69,14 @@ Executed the codex roadmap exactly:
 - **schnorr-full-flow.e2e.ts (deploy+drip+transfer SUBMIT on testnet, idx #5): RUNNING** (bg bhylbubp7). The on-chain deploy is the keystone — a landed Schnorr deploy proves finalize_deploy Schnorr sign is accepted by the canonical noir-lang/schnorr verifier.
 - **codex P9 review: RUNNING** (bg bejntein9, /tmp prompt m10-codex-p9-deploy-schnorr.md).
 
-## REMAINING: fold codex P9 → confirm full-flow landed → tag safe-v8.
-Fallback: safe-v7 (`c5be220`). 23 M10 commits on branch `m9-real-wallet-ux`.
+## codex P9 review (session 019e7b12) FOLDED — verdict was `blocker`
+Both blockers folded + built clean (commit "fix(m10): fold codex P9 blockers", 24 total):
+- **BLOCKER 1 — deploy TOCTOU** (finalize_deploy_and_sign.c): I signed `outer_hash_local` copied from the MUTABLE session `claimed_outer_hash` AFTER the recomputed_outer compare → reintroduced the exact bug finalize_and_sign.c guards. A glitch on the host-controlled field between compare+copy changes the signed msg; dup-sign/dual-run can't catch it. FIX: sign `recomputed_outer` (device value) directly.
+- **BLOCKER 2 — empty deploy-review address** (deploy_review_ui.c, PRE-EXISTING): `g_addr_str[32]` < the 34 `address_8_6` needs → length guard wrote "" → deploy review showed NO address (clear-signing defeated). FIX: buffer→40. Confirmed verified_calls_ui.c uses its own 24-byte `short_hex_field` (unaffected).
+- **MAJOR (won't-fix for PoC)**: single-pass nonce/scalar derivation → repeated-k leak under fault injection. Documented authwit residual; full dual-derive is the hardening follow-up.
+- **MINORS (follow-ups)**: dedup deploy_derive_pubkey_xy/deploy_compute_partial into a shared TU; host should read profile-id from generated metadata not hardcode.
+- codex **confirmed correct**: outer_hash scheme-independence (fact #1), (curve_id,arg_schema) anti-confusion boundary, codegen fail-closed on class-id/selector drift.
+
+## REMAINING: confirm full-flow landed on-chain → reload new elf + re-verify deploy-review (address now shows + TOCTOU benign-safe) → tag safe-v8.
+NOTE: the running full-flow (bhylbubp7) uses the elf BEFORE the P9 fixes — still valid for proving Schnorr SIGN correctness on-chain (the fixes are fault-resistance + display, not benign-path). Post-fix re-verify needed.
+Fallback: safe-v7 (`c5be220`). 24 M10 commits on branch `m9-real-wallet-ux`.
