@@ -38,3 +38,17 @@
  */
 bool grumpkin_scalar_mul_generator(uint8_t out_x[32], uint8_t out_y[32],
                                    const uint8_t scalar_be[32]);
+
+/**
+ * M10 P2: variable-base [scalar]·P for an arbitrary affine base point (the
+ * Pedersen MSM vehicle). Same double-and-add-always core + constant-time caveat
+ * as the generator variant.
+ *
+ * @param out_x/out_y  32-byte BE affine result (Fr).
+ * @param scalar_be    32-byte BE scalar.
+ * @param px_be/py_be  32-byte BE affine base coords (Fr).
+ * @return true on a finite result; false if scalar ≡ 0, or (px,py) is
+ *         non-canonical / off-curve (fail-closed; out zeroed).
+ */
+bool grumpkin_scalar_mul_affine(uint8_t out_x[32], uint8_t out_y[32], const uint8_t scalar_be[32],
+                                const uint8_t px_be[32], const uint8_t py_be[32]);

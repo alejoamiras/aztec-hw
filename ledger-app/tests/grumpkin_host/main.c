@@ -220,16 +220,43 @@ static int mode_deploy_outer_hash(int argc, char **argv) {
   return 0;
 }
 
+/* mulp <scalar px py>... (triples of hex32) -> [scalar]·P as x,y per triple.
+ * Exercises grumpkin_scalar_mul_affine (M10 P2, the Pedersen MSM vehicle).
+ * scalar==0 or off-curve base prints two zero lines (infinity). */
+static int mode_mulp(int argc, char **argv) {
+  if (argc < 3 || argc % 3 != 0) {
+    fprintf(stderr, "mulp needs triples: <scalar px py>...\n");
+    return 2;
+  }
+  for (int i = 0; i < argc; i += 3) {
+    uint8_t k[32], px[32], py[32];
+    if (parse_hex32(argv[i], k) != 0 || parse_hex32(argv[i + 1], px) != 0 ||
+        parse_hex32(argv[i + 2], py) != 0) {
+      fprintf(stderr, "bad hex32 in mulp triple at %d\n", i);
+      return 2;
+    }
+    uint8_t x[32], y[32];
+    if (!grumpkin_scalar_mul_affine(x, y, k, px, py)) {
+      memset(x, 0, 32);
+      memset(y, 0, 32);
+    }
+    print_hex32(x);
+    print_hex32(y);
+  }
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     fprintf(stderr,
-            "usage: %s mul <hex32>... | fq-wide-reduce <hex128> | "
+            "usage: %s mul <hex32>... | mulp <scalar px py>... | fq-wide-reduce <hex128> | "
             "pubkeys-hash <8 hex32> | address <4 hex32> | "
             "deploy-outer-hash <5 hex32> <selector_u32> | smoke\n",
             argv[0]);
     return 1;
   }
   if (strcmp(argv[1], "mul") == 0) return mode_mul(argc - 2, argv + 2);
+  if (strcmp(argv[1], "mulp") == 0) return mode_mulp(argc - 2, argv + 2);
   if (strcmp(argv[1], "fq-wide-reduce") == 0) return mode_fq_wide_reduce(argc - 2, argv + 2);
   if (strcmp(argv[1], "pubkeys-hash") == 0) return mode_pubkeys_hash(argc - 2, argv + 2);
   if (strcmp(argv[1], "address") == 0) return mode_address(argc - 2, argv + 2);
