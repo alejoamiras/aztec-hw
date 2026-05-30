@@ -10,9 +10,10 @@
  * the canonical noir-lang/schnorr verifier. Drip + transfer then exercise the
  * Schnorr AUTHWIT path on the deployed account.
  *
- * Uses a high index (#5) so the low Schnorr indices stay fresh for a live demo
- * recording. Repeatable: once #5 is on-chain the deploy step self-skips and the
- * run still exercises the Schnorr authwit via drip/transfer.
+ * Uses index #4 (the top of the [0..4] account dropdown) so the lower Schnorr
+ * indices stay fresh for a live demo recording. Repeatable: once #4 is on-chain
+ * the deploy step self-skips and the run still exercises the Schnorr authwit via
+ * drip/transfer.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
