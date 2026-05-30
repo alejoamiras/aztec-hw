@@ -19,6 +19,7 @@
 #include "../../src/crypto/pedersen.h"
 #include "../../src/crypto/schnorr.h"
 #include "../../src/l4/account_keys.h"
+#include "../../src/l4/deploy_address.h"
 #include "../../src/l4/deploy_outer_hash.h"
 
 #include <stdint.h>
@@ -312,11 +313,43 @@ static int mode_schnorr_sign(int argc, char **argv) {
   return 0;
 }
 
+/* schnorr-partial <px> <py> <selector_u32> <class_id> -> SchnorrAccount partial
+ * address (salt=0, deployer=0). M10 P5b. */
+static int mode_schnorr_partial(int argc, char **argv) {
+  if (argc != 4) {
+    fprintf(stderr, "schnorr-partial needs px py selector_u32 class_id\n");
+    return 2;
+  }
+  uint8_t px[32], py[32], class_id[32];
+  if (parse_hex32(argv[0], px) != 0 || parse_hex32(argv[1], py) != 0 ||
+      parse_hex32(argv[3], class_id) != 0) {
+    fprintf(stderr, "bad hex32 input\n");
+    return 2;
+  }
+  char *end = NULL;
+  unsigned long sel = strtoul(argv[2], &end, 10);
+  if (end == argv[2] || sel > 0xffffffffUL) {
+    fprintf(stderr, "bad selector u32\n");
+    return 2;
+  }
+  uint8_t salt[32] = {0};
+  uint8_t deployer[32] = {0};
+  uint8_t partial[32];
+  if (az_schnorr_compute_partial_address(px, py, (uint32_t)sel, salt, deployer, class_id, partial) !=
+      0) {
+    fprintf(stderr, "schnorr partial failed\n");
+    return 2;
+  }
+  print_hex32(partial);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     fprintf(stderr,
             "usage: %s mul <hex32>... | mulp <scalar px py>... | pedersen <3 hex32> | "
             "schnorr-pubkey <hex32> | schnorr-sign <priv k msg> | "
+            "schnorr-partial <px py selector class_id> | "
             "fq-wide-reduce <hex128> | pubkeys-hash <8 hex32> | address <4 hex32> | "
             "deploy-outer-hash <5 hex32> <selector_u32> | smoke\n",
             argv[0]);
@@ -327,6 +360,7 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "pedersen") == 0) return mode_pedersen(argc - 2, argv + 2);
   if (strcmp(argv[1], "schnorr-pubkey") == 0) return mode_schnorr_pubkey(argc - 2, argv + 2);
   if (strcmp(argv[1], "schnorr-sign") == 0) return mode_schnorr_sign(argc - 2, argv + 2);
+  if (strcmp(argv[1], "schnorr-partial") == 0) return mode_schnorr_partial(argc - 2, argv + 2);
   if (strcmp(argv[1], "fq-wide-reduce") == 0) return mode_fq_wide_reduce(argc - 2, argv + 2);
   if (strcmp(argv[1], "pubkeys-hash") == 0) return mode_pubkeys_hash(argc - 2, argv + 2);
   if (strcmp(argv[1], "address") == 0) return mode_address(argc - 2, argv + 2);

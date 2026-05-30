@@ -24,12 +24,13 @@ SRCS := \
 	../../src/crypto/schnorr.c \
 	$(L4_DIR)/account_keys.c \
 	$(L4_DIR)/deploy_outer_hash.c \
+	$(L4_DIR)/deploy_address.c \
 	main.c
 
 OUT := grumpkin_cli
 
 $(OUT): $(SRCS)
-	$(CC) $(CFLAGS) -I$(POSEIDON2_DIR) -I$(GRUMPKIN_DIR) -I$(L4_DIR) -o $@ $(SRCS)
+	$(CC) $(CFLAGS) -Ihostshim -I$(POSEIDON2_DIR) -I$(GRUMPKIN_DIR) -I$(L4_DIR) -o $@ $(SRCS)
 
 smoke: $(OUT)
 	./$(OUT) smoke
