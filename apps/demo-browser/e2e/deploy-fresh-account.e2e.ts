@@ -7,8 +7,9 @@
  * deploy-review test both use account #0, which is already on-chain and so
  * hides the Deploy button).
  *
- * We pick account #1 (fresh on testnet) and only drive up to the review screen —
- * we do NOT approve/submit, so #1 stays undeployed and the test is repeatable.
+ * We pick a fresh account index and only drive up to the review screen — we do
+ * NOT approve/submit, so it stays undeployed and the test is repeatable. (Bumped
+ * #1 → #2 after #1 was deployed for real on testnet during M9 bring-up.)
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
@@ -58,11 +59,11 @@ test('deploy a fresh account index reaches the device review (no 0x6F03)', async
   });
 
   await page.goto('/');
-  const addr = await onboardAccount(page, 1);
-  console.log('[deploy-fresh] onboarded account #1 = ' + addr);
+  const addr = await onboardAccount(page, 2);
+  console.log('[deploy-fresh] onboarded account #2 = ' + addr);
 
   const deployBtn = page.getByRole('button', { name: /Deploy account/ });
-  await expect(deployBtn, 'account #1 must be undeployed (Deploy button present)').toBeVisible({
+  await expect(deployBtn, 'account #2 must be undeployed (Deploy button present)').toBeVisible({
     timeout: 15_000,
   });
   await deployBtn.click();
