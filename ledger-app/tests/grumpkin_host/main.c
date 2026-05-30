@@ -17,6 +17,7 @@
 #include "../../src/crypto/grumpkin/mul_generator.h"
 #include "../../src/crypto/grumpkin/point.h"
 #include "../../src/crypto/pedersen.h"
+#include "../../src/crypto/schnorr.h"
 #include "../../src/l4/account_keys.h"
 #include "../../src/l4/deploy_outer_hash.h"
 
@@ -268,10 +269,54 @@ static int mode_pedersen(int argc, char **argv) {
   return 0;
 }
 
+/* schnorr-pubkey <priv> (hex32) -> P = priv·G as x,y. M10 P4. */
+static int mode_schnorr_pubkey(int argc, char **argv) {
+  if (argc != 1) {
+    fprintf(stderr, "schnorr-pubkey needs 1 hex32 priv\n");
+    return 2;
+  }
+  uint8_t priv[32];
+  if (parse_hex32(argv[0], priv) != 0) {
+    fprintf(stderr, "bad hex32 priv\n");
+    return 2;
+  }
+  uint8_t px[32], py[32];
+  if (!schnorr_grumpkin_pubkey(px, py, priv)) {
+    fprintf(stderr, "schnorr pubkey failed (priv 0 / non-canonical)\n");
+    return 2;
+  }
+  print_hex32(px);
+  print_hex32(py);
+  return 0;
+}
+
+/* schnorr-sign <priv> <k> <msg> (3 hex32) -> sig = s||e_raw (128 hex). M10 P4. */
+static int mode_schnorr_sign(int argc, char **argv) {
+  if (argc != 3) {
+    fprintf(stderr, "schnorr-sign needs priv k msg (3 hex32)\n");
+    return 2;
+  }
+  uint8_t priv[32], k[32], msg[32];
+  if (parse_hex32(argv[0], priv) != 0 || parse_hex32(argv[1], k) != 0 ||
+      parse_hex32(argv[2], msg) != 0) {
+    fprintf(stderr, "bad hex32 input\n");
+    return 2;
+  }
+  uint8_t sig[64];
+  if (!schnorr_grumpkin_sign_with_nonce(sig, priv, k, msg)) {
+    fprintf(stderr, "schnorr sign failed (reject condition)\n");
+    return 2;
+  }
+  for (int i = 0; i < 64; i++) printf("%02x", sig[i]);
+  putchar('\n');
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     fprintf(stderr,
             "usage: %s mul <hex32>... | mulp <scalar px py>... | pedersen <3 hex32> | "
+            "schnorr-pubkey <hex32> | schnorr-sign <priv k msg> | "
             "fq-wide-reduce <hex128> | pubkeys-hash <8 hex32> | address <4 hex32> | "
             "deploy-outer-hash <5 hex32> <selector_u32> | smoke\n",
             argv[0]);
@@ -280,6 +325,8 @@ int main(int argc, char **argv) {
   if (strcmp(argv[1], "mul") == 0) return mode_mul(argc - 2, argv + 2);
   if (strcmp(argv[1], "mulp") == 0) return mode_mulp(argc - 2, argv + 2);
   if (strcmp(argv[1], "pedersen") == 0) return mode_pedersen(argc - 2, argv + 2);
+  if (strcmp(argv[1], "schnorr-pubkey") == 0) return mode_schnorr_pubkey(argc - 2, argv + 2);
+  if (strcmp(argv[1], "schnorr-sign") == 0) return mode_schnorr_sign(argc - 2, argv + 2);
   if (strcmp(argv[1], "fq-wide-reduce") == 0) return mode_fq_wide_reduce(argc - 2, argv + 2);
   if (strcmp(argv[1], "pubkeys-hash") == 0) return mode_pubkeys_hash(argc - 2, argv + 2);
   if (strcmp(argv[1], "address") == 0) return mode_address(argc - 2, argv + 2);
