@@ -29,7 +29,10 @@
 #include "../l4/parity.h"
 #include "../l4/deploy_address.h"
 #include "../l4/account_derive.h"
+#include "../l4/aztec_secret.h"
+#include "../crypto/schnorr.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
+#include "../clear_signing_v0/schnorr_account.h"
 #include "../ui/display.h"
 #include "nbgl_use_case.h"
 
@@ -122,34 +125,63 @@ static int derive_signing_pubkey_xy_session(uint8_t out_x[32], uint8_t out_y[32]
  * salt/profile recomputes to a different address and fails closed; a glitched
  * recompute also fails closed (reject, never a false accept). */
 static int b3_verify_consumer_is_this_account(void) {
-    static const uint8_t B3_ZERO_SALT[32] = {0};
-    const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(0);
-    if (profile == NULL) return SW_UNKNOWN_PROFILE_ID;
+    static const uint8_t B3_ZERO[32] = {0}; /* salt + deployer (universal, Fr.ZERO) */
+    uint8_t partial[32];
 
-    uint8_t pk_x[32], pk_y[32];
-    if (derive_signing_pubkey_xy_session(pk_x, pk_y) != 0) {
+    if (G_l4_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
+        /* Schnorr account: partial from the Grumpkin pubkey (2-Fr ctor) + the
+         * SchnorrAccount class_id/selector. Viewing-key half (below) is
+         * scheme-independent. */
+        uint8_t priv[32];
+        if (az_derive_schnorr_signing_scalar(G_l4_session.bip32_path, G_l4_session.bip32_path_len,
+                                             priv) != 0) {
+            explicit_bzero(priv, 32);
+            return SWO_UNKNOWN;
+        }
+        uint8_t pk_x[32], pk_y[32];
+        bool pk_ok = schnorr_grumpkin_pubkey(pk_x, pk_y, priv);
+        explicit_bzero(priv, 32);
+        if (!pk_ok) {
+            explicit_bzero(pk_x, 32);
+            explicit_bzero(pk_y, 32);
+            return SWO_UNKNOWN;
+        }
+        int prc = az_schnorr_compute_partial_address(pk_x, pk_y, SCHNORR_ACCOUNT_CTOR_SELECTOR_U32,
+                                                     B3_ZERO, B3_ZERO,
+                                                     SCHNORR_ACCOUNT_CLASS_ID_BE, partial);
         explicit_bzero(pk_x, 32);
         explicit_bzero(pk_y, 32);
-        return SWO_UNKNOWN;
-    }
-
-    uint8_t args_hash[32], init_hash[32], partial[32];
-    int rc = az_deploy_compute_partial_address(pk_x, pk_y, profile->ctor_selector_u32,
-                                               B3_ZERO_SALT, profile->deployer,
-                                               profile->account_class_id, args_hash,
-                                               init_hash, partial);
-    explicit_bzero(pk_x, 32);
-    explicit_bzero(pk_y, 32);
-    explicit_bzero(args_hash, 32);
-    explicit_bzero(init_hash, 32);
-    if (rc != 0) {
-        explicit_bzero(partial, 32);
-        return SWO_UNKNOWN;
+        if (prc != 0) {
+            explicit_bzero(partial, 32);
+            return SWO_UNKNOWN;
+        }
+    } else {
+        /* ECDSA-K account (profile 0). */
+        const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(0);
+        if (profile == NULL) return SW_UNKNOWN_PROFILE_ID;
+        uint8_t pk_x[32], pk_y[32];
+        if (derive_signing_pubkey_xy_session(pk_x, pk_y) != 0) {
+            explicit_bzero(pk_x, 32);
+            explicit_bzero(pk_y, 32);
+            return SWO_UNKNOWN;
+        }
+        uint8_t args_hash[32], init_hash[32];
+        int prc = az_deploy_compute_partial_address(pk_x, pk_y, profile->ctor_selector_u32, B3_ZERO,
+                                                    profile->deployer, profile->account_class_id,
+                                                    args_hash, init_hash, partial);
+        explicit_bzero(pk_x, 32);
+        explicit_bzero(pk_y, 32);
+        explicit_bzero(args_hash, 32);
+        explicit_bzero(init_hash, 32);
+        if (prc != 0) {
+            explicit_bzero(partial, 32);
+            return SWO_UNKNOWN;
+        }
     }
 
     uint8_t pkh[32], addr[32];
-    rc = az_account_derive_from_path(G_l4_session.bip32_path, G_l4_session.bip32_path_len,
-                                     partial, pkh, addr);
+    int rc = az_account_derive_from_path(G_l4_session.bip32_path, G_l4_session.bip32_path_len,
+                                         partial, pkh, addr);
     explicit_bzero(partial, 32);
     explicit_bzero(pkh, 32);
     if (rc != 0) {
@@ -243,6 +275,42 @@ int finalize_after_approval(void) {
     int b3_sw = b3_verify_consumer_is_this_account();
     if (b3_sw != 0) {
         return reject((uint16_t)b3_sw);
+    }
+
+    /* M10: Schnorr-over-Grumpkin path. Signs the RAW outer_hash (no sha256 —
+     * unlike ECDSA-K). Deterministic nonce bound to curve_id+pubkey+priv+msg;
+     * the sign helper dual-derives + byte-compares for fault hardening. Returns
+     * s(32)||e_raw(32). The ECDSA-K block below is untouched (curve_id != GRUMPKIN). */
+    if (G_l4_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
+        uint8_t sch_priv[32], sch_px[32], sch_py[32], sch_k[32];
+        if (az_derive_schnorr_signing_scalar(G_l4_session.bip32_path,
+                                             G_l4_session.bip32_path_len, sch_priv) != 0) {
+            explicit_bzero(sch_priv, 32);
+            return reject(SWO_UNKNOWN);
+        }
+        if (!schnorr_grumpkin_pubkey(sch_px, sch_py, sch_priv)) {
+            explicit_bzero(sch_priv, 32);
+            return reject(SWO_UNKNOWN);
+        }
+        if (az_derive_schnorr_nonce(sch_priv, sch_px, sch_py, L4_CURVE_ID_GRUMPKIN,
+                                    recheck_outer, sch_k) != 0) {
+            explicit_bzero(sch_priv, 32);
+            explicit_bzero(sch_k, 32);
+            return reject(SWO_UNKNOWN);
+        }
+        uint8_t sch_sig[64];
+        bool sok = schnorr_grumpkin_sign_with_nonce(sch_sig, sch_priv, sch_k, recheck_outer);
+        explicit_bzero(sch_priv, 32);
+        explicit_bzero(sch_k, 32);
+        if (!sok) {
+            explicit_bzero(sch_sig, sizeof(sch_sig));
+            return reject(SWO_UNKNOWN);
+        }
+        int sch_rc = io_send_response_pointer(sch_sig, sizeof(sch_sig), SWO_SUCCESS);
+        explicit_bzero(sch_sig, sizeof(sch_sig));
+        l4_session_reset();
+        nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_menu_main);
+        return sch_rc;
     }
 
     /* Sign sha256(recheck_outer) — sign the JUST-VALIDATED local value, NOT

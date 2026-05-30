@@ -36,3 +36,13 @@ int az_derive_master_secret(const uint32_t *bip32_path, size_t bip32_path_len, u
  */
 int az_derive_schnorr_signing_scalar(const uint32_t *bip32_path, size_t bip32_path_len,
                                      uint8_t out_priv_be[32]);
+
+/**
+ * M10 — deterministic Schnorr nonce (device-only):
+ *   k = reduce_Fq(SHA-512("aztec-schnorr-nonce-v1\0" ‖ curve_id ‖ P.x ‖ P.y ‖ priv ‖ msg))
+ * Binds curve_id + pubkey so no cross-scheme/account (k,msg) repeat. `out_k_be`
+ * is SECRET; caller wipes. @return 0 ok, -1 on failure / k≡0.
+ */
+int az_derive_schnorr_nonce(const uint8_t priv_be[32], const uint8_t pubkey_x[32],
+                            const uint8_t pubkey_y[32], uint8_t curve_id, const uint8_t msg[32],
+                            uint8_t out_k_be[32]);
