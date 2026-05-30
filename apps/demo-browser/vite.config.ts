@@ -31,12 +31,23 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 const require = createRequire(import.meta.url);
 const execAsync = promisify(exec);
 
-/** POST /api/speculos/restart → `docker restart speculos-aztec-playwright`.
- * Reachable from the browser via the demo UI's "Reset device" button.
- * Speculos's APDU connection dies when the host fetch times out; the
- * device's NBGL review stays up but the callback's response has no
- * consumer, so pressing Both does nothing visible. A container restart
- * is the fastest reliable reset. */
+/** POST /api/speculos/restart → SELF-HEALING Speculos reset for the demo UI's
+ * "Reset device" button. Speculos's APDU connection dies when a host fetch
+ * times out; the NBGL review stays painted but its callback has no consumer, so
+ * pressing Both does nothing — a fresh container is the reliable reset.
+ *
+ * Previously this did `docker restart speculos-aztec-playwright`, which 500'd
+ * whenever that exact container wasn't running (it's `--rm`, so it vanishes on
+ * any stop, and nothing else creates it by that name). Instead we remove any
+ * prior container and `docker run` a fresh one — idempotent, and it reloads the
+ * latest-built `app.elf` so a device rebuild is picked up by clicking Reset. */
+const SPECULOS_NAME = 'speculos-aztec-playwright';
+const SPECULOS_IMAGE =
+  'ghcr.io/ledgerhq/speculos@sha256:9b414c3bcaecb7638224156d36a702d66af812a0aa59ca203ce7b34cf4d590ca';
+/* Elf dir resolved relative to this config (apps/demo-browser → ledger-app/bin)
+ * so no absolute host path is baked into the repo. */
+const SPECULOS_BIN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../ledger-app/bin');
+
 function speculosResetPlugin(): Plugin {
   return {
     name: 'speculos-reset',
@@ -47,17 +58,38 @@ function speculosResetPlugin(): Plugin {
           res.end('POST only');
           return;
         }
+        const respond = (code: number, body: Record<string, unknown>) => {
+          res.statusCode = code;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(body));
+        };
         try {
-          await execAsync('docker restart speculos-aztec-playwright');
-          /* Give the container a moment to come up before responding. */
-          await new Promise((r) => setTimeout(r, 1500));
-          res.statusCode = 200;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ ok: true }));
+          /* Remove any prior container (ignore "no such container"), then run a
+           * fresh one on the demo's fixed ports + the latest elf. */
+          await execAsync(`docker rm -f ${SPECULOS_NAME}`).catch(() => {});
+          await execAsync(
+            `docker run -d --rm --name ${SPECULOS_NAME} -p 5001:5000 -p 9999:9999 ` +
+              `-v "${SPECULOS_BIN_DIR}:/app" ${SPECULOS_IMAGE} ` +
+              `--display headless --model nanosp --apdu-port 9999 --api-port 5000 /app/app.elf`,
+          );
+          /* Poll the API until it answers (≤10s) rather than a fixed sleep. */
+          const deadline = Date.now() + 10_000;
+          let up = false;
+          while (Date.now() < deadline) {
+            try {
+              const r = await fetch('http://localhost:5001/events?currentscreenonly=true');
+              if (r.ok) {
+                up = true;
+                break;
+              }
+            } catch {
+              /* not up yet */
+            }
+            await new Promise((r) => setTimeout(r, 400));
+          }
+          respond(up ? 200 : 500, { ok: up, container: SPECULOS_NAME });
         } catch (e) {
-          res.statusCode = 500;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ ok: false, error: String(e) }));
+          respond(500, { ok: false, error: String(e) });
         }
       });
     },
