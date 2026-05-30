@@ -75,7 +75,7 @@ int apdu_dispatcher(const command_t *cmd) {
             if (cmd->p1 != 0 || cmd->p2 != 0) {
                 return reject_dispatch(SWO_INCORRECT_P1_P2);
             }
-            uint32_t caps = CAPS_K1 | CAPS_CLEAR_SIGN;
+            uint32_t caps = CAPS_K1 | CAPS_CLEAR_SIGN | CAPS_GRUMPKIN; /* M10: Schnorr */
             uint8_t caps_be[4] = {
                 (uint8_t)(caps >> 24), (uint8_t)(caps >> 16),
                 (uint8_t)(caps >> 8), (uint8_t)caps,

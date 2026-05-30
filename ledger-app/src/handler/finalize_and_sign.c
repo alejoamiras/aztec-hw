@@ -278,9 +278,16 @@ int finalize_after_approval(void) {
     }
 
     /* M10: Schnorr-over-Grumpkin path. Signs the RAW outer_hash (no sha256 —
-     * unlike ECDSA-K). Deterministic nonce bound to curve_id+pubkey+priv+msg;
-     * the sign helper dual-derives + byte-compares for fault hardening. Returns
-     * s(32)||e_raw(32). The ECDSA-K block below is untouched (curve_id != GRUMPKIN). */
+     * unlike ECDSA-K). Deterministic nonce bound to curve_id+pubkey+priv+msg.
+     * Fault model (codex post-impl MAJOR — precise): schnorr_grumpkin_sign_with_
+     * nonce recomputes the (R, pedersen, blake2s, e, s) CONSTRUCTION twice +
+     * byte-compares, catching construction-stage glitches. The scalar/nonce
+     * derivation here is single-pass — but a glitch there yields a sig for a
+     * different key, which is (a) fail-safe (on-chain-invalid, never a spend
+     * break) and (b) independently cross-checked: the pre-UI B3 derived the same
+     * scalar→address and proved it == consumer. Full dual-derive of the scalar
+     * is a documented hardening follow-up. Returns s(32)||e_raw(32). The ECDSA-K
+     * block below is untouched (curve_id != GRUMPKIN). */
     if (G_l4_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
         uint8_t sch_priv[32], sch_px[32], sch_py[32], sch_k[32];
         if (az_derive_schnorr_signing_scalar(G_l4_session.bip32_path,

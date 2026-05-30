@@ -34,7 +34,13 @@ int handler_begin_authwit(buffer_t *cdata) {
 
     uint8_t curve_id;
     if (!buffer_read_u8(cdata, &curve_id)) return reject(SWO_WRONG_DATA_LENGTH);
-    if (curve_id != L4_CURVE_ID_K1) return reject(SW_INVALID_CURVE_ID);
+    /* M10: accept ECDSA-K (K1) OR Schnorr (GRUMPKIN). FINALIZE dispatches the
+     * signing primitive + the B3 account recompute on this curve_id. Without
+     * this the Schnorr authwit was rejected here before the finalize branch
+     * (codex post-impl BLOCKER). */
+    if (curve_id != L4_CURVE_ID_K1 && curve_id != L4_CURVE_ID_GRUMPKIN) {
+        return reject(SW_INVALID_CURVE_ID);
+    }
 
     uint8_t path_scheme;
     if (!buffer_read_u8(cdata, &path_scheme)) return reject(SWO_WRONG_DATA_LENGTH);
