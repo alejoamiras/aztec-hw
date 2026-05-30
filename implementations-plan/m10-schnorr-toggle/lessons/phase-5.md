@@ -54,5 +54,20 @@ A full Schnorr demo (deploy→drip→transfer) ALSO needs the DEPLOY wired for S
 4. Device `begin_deploy_account.c` + `finalize_deploy_and_sign.c`: branch ONLY at the 2 scheme seams — (a) signing pubkey: K1 vs derived Schnorr Grumpkin pubkey; (b) sign primitive: sha256(outer)+ECDSA vs raw outer+Schnorr. Generalize the partial-address recompute to emit args_hash/init_hash/partial for both schemas (deploy_address.c already has both via the shared `partial_from_args_hash`). Phase-6 outer-hash verify is scheme-independent (shared).
 5. Host `deployAccount`: profileId + curveId by scheme; drop the scheme=schnorr guard once wired.
 
-## P8 testnet e2e (Schnorr onboard→deploy(fresh)→drip→transfer + ECDSA regression), P9 codex post-impl → safe-v8.
-Fallback: safe-v7 (`c5be220`). 19 M10 commits on branch `m9-real-wallet-ux`.
+## DEPLOY-SCHNORR DONE (device + host + codegen) — commits 2a5e324 (device) + host
+Executed the codex roadmap exactly:
+- **deploy_address.c**: `az_schnorr_compute_partial_address` generalized to 3-out (args/init/partial) — schnorr-partial parity 2/2, byte-stable.
+- **Codegen**: `schnorr_pubkey_xy` arg schema + `CS_DEPLOY_PROFILES[1]` (SchnorrAccount). class_id 0x1e86cb… + ctor_selector 0xcd9728af **fail-closed-verified against SchnorrAccountContractArtifact at gen time** (passed → they match the SDK). `crossCheckDeployProfile` generalized to a per-id artifact map.
+- **begin_deploy_account.c**: accept K1|GRUMPKIN with EXACT (curve_id, profile arg_schema) pairing; `deploy_derive_pubkey_xy` + `deploy_compute_partial` dispatch the pubkey (secp256k1 vs Grumpkin) + partial. 3-pass fault check intact.
+- **finalize_deploy_and_sign.c**: same dispatch in Phase-6 recompute + a raw-outer Schnorr sign branch (mirrors the authwit one). KEY: `az_deploy_compute_outer_hash` is the sponsor app_payload — scheme-INDEPENDENT; only `consumer` (device-derived Schnorr address) differs. ctor args never enter the signed hash.
+- **Host**: deploy-context curveId (default K1); deployAccount drops the schnorr guard + picks profile/curve by scheme. Sign packing UNCHANGED — finalize{Deploy,}AndSign both split 64B as {r,s}; packEcdsaSignature concats → Schnorr s‖e round-trips like the wired authwit path.
+- Helpers DUPLICATED across both deploy handlers (matches the file's existing derive_signing_pubkey_xy dup) — flagged to codex as a possible refactor (drift risk on security-relevant dispatch).
+
+## P8 e2e RESULTS (Playwright headless + real Speculos, new elf)
+- **schnorr-deploy-review.e2e.ts: PASS (18.6s)** — onboard Schnorr #0 = 0x27cb2244… → Deploy → device shows "Deploy Aztec account". Proves BEGIN_DEPLOY(GRUMPKIN,profile1) end-to-end (pairing + Grumpkin pubkey + 2-Fr partial + P6 address). Repeatable.
+- **deploy-fresh-account.e2e.ts (ECDSA regression): PASS (16.5s)** on #2 — un-regressed. (Bumped #1→#2: #1 got deployed for real in M9 bring-up; page correctly showed it ✓on-chain — confirms ECDSA onboard+detection still work.)
+- **schnorr-full-flow.e2e.ts (deploy+drip+transfer SUBMIT on testnet, idx #5): RUNNING** (bg bhylbubp7). The on-chain deploy is the keystone — a landed Schnorr deploy proves finalize_deploy Schnorr sign is accepted by the canonical noir-lang/schnorr verifier.
+- **codex P9 review: RUNNING** (bg bejntein9, /tmp prompt m10-codex-p9-deploy-schnorr.md).
+
+## REMAINING: fold codex P9 → confirm full-flow landed → tag safe-v8.
+Fallback: safe-v7 (`c5be220`). 23 M10 commits on branch `m9-real-wallet-ux`.
