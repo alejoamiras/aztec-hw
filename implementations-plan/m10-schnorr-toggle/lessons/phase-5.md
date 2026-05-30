@@ -89,5 +89,25 @@ Full-flow run (bdxm2nc38, Schnorr #4 = 0x11ce2beb…2e6c655ca8a9fdd4ead07fb653d9
 - NO prior test drove a deploy APPROVAL (smoke skips deployed; M8 deploy-review only polls). autoConfirm must match the NBGL finish page "Deploy your Aztec account?" (BOTH=approve), distinct from the "Deploy Aztec account" intro title and the verified-calls "Sign Aztec outer_hash?".
 - transfer/drip success = StatusBar aztecscan tx link, not a `.status.ok` element.
 
-## REMAINING: confirm the transfer re-run lands → tag safe-v8 → STOP loop (P7+P8+P9 done).
-Fallback: safe-v7 (`c5be220`). 27 M10 commits on branch `m9-real-wallet-ux`.
+## M10 COMPLETE — tagged safe-v8 ✅
+Transfer re-run (btwwd6ky6) PASSED (3.2m): #4 deploy self-skipped, drip err="",
+**transfer err="" tx 0x2bb62209dc702a463610508702a05aa16201b463759550d45f1a762becaee020**, 0 console errors.
+
+Full Schnorr-alongside-ECDSA demo PROVEN on Aztec testnet via Playwright headless:
+- P7 ✅ frontend ECDSA/Schnorr toggle.
+- P8 ✅ Schnorr onboard→deploy→drip→transfer all on-chain green; deploy-review +
+  ECDSA-regression (#2) PASS; deployed-detection works per-scheme.
+- P9 ✅ codex post-impl review; both blockers folded (deploy TOCTOU, empty review
+  address) + built/validated; Major (single-pass nonce) = documented PoC residual;
+  Minors (helper dedup, profile-id-from-metadata) = noted follow-ups.
+
+safe-v8 tagged at 226df65. ~28 M10 commits on branch `m9-real-wallet-ux` (all
+UNSIGNED — AFK). Fallback: safe-v7 (`c5be220`).
+
+## Follow-ups (not blocking the demo)
+- Refactor the duplicated deploy_derive_pubkey_xy/deploy_compute_partial into a
+  shared TU (codex P9 Minor) before adding a 3rd deploy profile.
+- Host: read deploy profile-id from generated metadata, not hardcoded 0/1.
+- Schnorr full dual-derive of scalar/nonce (hardens the repeated-k fault residual).
+- On return: re-enable commit signing; decide whether to backfill signatures on the
+  AFK M8/M9/M10 commits.
