@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EcdsaKAccountContractArtifact } from '@aztec/accounts/ecdsa';
+import { SchnorrAccountContractArtifact } from '@aztec/accounts/schnorr';
 import { SponsoredFPCContract } from '@aztec/noir-contracts.js/SponsoredFPC';
 import { FunctionSelector, getAllFunctionAbis } from '@aztec/stdlib/abi';
 import { computeContractClassId, getContractClassFromArtifact } from '@aztec/stdlib/contract';
@@ -64,7 +65,7 @@ interface DeployProfileEntry {
   version: number;
   account_class_id: string;
   ctor_selector_u32: string;
-  ctor_arg_schema: 'ecdsa_k_pubkey_xy';
+  ctor_arg_schema: 'ecdsa_k_pubkey_xy' | 'schnorr_pubkey_xy';
   ctor_arg_byte_len: number;
   deployer: string;
   sponsor_fpc_address: string;
@@ -475,11 +476,33 @@ export function csVerbLookup(
  * never sees a stale class id.
  */
 async function crossCheckDeployProfile(profile: DeployProfileEntry): Promise<void> {
-  if (profile.id !== 'DEPLOY_ACCOUNT_ECDSAK_V1') {
+  /* profile.id → the SDK artifact + the schema/byte-len it MUST carry. Both the
+   * ECDSA-K (64 byte-frs) and Schnorr (2 Frs) ctors ABI-encode to 64 bytes, but
+   * the schema string MUST match the id so the device's per-scheme partial fn is
+   * selected correctly. Adding a profile means adding a row here (fail-closed). */
+  const specs = {
+    DEPLOY_ACCOUNT_ECDSAK_V1: {
+      artifact: EcdsaKAccountContractArtifact,
+      schema: 'ecdsa_k_pubkey_xy',
+      byteLen: 64,
+    },
+    DEPLOY_ACCOUNT_SCHNORR_V1: {
+      artifact: SchnorrAccountContractArtifact,
+      schema: 'schnorr_pubkey_xy',
+      byteLen: 64,
+    },
+  } as const;
+  const spec = specs[profile.id as keyof typeof specs];
+  if (!spec) {
     throw new Error(`[fail-closed] Unknown deploy profile id: ${profile.id}`);
   }
+  if (profile.ctor_arg_schema !== spec.schema) {
+    throw new Error(
+      `[fail-closed] Deploy profile ${profile.id}: ctor_arg_schema must be '${spec.schema}'; got '${profile.ctor_arg_schema}'`,
+    );
+  }
 
-  const cls = await getContractClassFromArtifact(EcdsaKAccountContractArtifact);
+  const cls = await getContractClassFromArtifact(spec.artifact);
   const computedClassId = (await computeContractClassId(cls)).toString();
   if (computedClassId.toLowerCase() !== profile.account_class_id.toLowerCase()) {
     throw new Error(
@@ -487,11 +510,9 @@ async function crossCheckDeployProfile(profile: DeployProfileEntry): Promise<voi
     );
   }
 
-  const ctor = getAllFunctionAbis(EcdsaKAccountContractArtifact).find(
-    (f) => f.name === 'constructor',
-  );
+  const ctor = getAllFunctionAbis(spec.artifact).find((f) => f.name === 'constructor');
   if (!ctor) {
-    throw new Error(`[fail-closed] EcdsaKAccount artifact missing 'constructor' function`);
+    throw new Error(`[fail-closed] ${profile.id} artifact missing 'constructor' function`);
   }
   const computedSel = (
     await FunctionSelector.fromNameAndParameters('constructor', ctor.parameters as never)
@@ -502,11 +523,9 @@ async function crossCheckDeployProfile(profile: DeployProfileEntry): Promise<voi
     );
   }
 
-  /* ctor_arg_byte_len = 64 for the ecdsa_k_pubkey_xy schema: two [u8;32] params.
-   * Validate so a schema change requires touching this gen-script. */
-  if (profile.ctor_arg_schema === 'ecdsa_k_pubkey_xy' && profile.ctor_arg_byte_len !== 64) {
+  if (profile.ctor_arg_byte_len !== spec.byteLen) {
     throw new Error(
-      `[fail-closed] Deploy profile ${profile.id}: ctor_arg_byte_len must be 64 for schema 'ecdsa_k_pubkey_xy'; got ${profile.ctor_arg_byte_len}`,
+      `[fail-closed] Deploy profile ${profile.id}: ctor_arg_byte_len must be ${spec.byteLen} for schema '${spec.schema}'; got ${profile.ctor_arg_byte_len}`,
     );
   }
 }
@@ -528,6 +547,7 @@ function emitDeployProfilesC(): { header: string; impl: string } {
 
 typedef enum {
     CS_DEPLOY_ARG_SCHEMA_ECDSA_K_PUBKEY_XY = 1,  /* [u8;32] x || [u8;32] y → 64 Frs */
+    CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY = 2,  /* Field x || Field y → 2 Frs */
 } cs_deploy_arg_schema_e;
 
 typedef enum {
@@ -557,7 +577,11 @@ const cs_deploy_profile_t *cs_deploy_profile_lookup(uint8_t profile_index);
       const deployerBytes = bytesFromBe32Hex(p.deployer);
       const sponsorBytes = bytesFromBe32Hex(p.sponsor_fpc_address);
       const schemaEnum =
-        p.ctor_arg_schema === 'ecdsa_k_pubkey_xy' ? 'CS_DEPLOY_ARG_SCHEMA_ECDSA_K_PUBKEY_XY' : '0';
+        p.ctor_arg_schema === 'ecdsa_k_pubkey_xy'
+          ? 'CS_DEPLOY_ARG_SCHEMA_ECDSA_K_PUBKEY_XY'
+          : p.ctor_arg_schema === 'schnorr_pubkey_xy'
+            ? 'CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY'
+            : '0';
       const feeEnum = p.fee_mode === 'EXTERNAL' ? 'CS_FEE_MODE_EXTERNAL' : '0';
       return `  { /* ${p.id} v${p.version} */
     .account_class_id = ${fmtByteArray(classBytes)},

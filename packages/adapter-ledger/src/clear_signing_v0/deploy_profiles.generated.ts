@@ -4,7 +4,7 @@
  * EcdsaKAccountContractArtifact — fail-closed on class-id or ctor-selector drift.
  */
 
-export type CsDeployProfileId = 'DEPLOY_ACCOUNT_ECDSAK_V1';
+export type CsDeployProfileId = 'DEPLOY_ACCOUNT_ECDSAK_V1' | 'DEPLOY_ACCOUNT_SCHNORR_V1';
 
 export interface CsDeployProfile {
   readonly id: CsDeployProfileId;
@@ -35,6 +35,20 @@ export const CS_DEPLOY_PROFILES: readonly CsDeployProfile[] = [
     sponsor_selector_u32: 0x23d77f89,
     fee_mode: 'EXTERNAL',
     display_name: 'EcdsaKAccount v1',
+  },
+  {
+    id: 'DEPLOY_ACCOUNT_SCHNORR_V1',
+    profile_index: 1,
+    version: 1,
+    account_class_id: '0x1e86cb5f3581f982b9c2c2b8a45fc4d0dfdb93cdab87e6deee55ec69d7f19703',
+    ctor_selector_u32: 0xcd9728af,
+    ctor_arg_schema: 'schnorr_pubkey_xy',
+    ctor_arg_byte_len: 64,
+    deployer: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    sponsor_fpc_address: '0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257',
+    sponsor_selector_u32: 0x23d77f89,
+    fee_mode: 'EXTERNAL',
+    display_name: 'SchnorrAccount v1',
   },
 ] as const;
 

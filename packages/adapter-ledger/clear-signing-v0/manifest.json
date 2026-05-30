@@ -154,6 +154,21 @@
       "fee_mode": "EXTERNAL",
       "display_name": "EcdsaKAccount v1",
       "_note": "M7 P2: clear-signed deploy profile. ctor_arg_schema=ecdsa_k_pubkey_xy means the constructor takes [u8;32] x, [u8;32] y of the secp256k1 signing pubkey — flattens elementwise to 64 Frs in the Noir ABI encoder (encoder.ts:24-33). ctor_selector_u32 computed at codegen from FunctionSelector.fromNameAndParameters('constructor', getAllFunctionAbis(EcdsaKAccountContractArtifact).find(f=>f.name==='constructor').parameters). account_class_id cross-checked via computeContractClassId at codegen time, fail-closed on drift. sponsor_fpc_address + sponsor_selector_u32 pin the M5/M6 SponsoredFPC + sponsor_unconditionally selectors so the synthesized canonical-call list is deterministic. fee_mode=EXTERNAL matches the EXTERNAL u8 the account_entrypoint expects for FPC-sponsored deploys."
+    },
+    {
+      "id": "DEPLOY_ACCOUNT_SCHNORR_V1",
+      "profile_index": 1,
+      "version": 1,
+      "account_class_id": "0x1e86cb5f3581f982b9c2c2b8a45fc4d0dfdb93cdab87e6deee55ec69d7f19703",
+      "ctor_selector_u32": "0xcd9728af",
+      "ctor_arg_schema": "schnorr_pubkey_xy",
+      "ctor_arg_byte_len": 64,
+      "deployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "sponsor_fpc_address": "0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257",
+      "sponsor_selector_u32": "0x23d77f89",
+      "fee_mode": "EXTERNAL",
+      "display_name": "SchnorrAccount v1",
+      "_note": "M10: clear-signed deploy profile for the canonical SchnorrAccount (Schnorr-over-Grumpkin). ctor_arg_schema=schnorr_pubkey_xy: the constructor takes (signing_pub_key_x: Field, signing_pub_key_y: Field) → 2 Frs (NOT the 64 byte-frs of ecdsa_k_pubkey_xy), so the device's args_hash = computeVarArgsHash([P.x, P.y]) (az_schnorr_compute_partial_address). class_id + ctor_selector cross-checked at codegen against SchnorrAccountContractArtifact (fail-closed on drift). sponsor_*/deployer/fee_mode identical to profile 0 — the signed deploy outer_hash is the entrypoint app_payload (sponsor_unconditionally + padding) which is scheme-independent; only the consumer (= device-derived account address from the Schnorr partial) differs. ctor_arg_byte_len=64 (2 Frs) is review metadata; it does NOT enter the signed outer_hash."
     }
   ]
 }

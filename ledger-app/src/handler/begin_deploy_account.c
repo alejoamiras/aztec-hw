@@ -35,6 +35,8 @@
 #include "../l4/wire.h"
 #include "../l4/deploy_address.h"
 #include "../l4/account_derive.h"
+#include "../l4/aztec_secret.h"
+#include "../crypto/schnorr.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
 
@@ -80,6 +82,45 @@ static int derive_signing_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
     return 0;
 }
 
+/* M10 — scheme-dispatched signing-pubkey derivation for the deploy. K1 uses the
+ * secp256k1 child pubkey (derive_signing_pubkey_xy above); GRUMPKIN derives the
+ * Schnorr signing scalar from the SAME path (child priv mod Fq, NEVER the master
+ * secret) and returns its Grumpkin pubkey P = [priv]G. Mirrors the authwit B3
+ * derivation in finalize_and_sign.c. */
+static int deploy_derive_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
+    if (G_l4_deploy_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
+        uint8_t priv[32];
+        if (az_derive_schnorr_signing_scalar(G_l4_deploy_session.bip32_path,
+                                             G_l4_deploy_session.bip32_path_len, priv) != 0) {
+            explicit_bzero(priv, 32);
+            return -1;
+        }
+        bool ok = schnorr_grumpkin_pubkey(out_x, out_y, priv);
+        explicit_bzero(priv, 32);
+        return ok ? 0 : -1;
+    }
+    return derive_signing_pubkey_xy(out_x, out_y);
+}
+
+/* M10 — scheme-dispatched partial-address. Both branches share the init/salted/
+ * partial chain (profile-pinned selector/deployer/class_id + session salt); only
+ * the ctor args_hash differs (64 byte-frs for ECDSA-K vs 2 Frs for Schnorr).
+ * Selected by the profile's arg_schema, which BEGIN already paired to curve_id. */
+static int deploy_compute_partial(const uint8_t pubkey_x[32], const uint8_t pubkey_y[32],
+                                  const cs_deploy_profile_t *profile, uint8_t out_args_hash[32],
+                                  uint8_t out_init_hash[32], uint8_t out_partial_address[32]) {
+    if (profile->arg_schema == CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY) {
+        return az_schnorr_compute_partial_address(
+            pubkey_x, pubkey_y, profile->ctor_selector_u32, G_l4_deploy_session.salt,
+            profile->deployer, profile->account_class_id, out_args_hash, out_init_hash,
+            out_partial_address);
+    }
+    return az_deploy_compute_partial_address(pubkey_x, pubkey_y, profile->ctor_selector_u32,
+                                             G_l4_deploy_session.salt, profile->deployer,
+                                             profile->account_class_id, out_args_hash, out_init_hash,
+                                             out_partial_address);
+}
+
 int handler_begin_deploy_account(buffer_t *cdata) {
     /* Mutual-exclusion with the AUTHWIT path. The session_reset call
      * inside reject() clears BOTH structs, so we don't need to be
@@ -103,7 +144,21 @@ int handler_begin_deploy_account(buffer_t *cdata) {
 
     uint8_t curve_id;
     if (!buffer_read_u8(cdata, &curve_id)) return reject(SWO_WRONG_DATA_LENGTH);
-    if (curve_id != L4_CURVE_ID_K1) return reject(SW_INVALID_CURVE_ID);
+    /* M10: scheme lives on curve_id, deploy template on profile_id. Accept ECDSA-K
+     * (K1) OR Schnorr (GRUMPKIN), and enforce the EXACT (curve_id, profile) pairing
+     * so a host can't pair a K1 curve with a Schnorr template or vice-versa (codex
+     * deploy advice — fail-closed against scheme/template confusion). */
+    if (curve_id == L4_CURVE_ID_K1) {
+        if (profile->arg_schema != CS_DEPLOY_ARG_SCHEMA_ECDSA_K_PUBKEY_XY) {
+            return reject(SW_INVALID_CURVE_ID);
+        }
+    } else if (curve_id == L4_CURVE_ID_GRUMPKIN) {
+        if (profile->arg_schema != CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY) {
+            return reject(SW_INVALID_CURVE_ID);
+        }
+    } else {
+        return reject(SW_INVALID_CURVE_ID);
+    }
 
     uint8_t path_scheme;
     if (!buffer_read_u8(cdata, &path_scheme)) return reject(SWO_WRONG_DATA_LENGTH);
@@ -181,7 +236,7 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     /* --- Parity pass 1: derive pubkey + compute partial address ----- */
     uint8_t signing_pubkey_x[32];
     uint8_t signing_pubkey_y[32];
-    if (derive_signing_pubkey_xy(signing_pubkey_x, signing_pubkey_y) != 0) {
+    if (deploy_derive_pubkey_xy(signing_pubkey_x, signing_pubkey_y) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         return reject(SWO_UNKNOWN);
@@ -190,16 +245,8 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     uint8_t args_hash_pass1[32];
     uint8_t init_hash_pass1[32];
     uint8_t partial_pass1[32];
-    if (az_deploy_compute_partial_address(
-            signing_pubkey_x,
-            signing_pubkey_y,
-            profile->ctor_selector_u32,
-            G_l4_deploy_session.salt,
-            profile->deployer,
-            profile->account_class_id,
-            args_hash_pass1,
-            init_hash_pass1,
-            partial_pass1) != 0) {
+    if (deploy_compute_partial(signing_pubkey_x, signing_pubkey_y, profile, args_hash_pass1,
+                               init_hash_pass1, partial_pass1) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         explicit_bzero(args_hash_pass1, 32);
@@ -212,16 +259,8 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     uint8_t args_hash_pass2[32];
     uint8_t init_hash_pass2[32];
     uint8_t partial_pass2[32];
-    if (az_deploy_compute_partial_address(
-            signing_pubkey_x,
-            signing_pubkey_y,
-            profile->ctor_selector_u32,
-            G_l4_deploy_session.salt,
-            profile->deployer,
-            profile->account_class_id,
-            args_hash_pass2,
-            init_hash_pass2,
-            partial_pass2) != 0) {
+    if (deploy_compute_partial(signing_pubkey_x, signing_pubkey_y, profile, args_hash_pass2,
+                               init_hash_pass2, partial_pass2) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         explicit_bzero(args_hash_pass1, 32);

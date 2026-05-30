@@ -9,10 +9,11 @@
 #pragma once
 #include <stdint.h>
 
-#define CS_DEPLOY_PROFILE_COUNT 1u
+#define CS_DEPLOY_PROFILE_COUNT 2u
 
 typedef enum {
     CS_DEPLOY_ARG_SCHEMA_ECDSA_K_PUBKEY_XY = 1,  /* [u8;32] x || [u8;32] y → 64 Frs */
+    CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY = 2,  /* Field x || Field y → 2 Frs */
 } cs_deploy_arg_schema_e;
 
 typedef enum {

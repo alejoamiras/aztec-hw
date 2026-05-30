@@ -28,6 +28,8 @@
 #include "../l4/wire.h"
 #include "../l4/deploy_address.h"
 #include "../l4/account_derive.h"
+#include "../l4/aztec_secret.h"
+#include "../crypto/schnorr.h"
 #include "../l4/deploy_outer_hash.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
@@ -101,6 +103,43 @@ static int derive_signing_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
     return 0;
 }
 
+/* M10 — scheme-dispatched pubkey + partial for the deploy Phase-6 recompute.
+ * Mirrors the helpers in begin_deploy_account.c (kept local to avoid a cross-file
+ * static dep, same rationale as derive_signing_pubkey_xy above). K1 = secp256k1
+ * child pubkey; GRUMPKIN = Schnorr signing scalar (child priv mod Fq, never the
+ * master secret) → its Grumpkin pubkey. The partial shares the init/salted/
+ * partial chain; only the ctor args_hash differs (selected by profile arg_schema,
+ * which BEGIN already paired to curve_id). */
+static int deploy_derive_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
+    if (G_l4_deploy_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
+        uint8_t priv[32];
+        if (az_derive_schnorr_signing_scalar(G_l4_deploy_session.bip32_path,
+                                             G_l4_deploy_session.bip32_path_len, priv) != 0) {
+            explicit_bzero(priv, 32);
+            return -1;
+        }
+        bool ok = schnorr_grumpkin_pubkey(out_x, out_y, priv);
+        explicit_bzero(priv, 32);
+        return ok ? 0 : -1;
+    }
+    return derive_signing_pubkey_xy(out_x, out_y);
+}
+
+static int deploy_compute_partial(const uint8_t pubkey_x[32], const uint8_t pubkey_y[32],
+                                  const cs_deploy_profile_t *profile, uint8_t out_args_hash[32],
+                                  uint8_t out_init_hash[32], uint8_t out_partial_address[32]) {
+    if (profile->arg_schema == CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY) {
+        return az_schnorr_compute_partial_address(
+            pubkey_x, pubkey_y, profile->ctor_selector_u32, G_l4_deploy_session.salt,
+            profile->deployer, profile->account_class_id, out_args_hash, out_init_hash,
+            out_partial_address);
+    }
+    return az_deploy_compute_partial_address(pubkey_x, pubkey_y, profile->ctor_selector_u32,
+                                             G_l4_deploy_session.salt, profile->deployer,
+                                             profile->account_class_id, out_args_hash, out_init_hash,
+                                             out_partial_address);
+}
+
 int handler_finalize_deploy_and_sign(buffer_t *cdata) {
     if (G_l4_session.state != L4_DEPLOY_CONTEXT) {
         return reject(SW_DEPLOY_CONTEXT_WRONG_STATE);
@@ -141,7 +180,7 @@ int finalize_deploy_after_approval(void) {
 
     uint8_t signing_pubkey_x[32];
     uint8_t signing_pubkey_y[32];
-    if (derive_signing_pubkey_xy(signing_pubkey_x, signing_pubkey_y) != 0) {
+    if (deploy_derive_pubkey_xy(signing_pubkey_x, signing_pubkey_y) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         return reject(SWO_UNKNOWN);
@@ -150,16 +189,8 @@ int finalize_deploy_after_approval(void) {
     uint8_t recheck_args[32];
     uint8_t recheck_init[32];
     uint8_t recheck_partial[32];
-    if (az_deploy_compute_partial_address(
-            signing_pubkey_x,
-            signing_pubkey_y,
-            profile->ctor_selector_u32,
-            G_l4_deploy_session.salt,
-            profile->deployer,
-            profile->account_class_id,
-            recheck_args,
-            recheck_init,
-            recheck_partial) != 0) {
+    if (deploy_compute_partial(signing_pubkey_x, signing_pubkey_y, profile, recheck_args,
+                               recheck_init, recheck_partial) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         explicit_bzero(recheck_args, 32);
@@ -237,6 +268,51 @@ int finalize_deploy_after_approval(void) {
      * session field — same TOCTOU defense as finalize_and_sign.c:141-148. */
     uint8_t outer_hash_local[L4_FR_BYTES];
     memcpy(outer_hash_local, G_l4_deploy_session.claimed_outer_hash, L4_FR_BYTES);
+
+    /* --- M10 Schnorr deploy authwit: sign the RAW outer_hash (no sha256),
+     * Schnorr-over-Grumpkin. Mirrors finalize_and_sign.c's authwit Schnorr branch.
+     * Signs the just-built local (== recomputed_outer, proven equal at the outer-
+     * hash compare above). The ECDSA-K sha256+ECDSA block below is byte-untouched
+     * (curve_id != GRUMPKIN). Fault model is the authwit one: the sign helper dual-
+     * runs the construction; the scalar/nonce derivation is single-pass but fail-
+     * safe (a glitch yields an on-chain-invalid sig, never a spend break) and
+     * cross-checked by the pre-sign Phase-6 recompute (this scalar→address ==
+     * the reviewed address_local). */
+    if (G_l4_deploy_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
+        uint8_t sch_priv[32], sch_px[32], sch_py[32], sch_k[32];
+        if (az_derive_schnorr_signing_scalar(G_l4_deploy_session.bip32_path,
+                                             G_l4_deploy_session.bip32_path_len, sch_priv) != 0) {
+            explicit_bzero(sch_priv, 32);
+            explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+            return reject(SWO_UNKNOWN);
+        }
+        if (!schnorr_grumpkin_pubkey(sch_px, sch_py, sch_priv)) {
+            explicit_bzero(sch_priv, 32);
+            explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+            return reject(SWO_UNKNOWN);
+        }
+        if (az_derive_schnorr_nonce(sch_priv, sch_px, sch_py, L4_CURVE_ID_GRUMPKIN, outer_hash_local,
+                                    sch_k) != 0) {
+            explicit_bzero(sch_priv, 32);
+            explicit_bzero(sch_k, 32);
+            explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+            return reject(SWO_UNKNOWN);
+        }
+        uint8_t sch_sig[64];
+        bool sok = schnorr_grumpkin_sign_with_nonce(sch_sig, sch_priv, sch_k, outer_hash_local);
+        explicit_bzero(sch_priv, 32);
+        explicit_bzero(sch_k, 32);
+        explicit_bzero(outer_hash_local, sizeof(outer_hash_local));
+        if (!sok) {
+            explicit_bzero(sch_sig, sizeof(sch_sig));
+            return reject(SWO_UNKNOWN);
+        }
+        int sch_rc = io_send_response_pointer(sch_sig, sizeof(sch_sig), SWO_SUCCESS);
+        explicit_bzero(sch_sig, sizeof(sch_sig));
+        l4_session_reset();
+        nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_menu_main);
+        return sch_rc;
+    }
 
     uint8_t digest[32];
     size_t digest_len = cx_hash_sha256(outer_hash_local, L4_FR_BYTES, digest, sizeof(digest));
