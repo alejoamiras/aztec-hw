@@ -23,6 +23,7 @@
 import {
   assertCanonicalAztecPath,
   CURVE_ID,
+  type CurveId,
   defaultAztecPath,
   FR_BYTES,
   MANIFEST_VERSION,
@@ -30,8 +31,12 @@ import {
 } from './apdu.ts';
 
 export interface DeployContext {
-  /** Index into CS_DEPLOY_PROFILES — must match the manifest. v0: 0. */
+  /** Index into CS_DEPLOY_PROFILES — must match the manifest. ECDSA-K: 0,
+   * SchnorrAccount: 1. The device enforces the (curveId, profile arg_schema) pair. */
   readonly profileId: number;
+  /** Signing scheme. Defaults to K1 (ECDSA-K) so the proven deploy stays byte-
+   * stable; GRUMPKIN selects the device's Schnorr deploy path. */
+  readonly curveId?: CurveId;
   readonly bip32Path: readonly number[];
   readonly chainId: Uint8Array; // 32 B
   readonly protocolVersion: Uint8Array; // 32 B
@@ -77,7 +82,7 @@ export function encodeBeginDeployAccountBody(ctx: DeployContext): Uint8Array {
   let off = 0;
   out[off++] = MANIFEST_VERSION;
   out[off++] = ctx.profileId;
-  out[off++] = CURVE_ID.SECP256K1;
+  out[off++] = ctx.curveId ?? CURVE_ID.SECP256K1;
   out[off++] = PATH_SCHEME.DEFAULT;
   out[off++] = ctx.bip32Path.length;
   for (const p of ctx.bip32Path) {

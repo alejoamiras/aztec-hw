@@ -61,7 +61,7 @@ import { LedgerSchnorrAccountContract } from './schnorr-account-contract.ts';
 /** M10 — signature scheme for the session's account. */
 export type AccountScheme = 'ecdsa' | 'schnorr';
 
-import { defaultAztecPath } from './apdu.ts';
+import { CURVE_ID, defaultAztecPath } from './apdu.ts';
 import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
 import type { DeployContext } from './deploy-context.ts';
 import { FrozenAuthWitnessProvider } from './frozen-auth-witness-provider.ts';
@@ -346,14 +346,15 @@ export class AztecLedgerSession {
     const session = this.deps.session;
     const accountContract = this.deps.accountContract;
 
-    /* M10: the deploy builder + device DeployContext are ECDSA-K-only (profile 0).
-     * A Schnorr account deploy needs the device deploy-Schnorr path + a Schnorr
-     * deploy profile (pending). Fail closed rather than build an ECDSA deploy for
-     * a Schnorr account (which the device would reject / mis-address). The
-     * Schnorr AUTHWIT path (drip/transfer) is fully wired. */
-    if (this.deps.scheme === 'schnorr') {
-      throw new Error('Schnorr account deploy not yet implemented (device deploy-Schnorr pending)');
-    }
+    /* M10: scheme-aware deploy. The accountContract (chosen in connect) is already
+     * the Schnorr or ECDSA-K contract — its getInitializationFunctionAndArgs pulls
+     * the matching device pubkey for the ctor, and its provider carries the right
+     * curveId. Here we pick the matching device deploy PROFILE + curve; the device
+     * enforces the (curveId, profile arg_schema) pair and signs the (scheme-
+     * independent) deploy outer_hash with the scheme's primitive. */
+    const isSchnorr = this.deps.scheme === 'schnorr';
+    const deployProfileId = isSchnorr ? 1 : 0; // CS_DEPLOY_PROFILES: 0=ECDSA-K, 1=SchnorrAccount
+    const deployCurveId = isSchnorr ? CURVE_ID.GRUMPKIN : CURVE_ID.SECP256K1;
 
     step('build', 'Building deploy method…');
     const chainInfo = await this.getChainInfo();
@@ -421,7 +422,8 @@ export class AztecLedgerSession {
     const path = this.deps.bip32Path;
     const publicKeysHash = await this.completeAddress.publicKeys.hash();
     const deployCtx: DeployContext = {
-      profileId: 0, // DEPLOY_ACCOUNT_ECDSAK_V1
+      profileId: deployProfileId,
+      curveId: deployCurveId,
       bip32Path: path,
       chainId: toBE32(chainInfo.chainId),
       protocolVersion: toBE32(chainInfo.version),

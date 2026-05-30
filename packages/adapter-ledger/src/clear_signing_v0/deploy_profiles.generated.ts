@@ -12,7 +12,7 @@ export interface CsDeployProfile {
   readonly version: number;
   readonly account_class_id: string;
   readonly ctor_selector_u32: number;
-  readonly ctor_arg_schema: 'ecdsa_k_pubkey_xy';
+  readonly ctor_arg_schema: 'ecdsa_k_pubkey_xy' | 'schnorr_pubkey_xy';
   readonly ctor_arg_byte_len: number;
   readonly deployer: string;
   readonly sponsor_fpc_address: string;
