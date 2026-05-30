@@ -32,6 +32,9 @@ export const INS = {
    * a high-friction on-device confirmation. The host runs it through Aztec's
    * deriveKeys() to reconstruct the viewing keys. See master-secret.ts. */
   GET_AZTEC_MASTER_SECRET: 0x12,
+  /* M10 — Grumpkin Schnorr signing pubkey P=priv·G (64B X||Y) for the
+   * SchnorrAccount ctor. Non-sensitive, no confirmation (like GET_PUBLIC_KEY). */
+  GET_SCHNORR_PUBKEY: 0x13,
 } as const;
 
 export type Ins = (typeof INS)[keyof typeof INS];

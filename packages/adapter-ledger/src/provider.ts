@@ -75,6 +75,22 @@ export class LedgerProvider {
   }
 
   /**
+   * M10 — GET_SCHNORR_PUBKEY. The device's Grumpkin Schnorr signing public key
+   * P = priv·G for the path, as 64B (X||Y). Non-sensitive (like getPublicKey);
+   * the host feeds (x, y) to the SchnorrAccount constructor. The signing scalar
+   * is derived + held device-side and never leaves.
+   */
+  async getSchnorrPublicKey(bip32Path: readonly number[]): Promise<LedgerPublicKey> {
+    const body = this.encodePath(bip32Path);
+    const r = await this.transport.send({ ins: INS.GET_SCHNORR_PUBKEY, data: body });
+    this.requireOk(r.sw, 'GET_SCHNORR_PUBKEY');
+    if (r.data.length !== 64) {
+      throw new Error(`GET_SCHNORR_PUBKEY: expected 64 bytes (X||Y), got ${r.data.length}`);
+    }
+    return { x: r.data.slice(0, 32), y: r.data.slice(32, 64) };
+  }
+
+  /**
    * M8 P4 — GET_AZTEC_MASTER_SECRET. Reveals the 32-byte Aztec master secret
    * (an `Fr`) for the given BIP-32 path, AFTER a high-friction on-device
    * confirmation (this discloses permanent note-VIEWING capability, though
