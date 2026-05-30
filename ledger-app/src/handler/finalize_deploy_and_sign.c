@@ -261,13 +261,18 @@ int finalize_deploy_after_approval(void) {
         explicit_bzero(recomputed_outer, sizeof(recomputed_outer));
         return reject(SW_HASH_MISMATCH);
     }
-    explicit_bzero(recomputed_outer, sizeof(recomputed_outer));
 
-    /* --- Sign sha256(claimed_outer_hash) with duplicate-signing -------
-     * Sign the LOCAL claimed_outer_hash variable, not the mutable
-     * session field — same TOCTOU defense as finalize_and_sign.c:141-148. */
+    /* --- Sign the DEVICE-recomputed outer_hash DIRECTLY ----------------
+     * Sign recomputed_outer (just proven == claimed), NOT a re-read of the mutable
+     * session claimed_outer_hash. A glitch on the host-controlled session field
+     * between the compare above and the sign below cannot change what we sign,
+     * because the sign (and the duplicate ECDSA / dual-run Schnorr construction)
+     * consume THIS local. Re-reading the session field here would reintroduce the
+     * exact TOCTOU finalize_and_sign.c defends against (it signs recheck_outer).
+     * (codex P9 BLOCKER.) */
     uint8_t outer_hash_local[L4_FR_BYTES];
-    memcpy(outer_hash_local, G_l4_deploy_session.claimed_outer_hash, L4_FR_BYTES);
+    memcpy(outer_hash_local, recomputed_outer, L4_FR_BYTES);
+    explicit_bzero(recomputed_outer, sizeof(recomputed_outer));
 
     /* --- M10 Schnorr deploy authwit: sign the RAW outer_hash (no sha256),
      * Schnorr-over-Grumpkin. Mirrors finalize_and_sign.c's authwit Schnorr branch.

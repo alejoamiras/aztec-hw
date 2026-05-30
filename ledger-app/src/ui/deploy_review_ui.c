@@ -39,7 +39,11 @@
 #define DEPLOY_REVIEW_ICON  C_app_aztec_64px
 #endif
 
-static char g_addr_str[32];     /* "0xAABBCCDDEEFFGGHH…IIJJKKLLMMNN" + NUL: 8+1+6+ellipsis(3)+'0x'(2)+NUL */
+/* address_8_6 emits "0x"(2) + 16 hex (8 bytes) + "…"(3 UTF-8) + 12 hex (6 bytes) +
+ * NUL = 34 bytes. The old [32] was too small, so address_8_6's length guard wrote
+ * "" and the deploy review showed NO address — defeating the clear-signing gate
+ * (codex P9 BLOCKER). 40 gives headroom. */
+static char g_addr_str[40];
 static char g_account_str[16];  /* M9 B1: "#N" — the human account index, not the BIP-32 path. */
 static char g_fee_str[40];
 
