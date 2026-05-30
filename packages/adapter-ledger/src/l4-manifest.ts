@@ -28,6 +28,7 @@ import {
   assertCanonicalAztecPath,
   CALL_FLAG,
   CURVE_ID,
+  type CurveId,
   FR_BYTES,
   MANIFEST_VERSION,
   PATH_SCHEME,
@@ -118,6 +119,10 @@ export interface L4ManifestInputs {
   readonly bip32Path: readonly number[];
   /** Optional. Defaults to zero. */
   readonly txNonce?: Uint8Array | bigint;
+  /** M10 — signature scheme: CURVE_ID.SECP256K1 (default, ECDSA-K) or
+   * CURVE_ID.GRUMPKIN (Schnorr). Sets the BEGIN_AUTHWIT header.key.curveId the
+   * device dispatches its signing primitive on. */
+  readonly curveId?: CurveId;
 }
 
 export interface L4Manifest {
@@ -186,7 +191,7 @@ export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manif
   );
 
   const key: AzKeyPath = {
-    curveId: CURVE_ID.SECP256K1,
+    curveId: inputs.curveId ?? CURVE_ID.SECP256K1,
     pathScheme: PATH_SCHEME.DEFAULT,
     path: bip32Path,
   };

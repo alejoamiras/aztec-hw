@@ -35,6 +35,7 @@ import {
   type IntentAuthWitnessProvider,
   packEcdsaSignature,
 } from '@aztec-hwwallet-poc/core';
+import { CURVE_ID, type CurveId } from './apdu.ts';
 import { preflightIntent } from './clear_signing_v0/preflight.ts';
 import type { DeployContext } from './deploy-context.ts';
 import { buildL4Manifest } from './l4-manifest.ts';
@@ -49,6 +50,12 @@ export interface LedgerProviderOptions {
    * `undefined`; the user confirms on the physical screen.
    */
   readonly signOptions?: SignOuterHashOptions;
+  /**
+   * M10 — signature scheme. `CURVE_ID.SECP256K1` (default, ECDSA-K) or
+   * `CURVE_ID.GRUMPKIN` (Schnorr). Drives the BEGIN_AUTHWIT header.key.curveId
+   * (device dispatch) AND which pubkey APDU getPublicKeyXY calls.
+   */
+  readonly curveId?: CurveId;
 }
 
 export class LedgerEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvider {
@@ -68,7 +75,12 @@ export class LedgerEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvide
    */
   async getPublicKeyXY(): Promise<{ x: Uint8Array; y: Uint8Array }> {
     if (this.cachedXY) return this.cachedXY;
-    const pk = await this.inner.getPublicKey(this.options.bip32Path);
+    /* M10: Schnorr accounts derive a Grumpkin pubkey via GET_SCHNORR_PUBKEY;
+     * ECDSA-K uses the secp256k1 GET_PUBLIC_KEY. Both return 64B X||Y. */
+    const pk =
+      this.options.curveId === CURVE_ID.GRUMPKIN
+        ? await this.inner.getSchnorrPublicKey(this.options.bip32Path)
+        : await this.inner.getPublicKey(this.options.bip32Path);
     this.cachedXY = { x: pk.x, y: pk.y };
     return this.cachedXY;
   }
@@ -105,6 +117,7 @@ export class LedgerEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvide
       intent,
       bip32Path: this.options.bip32Path,
       txNonce: txNonce ? txNonce.toBuffer() : undefined,
+      curveId: this.options.curveId,
     });
 
     /* Defensive: if any prior session is dangling on the device, ABORT clears it.

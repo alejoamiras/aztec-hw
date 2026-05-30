@@ -56,6 +56,11 @@ import type { ChainInfo } from '@aztec-hwwallet-poc/core';
 import { AuthWitness } from '@aztec-hwwallet-poc/core';
 
 import { LedgerEcdsaKAccountContract } from './account-contract.ts';
+import { LedgerSchnorrAccountContract } from './schnorr-account-contract.ts';
+
+/** M10 — signature scheme for the session's account. */
+export type AccountScheme = 'ecdsa' | 'schnorr';
+
 import { defaultAztecPath } from './apdu.ts';
 import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
 import type { DeployContext } from './deploy-context.ts';
@@ -84,10 +89,12 @@ export const DEFAULT_ACCOUNT_SALT: Fr = Fr.ZERO;
 export interface AztecLedgerSessionDeps {
   /** Ephemeral wallet (PXE + wallet DB) for the session. */
   readonly session: SessionEmbeddedWallet;
-  /** Ledger-backed K1 account contract. */
-  readonly accountContract: LedgerEcdsaKAccountContract;
+  /** Ledger-backed account contract — ECDSA-K or Schnorr (M10). */
+  readonly accountContract: LedgerEcdsaKAccountContract | LedgerSchnorrAccountContract;
   /** Direct handle to the provider (for clear-signing pre-sign). */
   readonly ledgerProvider: LedgerEcdsaKAuthWitnessProvider;
+  /** M10 — the account's signature scheme. */
+  readonly scheme: AccountScheme;
   /** Master secret Fr — derived 4 protocol keys live in browser memory. */
   readonly secret: Fr;
   /** Account-deploy salt Fr. */
@@ -151,6 +158,10 @@ export interface AztecLedgerSessionConnectOptions {
   readonly transport: LedgerTransport;
   /** Optional override BIP-32 path; defaults to Aztec's standard. */
   readonly bip32Path?: readonly number[];
+  /** M10 — signature scheme. 'ecdsa' (default, EcdsaKAccount) or 'schnorr'
+   * (SchnorrAccount, Grumpkin). Picks the account contract + device curve_id;
+   * distinct deterministic accounts per scheme (different class_id ⇒ address). */
+  readonly scheme?: AccountScheme;
   /** Wonderland Token contract artifact (loaded JSON). */
   readonly tokenArtifact: ContractArtifact;
   /** Wonderland Dripper contract artifact (loaded JSON). */
@@ -230,7 +241,11 @@ export class AztecLedgerSession {
     // Copy the array (codex NIT): the caller owns `opts.bip32Path`; storing a
     // copy means a later caller mutation can't reintroduce path drift.
     const bip32Path: readonly number[] = [...(opts.bip32Path ?? defaultAztecPath())];
-    const accountContract = new LedgerEcdsaKAccountContract(opts.transport, { bip32Path });
+    const scheme: AccountScheme = opts.scheme ?? 'ecdsa';
+    const accountContract =
+      scheme === 'schnorr'
+        ? new LedgerSchnorrAccountContract(opts.transport, { bip32Path })
+        : new LedgerEcdsaKAccountContract(opts.transport, { bip32Path });
     const ledgerProvider = accountContract.getProvider();
     const secret = opts.secret ?? Fr.random();
     /* M8 P7.2: deterministic salt by default so the SAME device reproduces the
@@ -282,6 +297,7 @@ export class AztecLedgerSession {
       session,
       accountContract,
       ledgerProvider,
+      scheme,
       secret,
       salt,
       bip32Path,
@@ -329,6 +345,15 @@ export class AztecLedgerSession {
     const step = opts.onStep ?? (() => {});
     const session = this.deps.session;
     const accountContract = this.deps.accountContract;
+
+    /* M10: the deploy builder + device DeployContext are ECDSA-K-only (profile 0).
+     * A Schnorr account deploy needs the device deploy-Schnorr path + a Schnorr
+     * deploy profile (pending). Fail closed rather than build an ECDSA deploy for
+     * a Schnorr account (which the device would reject / mis-address). The
+     * Schnorr AUTHWIT path (drip/transfer) is fully wired. */
+    if (this.deps.scheme === 'schnorr') {
+      throw new Error('Schnorr account deploy not yet implemented (device deploy-Schnorr pending)');
+    }
 
     step('build', 'Building deploy method…');
     const chainInfo = await this.getChainInfo();
