@@ -93,20 +93,6 @@ static void short_hex_field(char *out, size_t out_len, const uint8_t bytes[32]) 
     hex_n(out + 13, bytes + 28, 4);
 }
 
-/* M9 B3: full 0x + 64-hex address for the verified `From` header (address-first
- * — humans verify an account by its whole address, not a truncated prefix that
- * could be ground to collide). NBGL wraps the value across lines on small
- * screens. */
-static void full_hex_address(char *out, size_t out_len, const uint8_t bytes[32]) {
-    if (out_len < 67) {
-        out[0] = '\0';
-        return;
-    }
-    out[0] = '0';
-    out[1] = 'x';
-    hex_n(out + 2, bytes, 32);
-}
-
 /* Small Fr (chain id / version) → "0x.. (N)"; large → short hex. */
 static void fr_as_u32_or_hex(char *out, size_t out_len, const uint8_t bytes[32]) {
     bool fits = true;
@@ -123,19 +109,21 @@ static void fr_as_u32_or_hex(char *out, size_t out_len, const uint8_t bytes[32])
 }
 
 static void format_mode(char *out, size_t out_len, uint8_t flags) {
+    /* M10 P0: the action label already states pub/priv ("Transfer pub->pub"),
+     * so a PUBLIC/PRIVATE token here is redundant noise. Surface ONLY the
+     * non-obvious, security-relevant flags; the caller omits the pair entirely
+     * when this comes back empty (the common plain-transfer case). */
     bool first = true;
     out[0] = '\0';
     size_t cur = 0;
     const char *parts[] = {
-        (flags & L4_CALL_FLAG_PUBLIC) ? "PUBLIC" : "PRIVATE",
         (flags & L4_CALL_FLAG_STATIC) ? "STATIC" : NULL,
         (flags & L4_CALL_FLAG_HIDE_MSG_SENDER) ? "HIDE_SENDER" : NULL,
     };
-    for (size_t i = 0; i < 3; i++) {
+    for (size_t i = 0; i < 2; i++) {
         if (parts[i] == NULL) continue;
         const char *sep = first ? "" : ",";
-        int n = snprintf(out + cur, (cur < out_len) ? (out_len - cur) : 0,
-                         "%s%s", sep, parts[i]);
+        int n = snprintf(out + cur, (cur < out_len) ? (out_len - cur) : 0, "%s%s", sep, parts[i]);
         if (n < 0) break;
         cur += (size_t)n;
         first = false;
@@ -229,7 +217,13 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
             g_pairs[out_idx + pairs_added].item = "From"; g_pairs[out_idx + pairs_added].value = g_call_from[i]; pairs_added++;
             g_pairs[out_idx + pairs_added].item = "To";   g_pairs[out_idx + pairs_added].value = g_call_to[i];   pairs_added++;
             g_pairs[out_idx + pairs_added].item = "Amount"; g_pairs[out_idx + pairs_added].value = g_call_amount[i]; pairs_added++;
-            g_pairs[out_idx + pairs_added].item = "Mode"; g_pairs[out_idx + pairs_added].value = g_call_mode[i]; pairs_added++;
+            /* M10 P0: only show flags when STATIC/HIDE_SENDER is set — no
+             * redundant "Mode: PUBLIC" on a plain transfer. */
+            if (g_call_mode[i][0] != '\0') {
+                g_pairs[out_idx + pairs_added].item = "Flags";
+                g_pairs[out_idx + pairs_added].value = g_call_mode[i];
+                pairs_added++;
+            }
             break;
         }
         case CS_VERB_MINT_PUB:
@@ -266,15 +260,15 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
 }
 
 int ui_display_verified_calls(void) {
-    /* M9 B3: lead with the device-VERIFIED account address as `From` (full
-     * 0x+64-hex, address-first). FINALIZE already cross-checked
-     * G_l4_session.consumer == this account's recomputed address, so this is a
-     * device-proven value, not a host claim. The raw BIP-32 path is dropped
-     * (humans verify the account by its address, not its derivation path), but
-     * `Chain` stays so the user can still spot a "right tx, wrong chain"
-     * mismatch (codex post-impl MEDIUM); the outer_hash pair at the tail covers
-     * paranoid byte-level checks. */
-    full_hex_address(g_account_str, sizeof(g_account_str), G_l4_session.consumer);
+    /* M9 B3 / M10 P0: lead with the device-VERIFIED account address as `From`,
+     * TRUNCATED (0x + 4B…4B) for readability. FINALIZE already cross-checked
+     * G_l4_session.consumer == this account's recomputed address, so the FULL
+     * address is cryptographically bound regardless of how many bytes we show —
+     * truncation here cannot enable an address-grinding swap (the verification,
+     * not the display width, is the security boundary). The raw BIP-32 path is
+     * dropped; `Chain` stays (spot a "right tx, wrong chain"); outer_hash at the
+     * tail covers byte-level paranoia. */
+    short_hex_field(g_account_str, sizeof(g_account_str), G_l4_session.consumer);
     fr_as_u32_or_hex(g_chain_str, sizeof(g_chain_str), G_l4_session.chain_id);
     snprintf(g_calls_count_str, sizeof(g_calls_count_str), "%u",
              (unsigned)G_l4_session.call_count);
