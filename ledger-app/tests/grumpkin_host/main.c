@@ -334,9 +334,9 @@ static int mode_schnorr_partial(int argc, char **argv) {
   }
   uint8_t salt[32] = {0};
   uint8_t deployer[32] = {0};
-  uint8_t partial[32];
-  if (az_schnorr_compute_partial_address(px, py, (uint32_t)sel, salt, deployer, class_id, partial) !=
-      0) {
+  uint8_t args_hash[32], init_hash[32], partial[32];
+  if (az_schnorr_compute_partial_address(px, py, (uint32_t)sel, salt, deployer, class_id, args_hash,
+                                         init_hash, partial) != 0) {
     fprintf(stderr, "schnorr partial failed\n");
     return 2;
   }

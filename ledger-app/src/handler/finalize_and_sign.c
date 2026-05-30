@@ -146,11 +146,14 @@ static int b3_verify_consumer_is_this_account(void) {
             explicit_bzero(pk_y, 32);
             return SWO_UNKNOWN;
         }
+        uint8_t s_args_hash[32], s_init_hash[32];
         int prc = az_schnorr_compute_partial_address(pk_x, pk_y, SCHNORR_ACCOUNT_CTOR_SELECTOR_U32,
-                                                     B3_ZERO, B3_ZERO,
-                                                     SCHNORR_ACCOUNT_CLASS_ID_BE, partial);
+                                                     B3_ZERO, B3_ZERO, SCHNORR_ACCOUNT_CLASS_ID_BE,
+                                                     s_args_hash, s_init_hash, partial);
         explicit_bzero(pk_x, 32);
         explicit_bzero(pk_y, 32);
+        explicit_bzero(s_args_hash, 32);
+        explicit_bzero(s_init_hash, 32);
         if (prc != 0) {
             explicit_bzero(partial, 32);
             return SWO_UNKNOWN;

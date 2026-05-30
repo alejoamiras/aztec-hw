@@ -54,10 +54,12 @@ int az_deploy_compute_partial_address(
  * M10 — partial-address for a SchnorrAccount deploy. Same init/salted/partial
  * chain, but the ctor args are the 2-Fr Grumpkin pubkey (signing_pub_key_x,
  * signing_pub_key_y), so args_hash = computeVarArgsHash([P.x, P.y]). Used by the
- * Schnorr B3 consumer recompute + the Schnorr deploy verification.
+ * Schnorr B3 consumer recompute + the Schnorr deploy verification. Emits
+ * args_hash + init_hash too (same shape as the ECDSA fn) so the deploy 3-pass
+ * fault check + FINALIZE recheck are scheme-uniform.
  */
 int az_schnorr_compute_partial_address(const uint8_t pubkey_x[32], const uint8_t pubkey_y[32],
                                        uint32_t ctor_selector_u32, const uint8_t salt[32],
                                        const uint8_t deployer[32],
-                                       const uint8_t account_class_id[32],
-                                       uint8_t out_partial_address[32]);
+                                       const uint8_t account_class_id[32], uint8_t out_args_hash[32],
+                                       uint8_t out_init_hash[32], uint8_t out_partial_address[32]);

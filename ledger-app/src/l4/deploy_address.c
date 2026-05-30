@@ -151,24 +151,21 @@ int az_deploy_compute_partial_address(
 int az_schnorr_compute_partial_address(const uint8_t pubkey_x[32], const uint8_t pubkey_y[32],
                                        uint32_t ctor_selector_u32, const uint8_t salt[32],
                                        const uint8_t deployer[32],
-                                       const uint8_t account_class_id[32],
-                                       uint8_t out_partial_address[32]) {
+                                       const uint8_t account_class_id[32], uint8_t out_args_hash[32],
+                                       uint8_t out_init_hash[32], uint8_t out_partial_address[32]) {
     /* SchnorrAccount ctor = (signing_pub_key_x, signing_pub_key_y) → 2 Fr args,
-     * so args_hash = computeVarArgsHash([P.x, P.y]) (vs the ECDSA 64 byte-frs). */
+     * so args_hash = computeVarArgsHash([P.x, P.y]) (vs the ECDSA 64 byte-frs).
+     * Emits args_hash + init_hash too (same shape as the ECDSA fn) so the deploy
+     * 3-pass fault check + FINALIZE recheck work uniformly (codex deploy advice). */
     uint8_t args_payload[2 * 32];
     memcpy(&args_payload[0], pubkey_x, 32);
     memcpy(&args_payload[32], pubkey_y, 32);
-    uint8_t args_hash[32];
-    if (az_poseidon2_hash_with_separator(args_payload, 2, L4_SEP_FUNCTION_ARGS, args_hash) != 0) {
+    if (az_poseidon2_hash_with_separator(args_payload, 2, L4_SEP_FUNCTION_ARGS, out_args_hash) != 0) {
         explicit_bzero(args_payload, sizeof(args_payload));
         return -1;
     }
     explicit_bzero(args_payload, sizeof(args_payload));
 
-    uint8_t init_hash[32];
-    int rc = partial_from_args_hash(args_hash, ctor_selector_u32, salt, deployer, account_class_id,
-                                    init_hash, out_partial_address);
-    explicit_bzero(args_hash, 32);
-    explicit_bzero(init_hash, 32);
-    return rc;
+    return partial_from_args_hash(out_args_hash, ctor_selector_u32, salt, deployer,
+                                  account_class_id, out_init_hash, out_partial_address);
 }
