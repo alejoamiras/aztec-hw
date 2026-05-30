@@ -77,6 +77,17 @@ Both blockers folded + built clean (commit "fix(m10): fold codex P9 blockers", 2
 - **MINORS (follow-ups)**: dedup deploy_derive_pubkey_xy/deploy_compute_partial into a shared TU; host should read profile-id from generated metadata not hardcode.
 - codex **confirmed correct**: outer_hash scheme-independence (fact #1), (curve_id,arg_schema) anti-confusion boundary, codegen fail-closed on class-id/selector drift.
 
-## REMAINING: confirm full-flow landed on-chain → reload new elf + re-verify deploy-review (address now shows + TOCTOU benign-safe) → tag safe-v8.
-NOTE: the running full-flow (bhylbubp7) uses the elf BEFORE the P9 fixes — still valid for proving Schnorr SIGN correctness on-chain (the fixes are fault-resistance + display, not benign-path). Post-fix re-verify needed.
-Fallback: safe-v7 (`c5be220`). 24 M10 commits on branch `m9-real-wallet-ux`.
+## P8 ON-CHAIN: Schnorr DEPLOY + DRIP CONFIRMED on testnet (post-P9-fix elf) 🎉
+Full-flow run (bdxm2nc38, Schnorr #4 = 0x11ce2beb…2e6c655ca8a9fdd4ead07fb653d96):
+- **deploy err=""** — the SchnorrAccount landed on-chain. The entrypoint verified the device's Schnorr deploy authwit in-circuit ⇒ finalize_deploy Schnorr sign (TOCTOU-fixed) is ACCEPTED by the canonical noir-lang/schnorr verifier. KEYSTONE proven.
+- **drip err=""** — the Schnorr AUTHWIT path (drip 1000 USDC) landed on-chain.
+- **transfer**: SUBMITTED (tx link 0x14c0f51af230… appeared) but the test step used a WRONG success selector (`.status.ok` — doesn't exist; the real signal is the StatusBar aztecscan link). Fixed (wait for the aztecscan link + Transfer button returning). Re-running on the now-deployed+funded #4 (btwwd6ky6) for a clean transfer green — deploy self-skips.
+- Device-level finalize_deploy Schnorr sign separately validated by hand: BOTH on "Deploy your Aztec account?" → "Transaction signed".
+
+## Test-harness lessons (so the next run doesn't waste 20min)
+- account-index dropdown is [0..4]; selectOption('5') HANGS the test (waits for a non-existent option) → 20min timeout. Use 0..4.
+- NO prior test drove a deploy APPROVAL (smoke skips deployed; M8 deploy-review only polls). autoConfirm must match the NBGL finish page "Deploy your Aztec account?" (BOTH=approve), distinct from the "Deploy Aztec account" intro title and the verified-calls "Sign Aztec outer_hash?".
+- transfer/drip success = StatusBar aztecscan tx link, not a `.status.ok` element.
+
+## REMAINING: confirm the transfer re-run lands → tag safe-v8 → STOP loop (P7+P8+P9 done).
+Fallback: safe-v7 (`c5be220`). 27 M10 commits on branch `m9-real-wallet-ux`.
