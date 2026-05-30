@@ -21,5 +21,23 @@ For the device `CS_DEPLOY_PROFILES[1]` + the Schnorr partial-address:
    - NOTE: B3 runs BEFORE the UI; without the Schnorr branch a Schnorr authwit rejects at B3, so (1)+(3b3) must land together for the sign path to be reachable.
 4. **Phase-6 deploy** (`finalize_deploy_and_sign.c`) per-scheme address verify (P6-adjacent).
 
-## P6+ host adapter, P7 frontend toggle, P8 testnet e2e, P9 review → safe-v8.
-Fallback: safe-v7 (`c5be220`).
+## P5 DONE (commits 851bd72, 74d24fa, f342f00) + P6a (4d4278d)
+Device Schnorr is COMPLETE for the AUTHWIT path + pubkey, builds on nanos2:
+- `INS_GET_SCHNORR_PUBKEY` (0x13) + `provider.getSchnorrPublicKey` — **validated on Speculos**: on-curve Grumpkin point, deterministic per path, distinct per account index.
+- `finalize_and_sign.c` branches `curve_id`: Schnorr B3 recompute (schnorr partial + class_id/selector from `schnorr_account.h`) + Schnorr sign over the raw outer_hash. ECDSA path byte-untouched.
+- Nonce + signing-scalar derivations (`aztec_secret.c`), schnorr partial (`deploy_address.c`, parity-green 2/2).
+
+## ⚠ GAP discovered: DEPLOY path is still ECDSA-only
+A full Schnorr demo (deploy→drip→transfer) ALSO needs the DEPLOY wired for Schnorr — symmetric to the authwit work, NOT yet done:
+- `begin_deploy_account.c`: compute the partial/address via `az_schnorr_compute_partial_address` (not the ECDSA `az_deploy_compute_partial_address`) when the profile is Schnorr; Phase-6 address verify per-scheme.
+- `finalize_deploy_and_sign.c`: sign the deploy authwit with Schnorr (curve_id branch, like finalize_and_sign) + the deploy-outer-hash recompute uses the schnorr account address.
+- Needs `CS_DEPLOY_PROFILES[1]` (SchnorrAccount) — P6 codegen, OR reuse `schnorr_account.h` consts.
+
+## P6 host adapter (next)
+- `schnorr-account.ts`: subclass `@aztec/accounts/schnorr` `SchnorrBaseAccountContract`; `getInitializationFunctionAndArgs` → device `getSchnorrPublicKey`; `getAuthWitnessProvider` → device-backed provider that streams BEGIN_AUTHWIT with **curve_id=GRUMPKIN (3)** + FINALIZE returns the schnorr sig (64B s‖e).
+- The L4 manifest/`encodeBeginAuthwitBody` must send curve_id=Schnorr; the FINALIZE sig is wrapped into an AuthWitness (64B, same shape).
+- Thread `scheme: 'ecdsa'|'schnorr'` through `AztecLedgerSession.connect`: picks account contract + curve_id + deploy profile; cache key includes scheme (distinct per-scheme accounts).
+- Host deploy builder: a Schnorr deploy (profile 1) — pairs with the deploy-Schnorr device path above.
+
+## P7 frontend toggle, P8 testnet e2e (Schnorr onboard→deploy(fresh)→drip→transfer + ECDSA regression), P9 codex review → safe-v8.
+Fallback: safe-v7 (`c5be220`). 12 M10 commits on branch `m9-real-wallet-ux`.
