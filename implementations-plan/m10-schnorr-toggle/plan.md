@@ -82,3 +82,19 @@ Each device phase: clean nanos2 `-Werror` build + parity test before advancing. 
 
 ## 10. Deliverables
 plan.md (this) · audit-codex.md · audit-opus.md · eli5.html · lessons/phase-N.md · index.md entry. Code per §7.
+
+## 11. CONSOLIDATED DECISIONS (post codex + opus, self-approved — owner AFK)
+Triangulated main + codex + opus. They converged on all adversarial points; diverged only on de-scope. **Decision = implement directly** (no extra plan-audit round): two strong audits converged, the de-scope divergence is resolved with VERIFIED facts, and the residual risk is implementation-level → caught by per-phase parity gates + the P9 post-impl codex review.
+
+1. **Build CANONICAL `SchnorrAccount`** (opus > codex on de-scope: the generators are already hardcoded in barretenberg and there's no input scalar-reduction, so pedersen is ~1–2 days, dissolving codex's de-scope premise). Poseidon-variant = written contingency only.
+2. **curve_id = `L4_CURVE_ID_GRUMPKIN` (3)** — verified in `wire.h:26`; my draft's "=2" would have collided with `R1`.
+3. **Pedersen** = `( g_len·3 + g0·v0 + g1·v1 + g2·v2 ).x`. **Lift** G0,G1,G2 (`DEFAULT_DOMAIN_SEPARATOR` idx 0–2) + H_len (`pedersen_hash_length`) from `aztec-packages/barretenberg/.../ecc/groups/precomputed_generators_grumpkin_impl.hpp` into `pedersen_generators.c` (mirror `g1_generator.c`); record the aztec-packages commit as provenance. Inputs used as **raw 32-byte BE** (NO reduction — Aztec Fr `…f0000001` < Grumpkin order Fq `…d87cfd47`). Parity vs `@aztec/foundation` `pedersenHash` = committed gate.
+4. **Blake2s** software (RFC-7693) for the **challenge only**. Blake3/hash-to-curve NOT needed (generators hardcoded).
+5. **Var-base `[k]·P`** = clone `grumpkin_scalar_mul_generator` passing `qx,qy`. Pedersen MSM reuses it.
+6. **Signing key** = `reduce_mod_Fq( SHA-512("aztec-schnorr-signing-v1" ‖ secp256k1_child_priv_d) )` — **Fq** reduce (Grumpkin scalar), child-priv (NEVER the host-exportable master secret, which is Fr-reduced).
+7. **Nonce** = `reduce_mod_Fq( SHA-512("aztec-schnorr-nonce-v1" ‖ curve_id ‖ P.x ‖ P.y ‖ priv ‖ msg) )`; reject k/e/s==0 + R=∞; dual-derive + byte-compare s,e.
+8. **Serialize** sig = `s(32 BE) ‖ e_raw(32 BE)` (raw e, not e mod n).
+9. **Scheme-confusion guard**: signing-primitive selection + B3 consumer recompute + Phase-6 deploy address all branch on the SAME curve_id, at both pre-UI and pre-sign sites, fail-closed. Schnorr address recompute uses profile[1] + Grumpkin pubkey ctor args; viewing-key half is scheme-independent.
+10. **Validation**: per-primitive golden vectors (blake2s, var-base, pedersen-3 incl. zeros/max-canonical-Fr) + e2e sig-verify ≥256 random + a **fixed-k byte-equality** vector + **on-chain testnet inclusion (P6, non-negotiable — only this proves device==Noir verifier)** + Playwright (reuse the Speculos harness).
+11. **Side-channel**: var-base mul over the secret scalar is a documented HW-audit item; this build is NOT represented as side-channel resistant.
+12. Phasing unchanged (P0 shipped). P2 (var-base) + P3 (pedersen) are smaller than first feared.
