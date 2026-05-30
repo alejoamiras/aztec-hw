@@ -39,5 +39,20 @@ A full Schnorr demo (deploy→drip→transfer) ALSO needs the DEPLOY wired for S
 - Thread `scheme: 'ecdsa'|'schnorr'` through `AztecLedgerSession.connect`: picks account contract + curve_id + deploy profile; cache key includes scheme (distinct per-scheme accounts).
 - Host deploy builder: a Schnorr deploy (profile 1) — pairs with the deploy-Schnorr device path above.
 
-## P7 frontend toggle, P8 testnet e2e (Schnorr onboard→deploy(fresh)→drip→transfer + ECDSA regression), P9 codex review → safe-v8.
-Fallback: safe-v7 (`c5be220`). 12 M10 commits on branch `m9-real-wallet-ux`.
+## P6b + P7 DONE; codex review (round 1) FOLDED
+- P6b (86eecac): scheme-aware host authwit (buildL4Manifest+provider curveId; LedgerSchnorrAccountContract; connect({scheme})). P7 (c722fa7): OnboardPanel #scheme toggle.
+- **codex post-impl review (session /tmp/claude-501/codex-Xerqwmtq)** — verdict changes-needed; core construction + derivations CONFIRMED correct. Folded (051cad4):
+  - **BLOCKER**: begin_authwit rejected curve_id!=K1 → Schnorr authwit was unreachable. FIXED (accept K1|GRUMPKIN) + GET_CAPS advertises CAPS_GRUMPKIN.
+  - **MAJOR (fault check)**: comment overstated — sign helper dual-runs the CONSTRUCTION but the scalar/nonce derivation is single-pass. Corrected the comment (glitch is fail-safe on-chain-invalid + cross-checked by pre-UI B3). Full dual-derive = documented follow-up.
+  - **MAJOR (B3 constraint)**: B3 hardcodes zero salt/deployer/one profile — safe today (fail-closed), breaks for nonzero salt/multi-profile unless BEGIN_AUTHWIT carries account-shape metadata. Demo config = zero-salt/profile-1, so OK; documented.
+  - LOW: var-base side-channel — documented PoC limitation.
+
+## DEPLOY-SCHNORR roadmap (codex-recommended, NEXT — the gating piece for P8)
+1. Scheme on `curve_id`, deploy template on `profile_id`; enforce EXACT pairs: (K1,profile 0)=ECDSA, (GRUMPKIN,profile 1)=Schnorr. NOT profile_id-as-scheme.
+2. Add `CS_DEPLOY_PROFILES[1]` (SchnorrAccount: class_id 0x1e86cb…, ctor_selector 0xcd9728af, arg_schema=2-Fr, deployer/sponsor as profile 0) via the codegen (gen-clear-signing-v0.ts) — or hand-extend the gen'd file.
+3. `deploy-context.ts`: add `curveId` (default K1 — keeps ECDSA byte-stable) + send it in encodeBeginDeployAccountBody.
+4. Device `begin_deploy_account.c` + `finalize_deploy_and_sign.c`: branch ONLY at the 2 scheme seams — (a) signing pubkey: K1 vs derived Schnorr Grumpkin pubkey; (b) sign primitive: sha256(outer)+ECDSA vs raw outer+Schnorr. Generalize the partial-address recompute to emit args_hash/init_hash/partial for both schemas (deploy_address.c already has both via the shared `partial_from_args_hash`). Phase-6 outer-hash verify is scheme-independent (shared).
+5. Host `deployAccount`: profileId + curveId by scheme; drop the scheme=schnorr guard once wired.
+
+## P8 testnet e2e (Schnorr onboard→deploy(fresh)→drip→transfer + ECDSA regression), P9 codex post-impl → safe-v8.
+Fallback: safe-v7 (`c5be220`). 19 M10 commits on branch `m9-real-wallet-ux`.
