@@ -36,6 +36,7 @@
 #include "../handler/begin_deploy_account.h"
 #include "../handler/finalize_deploy_and_sign.h"
 #include "../handler/get_aztec_master_secret.h"
+#include "../handler/get_schnorr_pubkey.h"
 
 static buffer_t make_buf(const command_t *cmd) {
     buffer_t buf = {0};
@@ -90,6 +91,15 @@ int apdu_dispatcher(const command_t *cmd) {
             if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
             buf = make_buf(cmd);
             return handler_get_public_key(&buf, false);
+
+        case INS_GET_SCHNORR_PUBKEY:
+            l4_session_reset(); /* L2-style derivation INS — no shared L4 state. */
+            if (cmd->p1 != 0 || cmd->p2 != 0) {
+                return reject_dispatch(SWO_INCORRECT_P1_P2);
+            }
+            if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
+            buf = make_buf(cmd);
+            return handler_get_schnorr_pubkey(&buf);
 
         case INS_SIGN_OUTER_HASH:
             l4_session_reset(); /* L2 blind-sign path — abort any L4 session. */

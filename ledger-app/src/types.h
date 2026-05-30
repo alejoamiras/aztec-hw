@@ -33,6 +33,12 @@ typedef enum {
      * host runs the result through Aztec deriveKeys() to reconstruct viewing
      * keys. Discloses note-VIEWING capability, never spend authority. */
     INS_GET_AZTEC_MASTER_SECRET = 0x12,
+    /* M10 — Grumpkin signing public key P = priv·G for the SchnorrAccount. The
+     * host drops (P.x, P.y) into the SchnorrAccount constructor args. Like
+     * GET_PUBLIC_KEY (K1), this is non-sensitive (public key, no confirmation).
+     * The Schnorr signing scalar is derived device-side from the BIP-32 child
+     * priv (distinct domain, reduced mod the Grumpkin order) — never exported. */
+    INS_GET_SCHNORR_PUBKEY = 0x13,
 } command_e;
 
 /**

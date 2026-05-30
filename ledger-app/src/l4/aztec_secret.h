@@ -22,3 +22,17 @@
 
 /** @return 0 on success, -1 on derivation failure. */
 int az_derive_master_secret(const uint32_t *bip32_path, size_t bip32_path_len, uint8_t out_sk[32]);
+
+/**
+ * M10 — derive the Grumpkin Schnorr SIGNING scalar (device-only):
+ *
+ *   priv = SHA-512("aztec-schnorr-signing-v1\0" || privkey_d(32)) mod n_grumpkin
+ *
+ * Rooted in the BIP-32 secp256k1 child priv (same lineage as the K1 key, so
+ * reconnect == recovery), reduced mod the Grumpkin scalar order (Fq) — the
+ * Schnorr key field. Distinct domain + NEVER the host-exportable master secret
+ * (codex CRITICAL: would turn the viewing-key reveal into spend-key exfil).
+ * `out_priv_be` is SECRET; caller must wipe. @return 0 ok, -1 on failure / zero.
+ */
+int az_derive_schnorr_signing_scalar(const uint32_t *bip32_path, size_t bip32_path_len,
+                                     uint8_t out_priv_be[32]);
