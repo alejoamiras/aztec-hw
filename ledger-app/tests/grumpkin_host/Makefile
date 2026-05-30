@@ -19,6 +19,7 @@ SRCS := \
 	$(GRUMPKIN_DIR)/point.c \
 	$(GRUMPKIN_DIR)/g1_generator.c \
 	$(GRUMPKIN_DIR)/mul_generator.c \
+	../../src/crypto/pedersen.c \
 	$(L4_DIR)/account_keys.c \
 	$(L4_DIR)/deploy_outer_hash.c \
 	main.c

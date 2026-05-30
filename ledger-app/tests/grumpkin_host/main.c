@@ -16,6 +16,7 @@
 #include "../../src/crypto/grumpkin/g1_generator.h"
 #include "../../src/crypto/grumpkin/mul_generator.h"
 #include "../../src/crypto/grumpkin/point.h"
+#include "../../src/crypto/pedersen.h"
 #include "../../src/l4/account_keys.h"
 #include "../../src/l4/deploy_outer_hash.h"
 
@@ -246,17 +247,39 @@ static int mode_mulp(int argc, char **argv) {
   return 0;
 }
 
+/* pedersen <v0 v1 v2> (3 hex32) -> pedersen_hash3([v0,v1,v2]).x. M10 P3. */
+static int mode_pedersen(int argc, char **argv) {
+  if (argc != 3) {
+    fprintf(stderr, "pedersen needs exactly 3 hex32 inputs\n");
+    return 2;
+  }
+  uint8_t v0[32], v1[32], v2[32];
+  if (parse_hex32(argv[0], v0) != 0 || parse_hex32(argv[1], v1) != 0 ||
+      parse_hex32(argv[2], v2) != 0) {
+    fprintf(stderr, "bad hex32 in pedersen input\n");
+    return 2;
+  }
+  uint8_t x[32];
+  if (!pedersen_hash3(x, v0, v1, v2)) {
+    fprintf(stderr, "pedersen_hash3 failed (non-canonical input or infinity)\n");
+    return 2;
+  }
+  print_hex32(x);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     fprintf(stderr,
-            "usage: %s mul <hex32>... | mulp <scalar px py>... | fq-wide-reduce <hex128> | "
-            "pubkeys-hash <8 hex32> | address <4 hex32> | "
+            "usage: %s mul <hex32>... | mulp <scalar px py>... | pedersen <3 hex32> | "
+            "fq-wide-reduce <hex128> | pubkeys-hash <8 hex32> | address <4 hex32> | "
             "deploy-outer-hash <5 hex32> <selector_u32> | smoke\n",
             argv[0]);
     return 1;
   }
   if (strcmp(argv[1], "mul") == 0) return mode_mul(argc - 2, argv + 2);
   if (strcmp(argv[1], "mulp") == 0) return mode_mulp(argc - 2, argv + 2);
+  if (strcmp(argv[1], "pedersen") == 0) return mode_pedersen(argc - 2, argv + 2);
   if (strcmp(argv[1], "fq-wide-reduce") == 0) return mode_fq_wide_reduce(argc - 2, argv + 2);
   if (strcmp(argv[1], "pubkeys-hash") == 0) return mode_pubkeys_hash(argc - 2, argv + 2);
   if (strcmp(argv[1], "address") == 0) return mode_address(argc - 2, argv + 2);
