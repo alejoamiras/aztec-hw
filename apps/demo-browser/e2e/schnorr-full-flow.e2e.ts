@@ -173,11 +173,20 @@ test('schnorr full flow: deploy + drip + transfer on testnet', async ({ page }) 
     const transferBtn = page.getByRole('button', { name: 'Transfer', exact: true });
     await transferBtn.click();
     const confirm = autoConfirmSpeculos(90_000);
+    /* Success signal is an aztecscan tx link (StatusBar renders it once the tx is
+     * built+submitted) AND the Transfer button returning from its submitting label.
+     * (.status.ok was wrong — the demo has no such element.) */
     await page
       .waitForFunction(
         () => {
           if (document.querySelector('.status.err')) return true;
-          return !!document.querySelector('.status.ok, .status.success, .receipt');
+          const link = Array.from(document.querySelectorAll('a')).some((a) =>
+            /aztecscan/i.test(a.getAttribute('href') ?? ''),
+          );
+          const btn = Array.from(document.querySelectorAll('button')).find((b) =>
+            /Transfer/i.test(b.textContent ?? ''),
+          );
+          return link && !!btn && !/…|submitting|transferring/i.test(btn.textContent ?? '');
         },
         { timeout: 6 * 60_000 },
       )
@@ -185,7 +194,12 @@ test('schnorr full flow: deploy + drip + transfer on testnet', async ({ page }) 
     await confirm.catch(() => {});
     const err = page.locator('.status.err').first();
     const errText = (await err.count()) > 0 ? await err.innerText() : '';
-    console.log('[schnorr-full] transfer err=' + JSON.stringify(errText));
+    const txLink = await page
+      .locator('a[href*="aztecscan"]')
+      .first()
+      .getAttribute('href')
+      .catch(() => null);
+    console.log('[schnorr-full] transfer err=' + JSON.stringify(errText) + ' txLink=' + txLink);
   });
 
   console.log('[schnorr-full] console errors: ' + errors.length);
