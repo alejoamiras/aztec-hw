@@ -41,6 +41,9 @@ export function OnboardPanel({ state, setState }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [checksum, setChecksum] = useState<string | null>(null);
   const [accountIndex, setAccountIndex] = useState(0);
+  /* M10: signature scheme. The SAME Ledger seed backs both — only the signing
+   * key family + account contract differ, so each scheme is a distinct account. */
+  const [scheme, setScheme] = useState<'ecdsa' | 'schnorr'>('ecdsa');
 
   const isOnboarding = state.kind === 'onboarding';
   const isOnboarded = state.kind === 'ready' || state.kind === 'submitting';
@@ -84,6 +87,7 @@ export function OnboardPanel({ state, setState }: Props) {
         transport: ledger,
         secret,
         bip32Path: path, // M9 A2: same path as the reveal + cache key
+        scheme, // M10: 'ecdsa' (EcdsaKAccount) or 'schnorr' (SchnorrAccount)
 
         tokenArtifact: TOKEN_ARTIFACT,
         dripperArtifact: DRIPPER_ARTIFACT,
@@ -163,6 +167,22 @@ export function OnboardPanel({ state, setState }: Props) {
               ))}
             </select>
             <span className="status muted">Each index is a separate account on your Ledger.</span>
+          </div>
+          <div className="row">
+            <label htmlFor="scheme">Signature</label>
+            <select
+              id="scheme"
+              value={scheme}
+              onChange={(e) => setScheme(e.target.value as 'ecdsa' | 'schnorr')}
+              disabled={busy !== null}
+            >
+              <option value="ecdsa">ECDSA (secp256k1)</option>
+              <option value="schnorr">Schnorr (Grumpkin)</option>
+            </select>
+            <span className="status muted">
+              Same Ledger seed — the device signs with the chosen scheme. Each scheme is its own
+              account.
+            </span>
           </div>
           <div className="row">
             <button type="button" onClick={onDerive} disabled={busy !== null}>
