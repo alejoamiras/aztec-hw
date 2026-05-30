@@ -127,8 +127,12 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     /* M9 (codex MAJOR): the deploy UI shows "Account #N" by masking path[2], so
      * enforce the FULL canonical shape m/44'/AZTEC'/<acct>'/0/0 — else a host
      * could pass a non-canonical path and the device would show a misleading #N. */
-    if (G_l4_deploy_session.bip32_path_len != 5u ||
-        (G_l4_deploy_session.bip32_path[2] & 0x80000000u) == 0u ||
+    /* NB: use the LOCAL `path_len` — G_l4_deploy_session.bip32_path_len is not
+     * assigned until after the Fr reads below (~line 175), so reading the field
+     * here saw 0 and rejected every canonical deploy with 0x6F03. The path
+     * COMPONENTS were already written into the session array by
+     * buffer_read_bip32_path above, so [2]/[3]/[4] are valid here. */
+    if (path_len != 5u || (G_l4_deploy_session.bip32_path[2] & 0x80000000u) == 0u ||
         G_l4_deploy_session.bip32_path[3] != 0u || G_l4_deploy_session.bip32_path[4] != 0u) {
         return reject(SW_INVALID_PATH_SCHEME);
     }

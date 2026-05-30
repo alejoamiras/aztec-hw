@@ -51,6 +51,14 @@ The device now recomputes its OWN account address at FINALIZE and cross-checks i
 ## smoke.e2e fix (M9 A staleness)
 M9 A's deployed-detection correctly HIDES the Deploy button for an on-chain account, but smoke.e2e blocked 15min on `deployBtn.click()`. FIX: skip Deploy when `count()===0` → proceed to Drip (still exercises FINALIZE → B3). Drip is the cleanest B3 test (consumer check is the sole gate).
 
+## POST-RELEASE BUG — deploy 0x6F03 for ALL accounts (read-before-assign)
+User hit `BEGIN_DEPLOY_ACCOUNT failed: SW=0x6f03` deploying account #1. Diagnostic (`_diag.ts`, since deleted) sending BEGIN_DEPLOY straight to Speculos showed **both #0 and #1** fail 0x6F03 with a correctly-encoded canonical path (path_len byte=5, bytes `80 00 00 2c …`) — so NOT index-specific, purely the device handler.
+- **Root cause**: my M9-A canonical check in `begin_deploy_account.c` read `G_l4_deploy_session.bip32_path_len`, but that field isn't assigned until ~line 175 (after the Fr reads). At the check it was still 0 (from `l4_session_reset`), so `0 != 5` → reject 0x6F03 on EVERY canonical deploy. The path *components* (`bip32_path[2..4]`) were fine (written by `buffer_read_bip32_path`). begin_authwit + get_aztec_master_secret used the local/early-assigned length, which is why drip + reveal worked and masked this.
+- **Why it shipped**: NO e2e covered a deploy after the canonical change — smoke + the M8 deploy-review test both use account #0, which is already on-chain so M9 A hides its Deploy button.
+- **Fix**: use the local `path_len` in the check. Rebuilt; diagnostic flips to 0x6F0F (path accepted → reaches Phase-6 derivation, mismatches the zero publicKeysHash as expected).
+- **New regression test** `deploy-fresh-account.e2e.ts`: onboards a FRESH index (#1, distinct address `0x2934…`) and asserts the device deploy review appears with no 0x6F03 (does not submit → #1 stays fresh/repeatable). GREEN 16.9s.
+- NOTE: `safe-v6` (f8811be) contains this deploy bug; the fix lands on top. Move safe-v6 to the fix commit, or treat the fix commit as the demo-ready point.
+
 ## Validation — COMPLETE (committed f8811be, tagged safe-v6)
 - Device builds clean (nanos2, -Werror); host tsc + biome clean; adapter unit tests 85 pass / 0 fail (canonical-path tightening broke nothing).
 - Full e2e matrix GREEN on the final B3 elf (f8811be):
