@@ -63,6 +63,10 @@ export type AccountScheme = 'ecdsa' | 'schnorr';
 
 import { CURVE_ID, defaultAztecPath } from './apdu.ts';
 import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
+import {
+  type CsDeployProfileId,
+  csDeployProfileLookup,
+} from './clear_signing_v0/deploy_profiles.generated.ts';
 import type { DeployContext } from './deploy-context.ts';
 import { FrozenAuthWitnessProvider } from './frozen-auth-witness-provider.ts';
 import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
@@ -85,6 +89,18 @@ function toBE32(value: { toBuffer(): Buffer }): Uint8Array {
  * override (tests pin their own).
  */
 export const DEFAULT_ACCOUNT_SALT: Fr = Fr.ZERO;
+
+/**
+ * M12 P1 — host deploy-profile selection by scheme, sourced from the generated
+ * `deploy_profiles` metadata. The string-union value (not a magic number) makes a
+ * codegen rename a COMPILE error; the runtime lookup (in deployAccount) fail-closes
+ * on a miss. Replaces a hardcoded `isSchnorr ? 1 : 0` that would silently sign the
+ * wrong template if the codegen ever renumbered `profile_index`.
+ */
+export const DEPLOY_PROFILE_BY_SCHEME: Record<AccountScheme, CsDeployProfileId> = {
+  ecdsa: 'DEPLOY_ACCOUNT_ECDSAK_V1',
+  schnorr: 'DEPLOY_ACCOUNT_SCHNORR_V1',
+};
 
 export interface AztecLedgerSessionDeps {
   /** Ephemeral wallet (PXE + wallet DB) for the session. */
@@ -353,7 +369,13 @@ export class AztecLedgerSession {
      * enforces the (curveId, profile arg_schema) pair and signs the (scheme-
      * independent) deploy outer_hash with the scheme's primitive. */
     const isSchnorr = this.deps.scheme === 'schnorr';
-    const deployProfileId = isSchnorr ? 1 : 0; // CS_DEPLOY_PROFILES: 0=ECDSA-K, 1=SchnorrAccount
+    /* M12 P1: resolve the deploy profile-id from generated metadata (was a
+     * hardcoded `isSchnorr ? 1 : 0`). Fail-closed on a lookup miss. */
+    const deployProfile = csDeployProfileLookup(DEPLOY_PROFILE_BY_SCHEME[this.deps.scheme]);
+    if (!deployProfile) {
+      throw new Error(`deployAccount: no deploy profile for scheme '${this.deps.scheme}'`);
+    }
+    const deployProfileId = deployProfile.profile_index;
     const deployCurveId = isSchnorr ? CURVE_ID.GRUMPKIN : CURVE_ID.SECP256K1;
 
     step('build', 'Building deploy method…');
