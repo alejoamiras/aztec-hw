@@ -77,13 +77,11 @@ void grumpkin_point_cmov(grumpkin_point_t *p, const grumpkin_point_t *src, uint8
 }
 
 void grumpkin_point_double(grumpkin_point_t *out, const grumpkin_point_t *p) {
-  if (grumpkin_point_is_infinity(p) || fr_is_zero(&p->y)) {
-    /* Grumpkin has prime order ⇒ no finite order-2 points (Y never 0 for a
-     * finite point), but guard anyway: 2·O = O, and 2·(Y=0 point) = O. */
-    grumpkin_point_set_infinity(out);
-    return;
-  }
-
+  /* M11 P3 (codex): NO data-dependent early return. dbl-2009-l already collapses
+   * to O for p=O (X=Y=Z=0 ⇒ every temp 0 ⇒ Z3=2·Y·Z=0) and for the Y=0 case
+   * (unreachable on prime-order Grumpkin ⇒ no 2-torsion; Z3=2·0·Z=0 anyway).
+   * Removing the branch makes the [k]G + Pedersen accumulator constant-time
+   * w.r.t. the scalar's leading-zero count. Output is byte-identical. */
   fr_t A, B, C, D, E, F, X3, Y3, Z3, t0, t1;
 
   fr_sqr(&A, &p->x);  /* A = X1²            */
@@ -139,43 +137,29 @@ void grumpkin_point_double(grumpkin_point_t *out, const grumpkin_point_t *p) {
 
 void grumpkin_point_add_affine(grumpkin_point_t *out, const grumpkin_point_t *p, const fr_t *qx,
                                const fr_t *qy) {
-  if (grumpkin_point_is_infinity(p)) {
-    fr_set(&out->x, qx);
-    fr_set(&out->y, qy);
-    fr_one(&out->z);
-    return;
-  }
-
-  fr_t Z1Z1, U2, S2, H, HH, I, J, r, V, X3, Y3, Z3, t0, t1;
+  /* M11 P3 (codex): branch-free mixed add. Compute the generic madd-2007-bl
+   * result AND the three exceptional outcomes, then constant-time select — no
+   * data-dependent control flow (kills the ∞ + H==0 leaks shared by [k]G and
+   * Pedersen). The generic formula yields garbage when H==0 or p=O, but a cmov
+   * overwrites it. Order matters: the p==O select runs LAST so it wins (∞ + Q =
+   * Q regardless of the spurious H/r flags ∞ produces). Output byte-identical to
+   * the old branchy version. */
+  fr_t Z1Z1, U2, S2, H, HH, I, J, r, r_orig, V, X3, Y3, Z3, t0, t1;
 
   fr_sqr(&Z1Z1, &p->z);      /* Z1²              */
   fr_mul(&U2, qx, &Z1Z1);    /* U2 = X2·Z1²      */
   fr_mul(&t0, &p->z, &Z1Z1); /* Z1³              */
   fr_mul(&S2, qy, &t0);      /* S2 = Y2·Z1³      */
 
-  fr_sub(&H, &U2, &p->x); /* H = U2 − X1      */
-  fr_sub(&r, &S2, &p->y); /* (S2 − Y1)        */
+  fr_sub(&H, &U2, &p->x);      /* H = U2 − X1                   */
+  fr_sub(&r_orig, &S2, &p->y); /* r_orig = S2 − Y1 (pre-double) */
 
-  if (fr_is_zero(&H)) {
-    /* x-coordinates equal. */
-    if (fr_is_zero(&r)) {
-      /* p == Q → doubling. */
-      grumpkin_point_double(out, p);
-    } else {
-      /* p == −Q → infinity. */
-      grumpkin_point_set_infinity(out);
-    }
-    /* M8 P7.0: scrub the temporaries live on this early-return path. */
-    grumpkin_secure_wipe(&Z1Z1, sizeof(Z1Z1));
-    grumpkin_secure_wipe(&U2, sizeof(U2));
-    grumpkin_secure_wipe(&S2, sizeof(S2));
-    grumpkin_secure_wipe(&H, sizeof(H));
-    grumpkin_secure_wipe(&r, sizeof(r));
-    grumpkin_secure_wipe(&t0, sizeof(t0));
-    return;
-  }
+  /* Exceptional-case flags (constant-time fr_is_zero / z-check). */
+  uint8_t z_zero = grumpkin_point_is_infinity(p) ? 1u : 0u; /* p == O      */
+  uint8_t h_zero = fr_is_zero(&H) ? 1u : 0u;                /* x-coords eq */
+  uint8_t r_zero = fr_is_zero(&r_orig) ? 1u : 0u;           /* y-coords eq */
 
-  fr_add(&r, &r, &r); /* r = 2·(S2 − Y1)  */
+  fr_add(&r, &r_orig, &r_orig); /* r = 2·(S2 − Y1)  */
 
   fr_sqr(&HH, &H);       /* HH = H²          */
   fr_add(&I, &HH, &HH);  /* 2·HH             */
@@ -202,11 +186,23 @@ void grumpkin_point_add_affine(grumpkin_point_t *out, const grumpkin_point_t *p,
   fr_sub(&t0, &t0, &Z1Z1);
   fr_sub(&Z3, &t0, &HH);
 
+  /* out := generic result, then constant-time-select the exceptional cases. */
   fr_set(&out->x, &X3);
   fr_set(&out->y, &Y3);
   fr_set(&out->z, &Z3);
 
-  /* M8 P7.0: scrub the secret-derived mixed-add temporaries. */
+  grumpkin_point_t dbl, qj, inf;
+  grumpkin_point_double(&dbl, p); /* p == Q  → 2p */
+  fr_set(&qj.x, qx);
+  fr_set(&qj.y, qy);
+  fr_one(&qj.z);                     /* p == O  → Q  */
+  grumpkin_point_set_infinity(&inf); /* p == −Q → O  */
+
+  grumpkin_point_cmov(out, &inf, (uint8_t)(h_zero & (uint8_t)(1u - r_zero)));
+  grumpkin_point_cmov(out, &dbl, (uint8_t)(h_zero & r_zero));
+  grumpkin_point_cmov(out, &qj, z_zero);
+
+  /* M8 P7.0 / M11: scrub secret-derived temporaries (point_double wipes its own). */
   grumpkin_secure_wipe(&Z1Z1, sizeof(Z1Z1));
   grumpkin_secure_wipe(&U2, sizeof(U2));
   grumpkin_secure_wipe(&S2, sizeof(S2));
@@ -215,12 +211,14 @@ void grumpkin_point_add_affine(grumpkin_point_t *out, const grumpkin_point_t *p,
   grumpkin_secure_wipe(&I, sizeof(I));
   grumpkin_secure_wipe(&J, sizeof(J));
   grumpkin_secure_wipe(&r, sizeof(r));
+  grumpkin_secure_wipe(&r_orig, sizeof(r_orig));
   grumpkin_secure_wipe(&V, sizeof(V));
   grumpkin_secure_wipe(&X3, sizeof(X3));
   grumpkin_secure_wipe(&Y3, sizeof(Y3));
   grumpkin_secure_wipe(&Z3, sizeof(Z3));
   grumpkin_secure_wipe(&t0, sizeof(t0));
   grumpkin_secure_wipe(&t1, sizeof(t1));
+  grumpkin_secure_wipe(&dbl, sizeof(dbl));
 }
 
 bool grumpkin_point_to_affine_be(uint8_t out_x[32], uint8_t out_y[32], const grumpkin_point_t *p) {
