@@ -61,8 +61,8 @@ int az_derive_master_secret(const uint32_t *bip32_path, size_t bip32_path_len, u
     return 0;
 }
 
-int az_derive_schnorr_signing_scalar(const uint32_t *bip32_path, size_t bip32_path_len,
-                                     uint8_t out_priv_be[32]) {
+static int signing_scalar_once(const uint32_t *bip32_path, size_t bip32_path_len,
+                               uint8_t out_priv_be[32]) {
     cx_ecfp_256_private_key_t privkey;
     uint8_t chain_code[32];
     cx_err_t err = bip32_derive_init_privkey_256(CX_CURVE_256K1, bip32_path, bip32_path_len, &privkey,
@@ -106,9 +106,9 @@ int az_derive_schnorr_signing_scalar(const uint32_t *bip32_path, size_t bip32_pa
     return 0;
 }
 
-int az_derive_schnorr_nonce(const uint8_t priv_be[32], const uint8_t pubkey_x[32],
-                            const uint8_t pubkey_y[32], uint8_t curve_id, const uint8_t msg[32],
-                            uint8_t out_k_be[32]) {
+static int schnorr_nonce_once(const uint8_t priv_be[32], const uint8_t pubkey_x[32],
+                              const uint8_t pubkey_y[32], uint8_t curve_id, const uint8_t msg[32],
+                              uint8_t out_k_be[32]) {
     /* k = reduce_Fq(SHA-512(DOMAIN ‖ curve_id ‖ P.x ‖ P.y ‖ priv ‖ msg)). Binding
      * curve_id + the pubkey prevents any cross-scheme / cross-account (k,msg)
      * repeat (opus). Deterministic ⇒ no RNG-failure nonce reuse; the FINALIZE
@@ -147,5 +147,77 @@ int az_derive_schnorr_nonce(const uint8_t priv_be[32], const uint8_t pubkey_x[32
         explicit_bzero(out_k_be, 32);
         return -1;
     }
+    return 0;
+}
+
+/* M11 P1 — fault-hard 32-byte equality for dual-derive. ONE direction with a
+ * `volatile` accumulator; callers invoke it TWICE (forward + reverse) as two
+ * independent compares with two separate reject sites, so a single glitch can't
+ * both corrupt one derivation AND skip the check (codex Major). 0 iff equal. */
+static int dd_eq32_dir(const uint8_t a[32], const uint8_t b[32], int forward) {
+    volatile uint8_t diff = 0;
+    if (forward) {
+        for (int i = 0; i < 32; i++) diff |= (uint8_t)(a[i] ^ b[i]);
+    } else {
+        for (int i = 31; i >= 0; i--) diff |= (uint8_t)(a[i] ^ b[i]);
+    }
+    return diff == 0 ? 0 : -1;
+}
+
+/* M11 P1 — dual-derive: compute the signing scalar TWICE into independent
+ * buffers and gate on a fault-hard compare before exposing it. Output is
+ * identical to the single derivation (parity unchanged); the second pass + the
+ * compare close the single-pass fault gap the M10 comments flagged. */
+int az_derive_schnorr_signing_scalar(const uint32_t *bip32_path, size_t bip32_path_len,
+                                     uint8_t out_priv_be[32]) {
+    uint8_t a[32], b[32];
+    int r1 = signing_scalar_once(bip32_path, bip32_path_len, a);
+    int r2 = signing_scalar_once(bip32_path, bip32_path_len, b);
+    if (r1 != 0 || r2 != 0) {
+        explicit_bzero(a, 32);
+        explicit_bzero(b, 32);
+        return -1;
+    }
+    if (dd_eq32_dir(a, b, 1) != 0) { /* reject site 1 (forward) */
+        explicit_bzero(a, 32);
+        explicit_bzero(b, 32);
+        return -1;
+    }
+    if (dd_eq32_dir(a, b, 0) != 0) { /* reject site 2 (reverse) */
+        explicit_bzero(a, 32);
+        explicit_bzero(b, 32);
+        return -1;
+    }
+    memcpy(out_priv_be, a, 32);
+    explicit_bzero(a, 32);
+    explicit_bzero(b, 32);
+    return 0;
+}
+
+/* M11 P1 — dual-derive the nonce (same fault-hard pattern). */
+int az_derive_schnorr_nonce(const uint8_t priv_be[32], const uint8_t pubkey_x[32],
+                            const uint8_t pubkey_y[32], uint8_t curve_id, const uint8_t msg[32],
+                            uint8_t out_k_be[32]) {
+    uint8_t a[32], b[32];
+    int r1 = schnorr_nonce_once(priv_be, pubkey_x, pubkey_y, curve_id, msg, a);
+    int r2 = schnorr_nonce_once(priv_be, pubkey_x, pubkey_y, curve_id, msg, b);
+    if (r1 != 0 || r2 != 0) {
+        explicit_bzero(a, 32);
+        explicit_bzero(b, 32);
+        return -1;
+    }
+    if (dd_eq32_dir(a, b, 1) != 0) { /* reject site 1 (forward) */
+        explicit_bzero(a, 32);
+        explicit_bzero(b, 32);
+        return -1;
+    }
+    if (dd_eq32_dir(a, b, 0) != 0) { /* reject site 2 (reverse) */
+        explicit_bzero(a, 32);
+        explicit_bzero(b, 32);
+        return -1;
+    }
+    memcpy(out_k_be, a, 32);
+    explicit_bzero(a, 32);
+    explicit_bzero(b, 32);
     return 0;
 }
