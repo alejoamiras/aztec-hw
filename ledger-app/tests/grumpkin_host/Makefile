@@ -35,7 +35,17 @@ $(OUT): $(SRCS)
 smoke: $(OUT)
 	./$(OUT) smoke
 
-clean:
-	rm -f $(OUT)
+# M11 P0 — dudect-style timing-leak gate over the Grumpkin scalar mul.
+DUDECT_OUT := grumpkin_dudect
+DUDECT_SRCS := $(filter-out main.c,$(SRCS)) dudect.c
 
-.PHONY: smoke clean
+$(DUDECT_OUT): $(DUDECT_SRCS)
+	$(CC) $(CFLAGS) -Ihostshim -I$(POSEIDON2_DIR) -I$(GRUMPKIN_DIR) -I$(L4_DIR) -o $@ $(DUDECT_SRCS) -lm
+
+dudect: $(DUDECT_OUT)
+	./$(DUDECT_OUT)
+
+clean:
+	rm -f $(OUT) $(DUDECT_OUT)
+
+.PHONY: smoke dudect clean
