@@ -17,6 +17,9 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
 const SPECULOS_URL = 'http://localhost:5001';
+/* Override via SCHNORR_INDEX env to target a fresh (undeployed) index — hardcoding
+ * one index goes stale the moment a prior run deploys it. Default 0 for the demo. */
+const DEPLOY_INDEX = Number(process.env.SCHNORR_INDEX ?? 0);
 
 async function press(button: 'left' | 'right' | 'both', ms = 450): Promise<void> {
   await fetch(`${SPECULOS_URL}/button/${button}`, {
@@ -65,11 +68,14 @@ test('deploy a Schnorr account reaches the device review (curve_id=GRUMPKIN)', a
   });
 
   await page.goto('/');
-  const addr = await onboardSchnorr(page, 0);
-  console.log('[schnorr-deploy] onboarded Schnorr #0 = ' + addr);
+  const addr = await onboardSchnorr(page, DEPLOY_INDEX);
+  console.log(`[schnorr-deploy] onboarded Schnorr #${DEPLOY_INDEX} = ` + addr);
 
   const deployBtn = page.getByRole('button', { name: /Deploy account/ });
-  await expect(deployBtn, 'Schnorr #0 must be undeployed (Deploy button present)').toBeVisible({
+  await expect(
+    deployBtn,
+    `Schnorr #${DEPLOY_INDEX} must be undeployed (Deploy button present)`,
+  ).toBeVisible({
     timeout: 15_000,
   });
   await deployBtn.click();

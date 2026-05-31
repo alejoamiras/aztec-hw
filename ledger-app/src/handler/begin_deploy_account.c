@@ -54,54 +54,11 @@ static int ct_memcmp32(const uint8_t a[32], const uint8_t b[32]) {
     return diff;
 }
 
-/* Derive the secp256k1 signing pubkey (X, Y) from the BIP-32 path
- * stored in G_l4_deploy_session. Mirrors the get_public_key.c flow,
- * but writes the raw uncompressed (X, Y) directly into out_x/out_y.
- * Returns 0 on success. */
-static int derive_signing_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
-    /* M11 P4: delegate to the shared single source (was a local copy). */
-    return account_binding_secp256k1_pubkey_xy(G_l4_deploy_session.bip32_path,
-                                               G_l4_deploy_session.bip32_path_len, out_x, out_y);
-}
-
-/* M10 — scheme-dispatched signing-pubkey derivation for the deploy. K1 uses the
- * secp256k1 child pubkey (derive_signing_pubkey_xy above); GRUMPKIN derives the
- * Schnorr signing scalar from the SAME path (child priv mod Fq, NEVER the master
- * secret) and returns its Grumpkin pubkey P = [priv]G. Mirrors the authwit B3
- * derivation in finalize_and_sign.c. */
-static int deploy_derive_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
-    if (G_l4_deploy_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
-        uint8_t priv[32];
-        if (az_derive_schnorr_signing_scalar(G_l4_deploy_session.bip32_path,
-                                             G_l4_deploy_session.bip32_path_len, priv) != 0) {
-            explicit_bzero(priv, 32);
-            return -1;
-        }
-        bool ok = schnorr_grumpkin_pubkey(out_x, out_y, priv);
-        explicit_bzero(priv, 32);
-        return ok ? 0 : -1;
-    }
-    return derive_signing_pubkey_xy(out_x, out_y);
-}
-
-/* M10 — scheme-dispatched partial-address. Both branches share the init/salted/
- * partial chain (profile-pinned selector/deployer/class_id + session salt); only
- * the ctor args_hash differs (64 byte-frs for ECDSA-K vs 2 Frs for Schnorr).
- * Selected by the profile's arg_schema, which BEGIN already paired to curve_id. */
-static int deploy_compute_partial(const uint8_t pubkey_x[32], const uint8_t pubkey_y[32],
-                                  const cs_deploy_profile_t *profile, uint8_t out_args_hash[32],
-                                  uint8_t out_init_hash[32], uint8_t out_partial_address[32]) {
-    if (profile->arg_schema == CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY) {
-        return az_schnorr_compute_partial_address(
-            pubkey_x, pubkey_y, profile->ctor_selector_u32, G_l4_deploy_session.salt,
-            profile->deployer, profile->account_class_id, out_args_hash, out_init_hash,
-            out_partial_address);
-    }
-    return az_deploy_compute_partial_address(pubkey_x, pubkey_y, profile->ctor_selector_u32,
-                                             G_l4_deploy_session.salt, profile->deployer,
-                                             profile->account_class_id, out_args_hash, out_init_hash,
-                                             out_partial_address);
-}
+/* M12 P0: the deploy pubkey + partial-address helpers (and the K1-only
+ * derive_signing_pubkey_xy wrapper) moved verbatim into l4/account_binding.c as
+ * PURE param-driven helpers — see account_binding.h. The call sites below pass
+ * the session's curve_id / path / salt explicitly (no module reads of the
+ * session global). Byte-identical behavior. */
 
 int handler_begin_deploy_account(buffer_t *cdata) {
     /* Mutual-exclusion with the AUTHWIT path. The session_reset call
@@ -218,7 +175,9 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     /* --- Parity pass 1: derive pubkey + compute partial address ----- */
     uint8_t signing_pubkey_x[32];
     uint8_t signing_pubkey_y[32];
-    if (deploy_derive_pubkey_xy(signing_pubkey_x, signing_pubkey_y) != 0) {
+    if (account_binding_deploy_pubkey_xy(G_l4_deploy_session.curve_id, G_l4_deploy_session.bip32_path,
+                                         G_l4_deploy_session.bip32_path_len, signing_pubkey_x,
+                                         signing_pubkey_y) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         return reject(SWO_UNKNOWN);
@@ -227,8 +186,9 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     uint8_t args_hash_pass1[32];
     uint8_t init_hash_pass1[32];
     uint8_t partial_pass1[32];
-    if (deploy_compute_partial(signing_pubkey_x, signing_pubkey_y, profile, args_hash_pass1,
-                               init_hash_pass1, partial_pass1) != 0) {
+    if (account_binding_deploy_partial(profile, signing_pubkey_x, signing_pubkey_y,
+                                       G_l4_deploy_session.salt, args_hash_pass1, init_hash_pass1,
+                                       partial_pass1) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         explicit_bzero(args_hash_pass1, 32);
@@ -241,8 +201,9 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     uint8_t args_hash_pass2[32];
     uint8_t init_hash_pass2[32];
     uint8_t partial_pass2[32];
-    if (deploy_compute_partial(signing_pubkey_x, signing_pubkey_y, profile, args_hash_pass2,
-                               init_hash_pass2, partial_pass2) != 0) {
+    if (account_binding_deploy_partial(profile, signing_pubkey_x, signing_pubkey_y,
+                                       G_l4_deploy_session.salt, args_hash_pass2, init_hash_pass2,
+                                       partial_pass2) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         explicit_bzero(args_hash_pass1, 32);

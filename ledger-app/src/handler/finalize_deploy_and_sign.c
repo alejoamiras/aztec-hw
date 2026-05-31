@@ -80,51 +80,11 @@ static void low_s_normalize(uint8_t *s) {
     }
 }
 
-/* Re-derive the secp256k1 signing pubkey from the BIP-32 path stored
- * in G_l4_deploy_session. Duplicated from begin_deploy_account.c so we
- * don't introduce a cross-file static dependency. */
-static int derive_signing_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
-    /* M11 P4: delegate to the shared single source (was a local copy). */
-    return account_binding_secp256k1_pubkey_xy(G_l4_deploy_session.bip32_path,
-                                               G_l4_deploy_session.bip32_path_len, out_x, out_y);
-}
-
-/* M10 — scheme-dispatched pubkey + partial for the deploy Phase-6 recompute.
- * Mirrors the helpers in begin_deploy_account.c (kept local to avoid a cross-file
- * static dep, same rationale as derive_signing_pubkey_xy above). K1 = secp256k1
- * child pubkey; GRUMPKIN = Schnorr signing scalar (child priv mod Fq, never the
- * master secret) → its Grumpkin pubkey. The partial shares the init/salted/
- * partial chain; only the ctor args_hash differs (selected by profile arg_schema,
- * which BEGIN already paired to curve_id). */
-static int deploy_derive_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
-    if (G_l4_deploy_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
-        uint8_t priv[32];
-        if (az_derive_schnorr_signing_scalar(G_l4_deploy_session.bip32_path,
-                                             G_l4_deploy_session.bip32_path_len, priv) != 0) {
-            explicit_bzero(priv, 32);
-            return -1;
-        }
-        bool ok = schnorr_grumpkin_pubkey(out_x, out_y, priv);
-        explicit_bzero(priv, 32);
-        return ok ? 0 : -1;
-    }
-    return derive_signing_pubkey_xy(out_x, out_y);
-}
-
-static int deploy_compute_partial(const uint8_t pubkey_x[32], const uint8_t pubkey_y[32],
-                                  const cs_deploy_profile_t *profile, uint8_t out_args_hash[32],
-                                  uint8_t out_init_hash[32], uint8_t out_partial_address[32]) {
-    if (profile->arg_schema == CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY) {
-        return az_schnorr_compute_partial_address(
-            pubkey_x, pubkey_y, profile->ctor_selector_u32, G_l4_deploy_session.salt,
-            profile->deployer, profile->account_class_id, out_args_hash, out_init_hash,
-            out_partial_address);
-    }
-    return az_deploy_compute_partial_address(pubkey_x, pubkey_y, profile->ctor_selector_u32,
-                                             G_l4_deploy_session.salt, profile->deployer,
-                                             profile->account_class_id, out_args_hash, out_init_hash,
-                                             out_partial_address);
-}
+/* M12 P0: the deploy pubkey + partial-address helpers (+ the K1-only
+ * derive_signing_pubkey_xy wrapper) moved verbatim into l4/account_binding.c as
+ * PURE param-driven helpers — see account_binding.h. The Phase-6 recompute below
+ * passes the session's curve_id / path / salt explicitly (no module reads of the
+ * session global). Byte-identical behavior. */
 
 int handler_finalize_deploy_and_sign(buffer_t *cdata) {
     if (G_l4_session.state != L4_DEPLOY_CONTEXT) {
@@ -166,7 +126,9 @@ int finalize_deploy_after_approval(void) {
 
     uint8_t signing_pubkey_x[32];
     uint8_t signing_pubkey_y[32];
-    if (deploy_derive_pubkey_xy(signing_pubkey_x, signing_pubkey_y) != 0) {
+    if (account_binding_deploy_pubkey_xy(G_l4_deploy_session.curve_id, G_l4_deploy_session.bip32_path,
+                                         G_l4_deploy_session.bip32_path_len, signing_pubkey_x,
+                                         signing_pubkey_y) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         return reject(SWO_UNKNOWN);
@@ -175,8 +137,9 @@ int finalize_deploy_after_approval(void) {
     uint8_t recheck_args[32];
     uint8_t recheck_init[32];
     uint8_t recheck_partial[32];
-    if (deploy_compute_partial(signing_pubkey_x, signing_pubkey_y, profile, recheck_args,
-                               recheck_init, recheck_partial) != 0) {
+    if (account_binding_deploy_partial(profile, signing_pubkey_x, signing_pubkey_y,
+                                       G_l4_deploy_session.salt, recheck_args, recheck_init,
+                                       recheck_partial) != 0) {
         explicit_bzero(signing_pubkey_x, 32);
         explicit_bzero(signing_pubkey_y, 32);
         explicit_bzero(recheck_args, 32);

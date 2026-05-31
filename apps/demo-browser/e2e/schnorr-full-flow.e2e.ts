@@ -19,11 +19,15 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
 const SPECULOS_URL = 'http://localhost:5001';
-const SCHNORR_INDEX = 4; // dropdown is [0..4]; #4 = fresh Schnorr account (kept high for the demo)
+const SCHNORR_INDEX = Number(process.env.SCHNORR_INDEX ?? 4); // dropdown [0..4]; override via SCHNORR_INDEX env for a fresh-index on-chain deploy
 /* M11 P6: optionally drive a specific transfer mode on-chain (pub-pub | priv-pub |
  * pub-priv | priv-priv). Unset = the panel default. The device signs every mode
  * identically (same Schnorr authwit); this just exercises the token-contract path. */
 const TRANSFER_MODE = process.env.TRANSFER_MODE;
+/* Override via SCHEME=ecdsa to reuse this whole deploy→drip→transfer flow for an
+ * ECDSA-K account (the device review/approve sequence is scheme-independent).
+ * Default 'schnorr' keeps the demo flow unchanged. */
+const SCHEME = (process.env.SCHEME ?? 'schnorr') as 'schnorr' | 'ecdsa';
 
 async function pressSpeculos(button: 'left' | 'right' | 'both'): Promise<void> {
   await fetch(`${SPECULOS_URL}/button/${button}`, {
@@ -75,7 +79,7 @@ async function autoConfirmSpeculos(durationMs = 120_000, screenLog?: string[]): 
 async function onboardSchnorr(page: Page, index: number): Promise<string> {
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(page.locator('#account-index')).toBeVisible({ timeout: 45_000 });
-  await page.locator('#scheme').selectOption('schnorr');
+  await page.locator('#scheme').selectOption(SCHEME);
   await page.locator('#account-index').selectOption(String(index));
   await page.getByRole('button', { name: /Derive .* viewing keys/ }).click();
   await new Promise((r) => setTimeout(r, 1500));
