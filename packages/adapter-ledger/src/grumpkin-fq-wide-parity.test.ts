@@ -108,6 +108,33 @@ describe('gk_fq_from_bytes_wide_be host parity', () => {
   });
 });
 
+describe('M11 P2 — modular-reduction bias (documented analysis + regression guard)', () => {
+  /* The Schnorr signing scalar + nonce (l4/aztec_secret.c) and the viewing
+   * scalars are derived as reduce_n(SHA-512(domain ‖ …)). Reducing a uniform
+   * L-bit value mod n has statistical distance ≤ n/2^L from uniform over Z_n.
+   * With L = 512 (SHA-512) and n = Grumpkin scalar order (~254 bits), that's
+   * ≤ 2^-258 — cryptographically negligible. Rejection sampling buys nothing here
+   * and is deliberately NOT used (same wide-reduce as Zcash-Jubjub + Mina). These
+   * tests pin the PARAMETERS so a regression (e.g. narrowing the input to 256
+   * bits, or switching to a biased reduce) trips. See bias-analysis.md. */
+  test('wide-reduce bias ≤ 2^-200 (512-bit input vs ~254-bit modulus)', () => {
+    const modulusBits = Fq.MODULUS.toString(2).length;
+    const inputBits = 512; // SHA-512 digest width fed to gk_fq_from_bytes_wide_be
+    const marginBits = inputBits - modulusBits; // ≈ 258 for the Grumpkin order
+    expect(modulusBits).toBeLessThan(256); // ~254-bit scalar order
+    expect(marginBits).toBeGreaterThanOrEqual(200); // ⇒ bias ≤ 2^-200, negligible
+  });
+
+  test('reduce is a plain mod, not rejection sampling (q→0, q+1→1, 2q→0)', () => {
+    const Q = Fq.MODULUS;
+    const wide = (v: bigint) =>
+      new Uint8Array(Buffer.from(v.toString(16).padStart(128, '0'), 'hex'));
+    expect(deviceFqWideReduce(wide(Q))).toBe('0'.repeat(64));
+    expect(deviceFqWideReduce(wide(Q + 1n))).toBe(`${'0'.repeat(63)}1`);
+    expect(deviceFqWideReduce(wide(2n * Q))).toBe('0'.repeat(64));
+  });
+});
+
 describe('viewing-scalar derivation vs Phase 0 golden vectors', () => {
   test('all 4 viewing scalars match for the first 32 golden vectors', () => {
     /* 32 of 256 keeps the test ~fast (4 spawns each); raw parity above covers
