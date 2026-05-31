@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M11 Hardening — plain-language companion</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 46rem; margin: 0 auto; padding: 3rem 1.4rem 6rem; color: #1a1a1a; background: #fdfdfc;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e6e6e6; background: #16181a; } a { color: #7db5ff; } code { background:#2a2d30; } .phase{border-color:#333;} .q{background:#1e2733;} }
+  h1 { font-size: 1.8rem; line-height: 1.25; margin: 0 0 .4rem; }
+  h2 { font-size: 1.25rem; margin: 2.6rem 0 .6rem; }
+  .sub { color: #6a6a6a; margin: 0 0 2rem; }
+  .phase { border: 1px solid #e4e4e0; border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; }
+  .phase h3 { margin: 0 0 .3rem; font-size: 1.06rem; }
+  .tag { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: #8a8a8a; }
+  .what { margin: .4rem 0 .2rem; }
+  .why { color: #555; }
+  @media (prefers-color-scheme: dark){ .why{color:#a8a8a8;} .sub{color:#9a9a9a;} .tag{color:#888;} }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em; background: #f0f0ec; padding: .08em .35em; border-radius: 4px; }
+  .q { background: #f4f6f8; border-radius: 8px; padding: .8rem 1.1rem; margin: .8rem 0; }
+  .lead { font-size: 1.05rem; }
+  footer { margin-top: 3rem; color: #8a8a8a; font-size: .85rem; }
+</style>
+</head>
+<body>
+
+<h1>Making the Aztec Ledger wallet tough enough for real money</h1>
+<p class="sub">A plain-language companion to <a href="plan.md">plan.md</a>. Milestone M11 — "Tier-0/Tier-1 hardening."</p>
+
+<p class="lead">We already proved the wallet <em>works</em>: it signs Aztec transactions two different ways (ECDSA and Schnorr) and we ran the whole thing on a real test network. This milestone is about making it <strong>hard to attack</strong> — the difference between "cool demo" and "you'd trust it with funds."</p>
+
+<p>Good news from our research: we compared our code to the closest shipped, audited wallet (Mina's Ledger app) and on the scary parts we're already <em>at or above</em> their bar. So this isn't a rewrite — it's a handful of <strong>targeted</strong> fixes, each one validated automatically before we move on.</p>
+
+<h2>The fixes, in plain words</h2>
+
+<div class="phase">
+  <span class="tag">P0 · measuring tools first</span>
+  <h3>Build the test rigs before we touch anything</h3>
+  <p class="what">A "leak detector" that checks whether the chip's secret math takes a tell-tale different amount of time depending on the secret, plus a "size &amp; speed budget" so we notice if a fix makes the app too big or too slow for the real device.</p>
+  <p class="why">Why: you can't fix a leak you can't measure. We measure first so every later fix has a pass/fail gate.</p>
+</div>
+
+<div class="phase">
+  <span class="tag">P1 · the cheapest big win</span>
+  <h3>Do the secret math twice and check it matches ("dual-derive")</h3>
+  <p class="what">When the device computes the secret number behind a signature, it now computes it <em>twice, independently</em>, and refuses to sign if the two don't agree. Plus a tidy-up pass that wipes secrets from memory on every exit and double-checks the chip's own crypto calls.</p>
+  <p class="why">Why: attackers literally zap chips with voltage/laser glitches to corrupt one calculation and leak the key. Doing it twice and comparing catches that. This is the single highest-value fix and it doesn't change any output, so it's easy to prove safe.</p>
+</div>
+
+<div class="phase">
+  <span class="tag">P2 · write down the proof</span>
+  <h3>Show the secret numbers aren't subtly biased</h3>
+  <p class="what">We derive secrets by hashing and taking a remainder. We prove (and add a test for) the fact that any bias is astronomically small — about 1 in 2²⁵⁸. No code change needed.</p>
+  <p class="why">Why: a biased secret can leak a key over many signatures. We checked the math: ours is fine, and the "fix" people sometimes add (rejection sampling) would buy literally nothing here. Better to document it than cargo-cult it.</p>
+</div>
+
+<div class="phase">
+  <span class="tag">P3 · the delicate one</span>
+  <h3>Make the secret math take the same path every time ("constant-time")</h3>
+  <p class="what">Remove three spots where the curve math takes a shortcut depending on the secret. We fix one shared core so it helps both the signature <em>and</em> the address hashing. The exact technique is chosen to fit the device's size/speed budget, and we keep the old version around until the new one is proven byte-for-byte identical.</p>
+  <p class="why">Why: someone watching the chip's power use or timing can read out a key if the math "branches" on secret bits. Closing those branches is the classic hardware-wallet defense. This is the riskiest change, so it's gated three ways: identical output, the leak detector passes, and it still fits/runs fast enough.</p>
+</div>
+
+<div class="phase">
+  <span class="tag">P4 · tidy + stress-test</span>
+  <h3>De-duplicate the account logic and throw garbage at the parser</h3>
+  <p class="what">Merge three copies of the same security-sensitive code into one. Then build a harness that feeds malformed/hostile messages to the device's actual message-handling code and watches for crashes or bad state.</p>
+  <p class="why">Why: duplicated security code drifts apart and one copy gets a bug. And the message parser is the front door — a hostile computer will send it junk, so we attack it ourselves first.</p>
+</div>
+
+<div class="phase">
+  <span class="tag">P5 · the riskiest feature change</span>
+  <h3>Support more kinds of accounts — safely</h3>
+  <p class="what">Today the device only fully supports one "shape" of account. We extend the wallet↔device message so it can carry the account's <em>salt</em> and <em>recipe id</em>. Crucially, the "who deployed it" stays pinned to a recipe the user reviewed — the computer is <em>not</em> allowed to just assert it.</p>
+  <p class="why">Why: real users have varied accounts. But every new thing the computer gets to "tell" the device is a new way to lie to it. We let the computer specify only what's safe, and keep the sensitive part locked to something the user actually approved on-screen.</p>
+</div>
+
+<div class="phase">
+  <span class="tag">P6 · prove the rest works</span>
+  <h3>Test all four ways of sending money — and check the private ones</h3>
+  <p class="what">We proved public→public on-chain; now we run the other three (public↔private combinations) end-to-end, and specifically double-check that the private ones still correctly tie the transfer to <em>your</em> account (not someone else's).</p>
+  <p class="why">Why: the private modes are exactly where a "whose money is this?" check could quietly be missing. If it is, that's a real bug to fix, not just a test to tick.</p>
+</div>
+
+<div class="phase">
+  <span class="tag">P7 · second opinion</span>
+  <h3>Final adversarial review</h3>
+  <p class="what">Send the whole diff to an independent AI reviewer (codex) with an explicit "try to break this" prompt, fix what's real, then tag the safe checkpoint.</p>
+  <p class="why">Why: a fresh set of eyes catches what the implementer rationalized away.</p>
+</div>
+
+<h2>How we make sure each step is actually safe</h2>
+<p>Every phase ends with the same automated gates, with no human needed to bless it: the math is checked byte-for-byte against trusted reference libraries, the app is rebuilt for the real device, and the full Schnorr flow (create account → fund → transfer) is run against the live test network by a headless browser. The two scariest phases (P3, P5) also get a focused codex review before we lock in a checkpoint tag. If a gate fails, we roll back to the last green tag.</p>
+
+<h2>Open questions (worth a human's gut-check)</h2>
+<div class="q"><strong>Are exotic accounts actually coming soon?</strong> P5 (the risky message change) is only worth it if non-default accounts are imminent. If not, there's a cheaper "just refuse them clearly" option. You already chose the fuller approach — P5 is the natural place to change course if priorities shift.</div>
+<div class="q"><strong>Which constant-time technique?</strong> Two valid ways to do P3; the choice depends on the device's size/speed budget, which we only learn after P0. We'll pick then.</div>
+<div class="q"><strong>What if the private-transfer check is missing?</strong> P6 might uncover a genuine "sender not bound" gap in private modes. Fixing it could grow the milestone — do it here, or split it out?</div>
+
+<footer>Companion to plan.md · consolidated from three independent drafts (main + codex + opus) + a Ledger-security research pass · pending final codex review &amp; approval.</footer>
+
+</body>
+</html>
