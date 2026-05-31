@@ -70,13 +70,16 @@ static int mode_mul(int argc, char **argv) {
   return 0;
 }
 
-/* point-add <px py qx qy [inf]> -> (P + Q) as x,y, or "INF". P is lifted to
+/* point-add <px py qx qy [inf] [ip]> -> (P + Q) as x,y, or "INF". P is lifted to
  * Jacobian z=1 (or set to ∞ with the "inf" flag); Q is affine. M11 P3 edge test:
  * exercises grumpkin_point_add_affine's exceptional cmov-select DIRECTLY (P==Q
- * doubling, P==−Q infinity, ∞+Q) — the paths a scalar mul never reaches. */
+ * doubling, P==−Q infinity, ∞+Q) — the paths a scalar mul never reaches. The "ip"
+ * flag runs the add IN PLACE (out aliases p, as Pedersen does at pedersen.c:67) —
+ * the M11 P7 regression case: the P==Q doubling candidate must read the original
+ * p, not the partially-written generic result. */
 static int mode_point_add(int argc, char **argv) {
   if (argc < 4) {
-    fprintf(stderr, "point-add needs px py qx qy [inf]\n");
+    fprintf(stderr, "point-add needs px py qx qy [inf] [ip]\n");
     return 2;
   }
   uint8_t pxb[32], pyb[32], qxb[32], qyb[32];
@@ -92,13 +95,23 @@ static int mode_point_add(int argc, char **argv) {
     fprintf(stderr, "non-canonical fr in point-add\n");
     return 2;
   }
-  if (argc >= 5 && strcmp(argv[4], "inf") == 0) {
+  bool want_inf = false, in_place = false;
+  for (int i = 4; i < argc; i++) {
+    if (strcmp(argv[i], "inf") == 0) want_inf = true;
+    else if (strcmp(argv[i], "ip") == 0) in_place = true;
+  }
+  if (want_inf) {
     grumpkin_point_set_infinity(&p);
   } else {
     fr_from_u64(&p.z, 1); /* lift affine P to Jacobian z=1 */
   }
   grumpkin_point_t out;
-  grumpkin_point_add_affine(&out, &p, &qx, &qy);
+  if (in_place) {
+    grumpkin_point_add_affine(&p, &p, &qx, &qy); /* out aliases p */
+    out = p;
+  } else {
+    grumpkin_point_add_affine(&out, &p, &qx, &qy);
+  }
   uint8_t ox[32], oy[32];
   if (!grumpkin_point_to_affine_be(ox, oy, &out)) {
     printf("INF\n");

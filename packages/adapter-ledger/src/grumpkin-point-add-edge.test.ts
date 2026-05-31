@@ -29,9 +29,10 @@ function mulG(k: bigint): { x: string; y: string } {
   const o = cli('mul', k.toString(16).padStart(64, '0'));
   return { x: o[0], y: o[1] };
 }
-function pointAdd(px: string, py: string, qx: string, qy: string, inf = false): string {
+function pointAdd(px: string, py: string, qx: string, qy: string, inf = false, ip = false): string {
   const args = ['point-add', px, py, qx, qy];
   if (inf) args.push('inf');
+  if (ip) args.push('ip'); /* run the add in place: out aliases p */
   const o = cli(...args);
   return o[0] === 'INF' ? 'INF' : `${o[0]}|${o[1]}`;
 }
@@ -64,5 +65,16 @@ describe('M11 P3 — point_add_affine exceptional cmov-select edge vectors', () 
     const Q = mulG(5n);
     const eightG = mulG(8n);
     expect(pointAdd(P.x, P.y, Q.x, Q.y)).toBe(`${eightG.x}|${eightG.y}`);
+  });
+
+  /* M11 P7 (codex post-impl blocker): out may alias p — Pedersen accumulates in
+   * place, add_affine(acc, acc, …) at pedersen.c:67. The P==Q doubling candidate
+   * must read the ORIGINAL p, not the generic result already written into out.
+   * The branchy safe-v8 code doubled p before any write; the first P3 cut wrote
+   * out then doubled the corrupted p. Separate-buffer vectors can't catch it. */
+  test('P + P IN PLACE (out aliases p) == [2]P  (aliasing regression guard)', () => {
+    const P = mulG(3n);
+    const twoP = mulG(6n);
+    expect(pointAdd(P.x, P.y, P.x, P.y, false, true)).toBe(`${twoP.x}|${twoP.y}`);
   });
 });

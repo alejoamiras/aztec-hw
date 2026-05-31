@@ -186,17 +186,23 @@ void grumpkin_point_add_affine(grumpkin_point_t *out, const grumpkin_point_t *p,
   fr_sub(&t0, &t0, &Z1Z1);
   fr_sub(&Z3, &t0, &HH);
 
-  /* out := generic result, then constant-time-select the exceptional cases. */
-  fr_set(&out->x, &X3);
-  fr_set(&out->y, &Y3);
-  fr_set(&out->z, &Z3);
-
+  /* Build the exceptional-case candidates from the ORIGINAL p *before* writing
+   * out. out may alias p (Pedersen accumulates in place: add_affine(acc, acc, …),
+   * pedersen.c:67), and grumpkin_point_double(&dbl, p) must read the original p —
+   * not the generic result we are about to store. The generic formula above is
+   * already alias-safe (its last read of p is the Z3 step before this point).
+   * (codex M11 P7: fixes an in-place aliasing regression on the P==Q path.) */
   grumpkin_point_t dbl, qj, inf;
   grumpkin_point_double(&dbl, p); /* p == Q  → 2p */
   fr_set(&qj.x, qx);
   fr_set(&qj.y, qy);
   fr_one(&qj.z);                     /* p == O  → Q  */
   grumpkin_point_set_infinity(&inf); /* p == −Q → O  */
+
+  /* out := generic result, then constant-time-select the exceptional cases. */
+  fr_set(&out->x, &X3);
+  fr_set(&out->y, &Y3);
+  fr_set(&out->z, &Z3);
 
   grumpkin_point_cmov(out, &inf, (uint8_t)(h_zero & (uint8_t)(1u - r_zero)));
   grumpkin_point_cmov(out, &dbl, (uint8_t)(h_zero & r_zero));
