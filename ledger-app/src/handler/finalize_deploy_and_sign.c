@@ -29,6 +29,7 @@
 #include "../l4/deploy_address.h"
 #include "../l4/account_derive.h"
 #include "../l4/aztec_secret.h"
+#include "../l4/account_binding.h"
 #include "../crypto/schnorr.h"
 #include "../l4/deploy_outer_hash.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
@@ -83,24 +84,9 @@ static void low_s_normalize(uint8_t *s) {
  * in G_l4_deploy_session. Duplicated from begin_deploy_account.c so we
  * don't introduce a cross-file static dependency. */
 static int derive_signing_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
-    uint8_t raw[65];
-    uint8_t chain_code[32];
-    cx_err_t err = bip32_derive_get_pubkey_256(
-        CX_CURVE_256K1,
-        G_l4_deploy_session.bip32_path,
-        G_l4_deploy_session.bip32_path_len,
-        raw,
-        chain_code,
-        CX_SHA512);
-    explicit_bzero(chain_code, sizeof(chain_code));
-    if (err != CX_OK || raw[0] != 0x04) {
-        explicit_bzero(raw, sizeof(raw));
-        return -1;
-    }
-    memcpy(out_x, &raw[1], 32);
-    memcpy(out_y, &raw[33], 32);
-    explicit_bzero(raw, sizeof(raw));
-    return 0;
+    /* M11 P4: delegate to the shared single source (was a local copy). */
+    return account_binding_secp256k1_pubkey_xy(G_l4_deploy_session.bip32_path,
+                                               G_l4_deploy_session.bip32_path_len, out_x, out_y);
 }
 
 /* M10 — scheme-dispatched pubkey + partial for the deploy Phase-6 recompute.

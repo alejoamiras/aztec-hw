@@ -30,6 +30,7 @@
 #include "../l4/deploy_address.h"
 #include "../l4/account_derive.h"
 #include "../l4/aztec_secret.h"
+#include "../l4/account_binding.h"
 #include "../crypto/schnorr.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../clear_signing_v0/schnorr_account.h"
@@ -89,25 +90,9 @@ static void low_s_normalize(uint8_t *s) {
  * a follow-up should unify deploy + authwit into one shared l4 helper. Kept
  * local here to avoid destabilizing the proven deploy path in the B3 change.) */
 static int derive_signing_pubkey_xy_session(uint8_t out_x[32], uint8_t out_y[32]) {
-    uint8_t raw[65]; /* 0x04 || X(32) || Y(32) */
-    uint8_t chain_code[32];
-    cx_err_t err = bip32_derive_get_pubkey_256(CX_CURVE_256K1,
-                                               G_l4_session.bip32_path,
-                                               G_l4_session.bip32_path_len,
-                                               raw, chain_code, CX_SHA512);
-    explicit_bzero(chain_code, sizeof(chain_code));
-    if (err != CX_OK) {
-        explicit_bzero(raw, sizeof(raw));
-        return -1;
-    }
-    if (raw[0] != 0x04) {
-        explicit_bzero(raw, sizeof(raw));
-        return -1;
-    }
-    memcpy(out_x, &raw[1], 32);
-    memcpy(out_y, &raw[33], 32);
-    explicit_bzero(raw, sizeof(raw));
-    return 0;
+    /* M11 P4: delegate to the shared single source (was a local copy). */
+    return account_binding_secp256k1_pubkey_xy(G_l4_session.bip32_path, G_l4_session.bip32_path_len,
+                                               out_x, out_y);
 }
 
 /* M9 B3: recompute THIS account's address from the signing path (partial) +

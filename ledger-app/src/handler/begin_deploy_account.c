@@ -36,6 +36,7 @@
 #include "../l4/deploy_address.h"
 #include "../l4/account_derive.h"
 #include "../l4/aztec_secret.h"
+#include "../l4/account_binding.h"
 #include "../crypto/schnorr.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
 #include "../ui/display.h"
@@ -58,28 +59,9 @@ static int ct_memcmp32(const uint8_t a[32], const uint8_t b[32]) {
  * but writes the raw uncompressed (X, Y) directly into out_x/out_y.
  * Returns 0 on success. */
 static int derive_signing_pubkey_xy(uint8_t out_x[32], uint8_t out_y[32]) {
-    uint8_t raw[65]; /* 0x04 || X(32) || Y(32) */
-    uint8_t chain_code[32];
-    cx_err_t err = bip32_derive_get_pubkey_256(
-        CX_CURVE_256K1,
-        G_l4_deploy_session.bip32_path,
-        G_l4_deploy_session.bip32_path_len,
-        raw,
-        chain_code,
-        CX_SHA512);
-    explicit_bzero(chain_code, sizeof(chain_code));
-    if (err != CX_OK) {
-        explicit_bzero(raw, sizeof(raw));
-        return -1;
-    }
-    if (raw[0] != 0x04) {
-        explicit_bzero(raw, sizeof(raw));
-        return -1;
-    }
-    memcpy(out_x, &raw[1], 32);
-    memcpy(out_y, &raw[33], 32);
-    explicit_bzero(raw, sizeof(raw));
-    return 0;
+    /* M11 P4: delegate to the shared single source (was a local copy). */
+    return account_binding_secp256k1_pubkey_xy(G_l4_deploy_session.bip32_path,
+                                               G_l4_deploy_session.bip32_path_len, out_x, out_y);
 }
 
 /* M10 — scheme-dispatched signing-pubkey derivation for the deploy. K1 uses the
