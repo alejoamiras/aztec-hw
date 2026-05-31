@@ -154,7 +154,8 @@ static int schnorr_nonce_once(const uint8_t priv_be[32], const uint8_t pubkey_x[
  * `volatile` accumulator; callers invoke it TWICE (forward + reverse) as two
  * independent compares with two separate reject sites, so a single glitch can't
  * both corrupt one derivation AND skip the check (codex Major). 0 iff equal. */
-static int dd_eq32_dir(const uint8_t a[32], const uint8_t b[32], int forward) {
+__attribute__((noinline)) static int dd_eq32_dir(const uint8_t a[32], const uint8_t b[32],
+                                                 int forward) {
     volatile uint8_t diff = 0;
     if (forward) {
         for (int i = 0; i < 32; i++) diff |= (uint8_t)(a[i] ^ b[i]);
