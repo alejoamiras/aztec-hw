@@ -9,11 +9,14 @@
  * this exercises the REJECT path on the real app.elf via Speculos.
  *
  * Construction: build a SELF-CONSISTENT authwit (header + matching outer_hash, via
- * the proven `buildL4Manifest`) for a BOGUS consumer — `Fr(1)`, a canonical field
- * element that is not any address account #0 derives to — using account #0's path.
- * Zero calls keeps it artifact-free (no token contract needed). The device passes
- * the outer_hash gate (self-consistent), then B3 recomputes #0's real address,
- * finds `consumer != addr`, and rejects BEFORE any UI or signing.
+ * the proven `buildL4Manifest`) for a BOGUS consumer using account #0's path. Zero
+ * calls keeps it artifact-free (no token contract needed). The device passes the
+ * outer_hash gate (self-consistent), then B3 recomputes #0's real address, finds
+ * `consumer != addr`, and rejects BEFORE any UI or signing. (codex confirmed the
+ * isolation: `begin_authwit.c:106` sends call_count==0 straight to CALLS_COMPLETE;
+ * 0x6F12 is emitted ONLY at `finalize_and_sign.c:182`; and without autoConfirm a
+ * UI-reaching FINALIZE would HANG, not return — so a returned 0x6F12 is provably
+ * the pre-UI B3 reject, not an earlier lookalike.)
  *
  * This is exactly the attack B3 defends: a malicious host asking the device to
  * authorize spending from an account this key does not control. P5 chose NOT to
@@ -26,20 +29,21 @@ import { describe, expect, test } from 'bun:test';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import type { CallIntent } from '@aztec-hwwallet-poc/core';
-import { CURVE_ID, defaultAztecPath, INS } from './apdu.ts';
+import { CURVE_ID, defaultAztecPath, INS, SW } from './apdu.ts';
 import { buildL4Manifest, encodeBeginAuthwitBody } from './l4-manifest.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
-const SW_OK = 0x9000;
-const SW_HASH_MISMATCH = 0x6f01;
-const SW_AUTHWIT_CONSUMER_MISMATCH = 0x6f12;
 
 describe.skipIf(!SPECULOS_URL)('M11 P5 — B3 fail-closed consumer binding (real app.elf)', () => {
   const transport = new SpeculosTransport({ baseUrl: SPECULOS_URL ?? 'http://localhost:5001' });
 
-  test('authwit for a consumer this key does NOT control → SW_AUTHWIT_CONSUMER_MISMATCH', async () => {
-    /* Fr(1): canonical, but not any account address the device's #0 key derives. */
+  test('authwit for a consumer this key does NOT control → AUTHWIT_CONSUMER_MISMATCH', async () => {
+    /* Fr(1) as the claimed consumer. Account addresses are ~254-bit Poseidon2
+     * outputs, so Fr(1) colliding with #0's derived address is cryptographically
+     * negligible (~2^-254) — the 0x6F12 below confirms B3 recomputed an address
+     * that does not equal Fr(1), i.e. the device rejected an account it controls
+     * the key for only in the attacker's claim, not in fact. */
     const bogusConsumer = AztecAddress.fromField(new Fr(1n));
     const intent: CallIntent = {
       consumer: bogusConsumer,
@@ -59,11 +63,11 @@ describe.skipIf(!SPECULOS_URL)('M11 P5 — B3 fail-closed consumer binding (real
       p2: 0,
       data: encodeBeginAuthwitBody(manifest.header),
     });
-    expect(Number(begin.sw)).toBe(SW_OK);
+    expect(Number(begin.sw)).toBe(SW.OK);
 
     /* FINALIZE: device recomputes outer_hash (matches — self-consistent), passes
      * the hash gate, then B3 recomputes #0's address ≠ Fr(1) → reject, no sign.
-     * (A SW_HASH_MISMATCH would mean zero-call outer_hash padding diverged
+     * (A HASH_MISMATCH here would mean zero-call outer_hash padding diverged
      * host/device — a test-construction issue, not a binding failure.) */
     const fin = await transport.send({
       ins: INS.FINALIZE_AND_SIGN as never,
@@ -71,7 +75,7 @@ describe.skipIf(!SPECULOS_URL)('M11 P5 — B3 fail-closed consumer binding (real
       p2: 0,
       data: manifest.claimedOuterHash,
     });
-    expect(Number(fin.sw)).not.toBe(SW_HASH_MISMATCH);
-    expect(Number(fin.sw)).toBe(SW_AUTHWIT_CONSUMER_MISMATCH);
+    expect(Number(fin.sw)).not.toBe(SW.HASH_MISMATCH);
+    expect(Number(fin.sw)).toBe(SW.AUTHWIT_CONSUMER_MISMATCH);
   });
 });

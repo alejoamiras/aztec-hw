@@ -20,6 +20,10 @@ import { expect, test } from '@playwright/test';
 
 const SPECULOS_URL = 'http://localhost:5001';
 const SCHNORR_INDEX = 4; // dropdown is [0..4]; #4 = fresh Schnorr account (kept high for the demo)
+/* M11 P6: optionally drive a specific transfer mode on-chain (pub-pub | priv-pub |
+ * pub-priv | priv-priv). Unset = the panel default. The device signs every mode
+ * identically (same Schnorr authwit); this just exercises the token-contract path. */
+const TRANSFER_MODE = process.env.TRANSFER_MODE;
 
 async function pressSpeculos(button: 'left' | 'right' | 'both'): Promise<void> {
   await fetch(`${SPECULOS_URL}/button/${button}`, {
@@ -168,6 +172,10 @@ test('schnorr full flow: deploy + drip + transfer on testnet', async ({ page }) 
     if ((await useMine.count()) === 0) {
       console.log('[schnorr-full] no Transfer panel — skipping');
       return;
+    }
+    if (TRANSFER_MODE) {
+      await page.locator('#mode').selectOption(TRANSFER_MODE);
+      console.log(`[schnorr-full] transfer mode = ${TRANSFER_MODE}`);
     }
     await useMine.click();
     const transferBtn = page.getByRole('button', { name: 'Transfer', exact: true });

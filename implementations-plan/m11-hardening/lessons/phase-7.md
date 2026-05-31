@@ -77,3 +77,27 @@ In-place aliasing is the canonical trap when converting branchy EC code to
 compute-all-candidates-then-select: any candidate that reads an input must be
 computed before the first write to a possibly-aliased output. Add an explicit
 in-place test whenever a function documents `out may alias p`.
+
+## Closing audit (P7-final, codex session `019e…`/`yqwEC710`) — verdict CLEAN
+
+Ran a second adversarial pass over `safe-v11..HEAD` pointed specifically at
+hunting **sibling** aliasing bugs (the highest-value remaining risk). Result: no
+blocker, no major.
+- **No sibling aliasing bug.** codex confirmed `point.c` is the only place with the
+  hazard and the fix is complete: `dbl/qj/inf` are built before the first `out`
+  store, the selects only read those temps (not `p`/`qx`/`qy`), so both `out==p`
+  and `qx/qy` aliasing are covered; `pedersen.c:67` remains the sole in-place caller.
+- **B3 test independently validated.** codex traced that a returned `0x6F12` is
+  provably the pre-UI B3 reject: `call_count==0 → CALLS_COMPLETE`, `0x6F12` is
+  emitted only at `finalize_and_sign.c:182`, and without `autoConfirm` a UI-reaching
+  FINALIZE would *hang* (not return) — so no earlier lookalike can produce it.
+- **P5 decision sound** for the PoC; the only deliberate cliff is the documented
+  fail-closed `0x6F12` on non-zero-salt / non-default-template accounts.
+
+Two MINORs folded (fix loop closed):
+1. `b3-consumer-binding.test.ts` no longer overclaims that `Fr(1)` differs from the
+   real account — reframed as the cryptographically-negligible (~2^-254) collision
+   it is.
+2. Added `AUTHWIT_CONSUMER_MISMATCH: 0x6f12` to the host `SW` map (`apdu.ts`) and
+   imported it in the test instead of a hardcoded literal — removes host/device
+   status-word drift on the new path.

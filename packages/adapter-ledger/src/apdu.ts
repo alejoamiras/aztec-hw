@@ -225,6 +225,8 @@ export const SW = {
   DEPLOY_PUBKEY_HASH_MISMATCH: 0x6f0f, // reserved: M8
   DEPLOY_CONTEXT_TWICE: 0x6f10,
   DEPLOY_CONTEXT_WRONG_STATE: 0x6f11,
+  /* M9 B3 — authwit consumer ≠ device-recomputed account address (fail-closed). */
+  AUTHWIT_CONSUMER_MISMATCH: 0x6f12,
 } as const;
 
 export type StatusWord = (typeof SW)[keyof typeof SW];
