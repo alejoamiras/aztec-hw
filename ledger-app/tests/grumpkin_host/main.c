@@ -70,6 +70,45 @@ static int mode_mul(int argc, char **argv) {
   return 0;
 }
 
+/* point-add <px py qx qy [inf]> -> (P + Q) as x,y, or "INF". P is lifted to
+ * Jacobian z=1 (or set to ∞ with the "inf" flag); Q is affine. M11 P3 edge test:
+ * exercises grumpkin_point_add_affine's exceptional cmov-select DIRECTLY (P==Q
+ * doubling, P==−Q infinity, ∞+Q) — the paths a scalar mul never reaches. */
+static int mode_point_add(int argc, char **argv) {
+  if (argc < 4) {
+    fprintf(stderr, "point-add needs px py qx qy [inf]\n");
+    return 2;
+  }
+  uint8_t pxb[32], pyb[32], qxb[32], qyb[32];
+  if (parse_hex32(argv[0], pxb) != 0 || parse_hex32(argv[1], pyb) != 0 ||
+      parse_hex32(argv[2], qxb) != 0 || parse_hex32(argv[3], qyb) != 0) {
+    fprintf(stderr, "bad hex32 in point-add\n");
+    return 2;
+  }
+  grumpkin_point_t p;
+  fr_t qx, qy;
+  if (!fr_from_bytes_be(&p.x, pxb) || !fr_from_bytes_be(&p.y, pyb) ||
+      !fr_from_bytes_be(&qx, qxb) || !fr_from_bytes_be(&qy, qyb)) {
+    fprintf(stderr, "non-canonical fr in point-add\n");
+    return 2;
+  }
+  if (argc >= 5 && strcmp(argv[4], "inf") == 0) {
+    grumpkin_point_set_infinity(&p);
+  } else {
+    fr_from_u64(&p.z, 1); /* lift affine P to Jacobian z=1 */
+  }
+  grumpkin_point_t out;
+  grumpkin_point_add_affine(&out, &p, &qx, &qy);
+  uint8_t ox[32], oy[32];
+  if (!grumpkin_point_to_affine_be(ox, oy, &out)) {
+    printf("INF\n");
+    return 0;
+  }
+  print_hex32(ox);
+  print_hex32(oy);
+  return 0;
+}
+
 static int mode_smoke(void) {
   /* [1]·G must equal G. */
   uint8_t one[32] = {0};
@@ -357,6 +396,7 @@ int main(int argc, char **argv) {
   }
   if (strcmp(argv[1], "mul") == 0) return mode_mul(argc - 2, argv + 2);
   if (strcmp(argv[1], "mulp") == 0) return mode_mulp(argc - 2, argv + 2);
+  if (strcmp(argv[1], "point-add") == 0) return mode_point_add(argc - 2, argv + 2);
   if (strcmp(argv[1], "pedersen") == 0) return mode_pedersen(argc - 2, argv + 2);
   if (strcmp(argv[1], "schnorr-pubkey") == 0) return mode_schnorr_pubkey(argc - 2, argv + 2);
   if (strcmp(argv[1], "schnorr-sign") == 0) return mode_schnorr_sign(argc - 2, argv + 2);
