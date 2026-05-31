@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M12 — Consolidation + Fuzz · ELI5</title>
+<style>
+  :root { --ink:#1a1a1a; --soft:#5c5c5c; --line:#e6e6e6; --accent:#3a5bbf; --warn:#9a6b00; --bg:#fcfcfc; }
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:var(--ink); font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+         max-width:760px; margin:0 auto; padding:56px 24px 96px; }
+  h1 { font-size:30px; line-height:1.2; margin:0 0 4px; letter-spacing:-0.01em; }
+  .sub { color:var(--soft); margin:0 0 40px; font-size:16px; }
+  h2 { font-size:21px; margin:44px 0 6px; letter-spacing:-0.01em; }
+  h2 .tag { font-size:13px; font-weight:600; color:var(--accent); background:#eef2fc; padding:2px 9px; border-radius:999px; vertical-align:middle; margin-left:8px; }
+  .what { color:var(--soft); font-size:14px; margin:0 0 14px; }
+  p { margin:12px 0; }
+  .card { border:1px solid var(--line); border-radius:12px; padding:20px 22px; margin:16px 0; background:#fff; }
+  .fork { border-color:#f0dca8; background:#fffaf0; }
+  .fork h2 { color:var(--warn); }
+  .lead { font-weight:600; }
+  ul { margin:10px 0; padding-left:22px; } li { margin:6px 0; }
+  .analogy { border-left:3px solid var(--line); padding:2px 0 2px 16px; color:var(--soft); font-style:italic; margin:14px 0; }
+  code { font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:#f3f3f3; padding:1px 5px; border-radius:5px; }
+  footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--line); color:var(--soft); font-size:14px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+  <h1>M12 — Consolidation &amp; Fuzz</h1>
+  <p class="sub">The plain-language companion to <a href="plan.md">plan.md</a>. No new features — this arc makes what we already built <em>tidier, more tested, and more honestly understood</em>.</p>
+
+  <p>Last arc (M11) hardened the signing crypto. This arc does three quieter things: remove duplicated code, point an automated bug-hunter at the place a malicious website attacks, and answer the one open crypto question with real measurements instead of a guess. Four small-to-medium steps, each checkpointed.</p>
+
+  <h2>P0 — Tidy the deploy code <span class="tag">safe-v15</span></h2>
+  <p class="what">What: merge two copies of the same code into one. Why: duplicated code rots — a fix lands in one copy and not the other.</p>
+  <p>When the device sets up a new account, two different files each contain the same little routine for "work out this account's address from my key." We collapse them into one shared, <strong>self-contained</strong> helper (you can hand it inputs and test it on its own — no hidden dependencies).</p>
+  <p class="analogy">Like having the same recipe written on two index cards: eventually someone edits one and not the other, and now your cake is wrong. We keep one card.</p>
+  <p><strong>The catch we're watching:</strong> this touches the code that decides <em>which account</em> a deploy creates. A subtle slip = deploying to the wrong account, silently. So the proof isn't a unit test — it's actually deploying both account types on the live test network and confirming the address is byte-for-byte the same as before.</p>
+
+  <h2>P1 — Stop hardcoding a number <span class="tag">safe-v16</span></h2>
+  <p class="what">What: read a value from the generated source of truth instead of typing it by hand. Why: a hand-typed number silently drifts out of sync.</p>
+  <p>The host software currently has a literal <code>isSchnorr ? 1 : 0</code> to pick which account template to deploy. That number has to match a table the build generates. We make the host <em>look it up by name</em> instead — so if the table ever renumbers, the code stops compiling (a loud, safe failure) rather than silently picking the wrong template.</p>
+  <p>It's tiny, but it's a real safety improvement, not just neatness: a wrong number here could mean signing for the wrong kind of account.</p>
+
+  <h2>P2 — Point a bug-hunter at the parser <span class="tag">safe-v17</span></h2>
+  <p class="what">What: set up a "fuzzer" — a tool that throws millions of malformed inputs at our code looking for crashes. Why: that parser is exactly where a hostile website's data lands.</p>
+  <p><strong>We're not building the fuzzer</strong> — it's a standard, off-the-shelf tool (libFuzzer + the AddressSanitizer). We're building the <em>harness</em>: the scaffolding that lets that tool run our real device code on a normal computer, plus a thin layer faking the few bits of the Ledger chip it needs.</p>
+  <p>This is the biggest piece of the arc, and it splits in two:</p>
+  <ul>
+    <li><strong>P2a</strong> — the two "pure parser" handlers (read a request, check it, accept/reject). These run on a computer faithfully and cleanly. This is where most of the attack surface is.</li>
+    <li><strong>P2b</strong> — the deploy handler is different: it does real chip-crypto we <em>can't</em> fake honestly. So we fuzz only its <em>parsing</em> half and leave the crypto alone. (This needs one small refactor — see the decision below.)</li>
+  </ul>
+  <p class="lead">The danger with fuzzing off-device: the fake layer might lie.</p>
+  <p>If our stand-in behaves even slightly differently from the real chip, the fuzzer either misses real bugs or invents fake ones. Three defences: (1) copy the chip's real input-reader <em>verbatim</em> (don't rewrite it); (2) size our buffer exactly like the device's; (3) <strong>replay</strong> anything the fuzzer accepts back onto the real emulator and confirm it agrees. Any crash gets fixed in the device code with a new regression test — never papered over in the fake layer.</p>
+  <p class="analogy">Like crash-testing a car: worthwhile only if your test dummy and track behave like the real road. If the dummy is wrong, you "learn" things that aren't true.</p>
+
+  <h2>P3 — Settle the last crypto question, with numbers <span class="tag">safe-v18</span></h2>
+  <p class="what">What: a measurement spike that ends in a written decision — not a code migration. Why: decide with evidence, not a guess.</p>
+  <p>One tiny timing quirk remains: our big-number multiply finishes a hair faster on some values. In theory a very patient attacker with the physical device could read secrets from that. The big version of this was already fixed last arc; this is the subtle remainder, and the closest professionally-audited wallets (Mina, Zcash on Ledger) simply <em>accept</em> it.</p>
+  <p>So instead of blindly rewriting our math to use Ledger's built-in version (risky, maybe slow, maybe doesn't fit), we run a small experiment: wire it up for <em>one</em> operation, measure the real speed, confirm it actually removes the quirk and handles our number sizes — then write a decision with the numbers. The honest answer might well be "document it and accept it, like the peers do." That's a complete outcome.</p>
+  <p class="analogy">Before re-plumbing the whole house, you test one tap. The result might be "the new pipes aren't worth it" — and that's a finding, not a failure.</p>
+
+  <div class="card fork">
+    <h2>⚠ The one decision we need from you</h2>
+    <p>For <strong>P2b</strong> (fuzzing the deploy parser), we need to split that handler into a "parse" part and a "crypto" part, so we can test the parse part safely. That means <em>editing a security-sensitive file</em> — though only the parsing, never the part that checks "is this really my account?"</p>
+    <ul>
+      <li><strong>Option X (recommended):</strong> allow the parse-only split. We get real bug-hunting on the deploy parser; the security check stays byte-for-byte untouched; it's easy to undo.</li>
+      <li><strong>Option Y (safe fallback):</strong> don't touch that file at all. We then only bug-hunt the other two handlers, and cover the deploy parser with the existing on-device tests.</li>
+    </ul>
+    <p>If you don't weigh in, we proceed with <strong>X</strong>, and the plan is written so it cleanly falls back to Y.</p>
+  </div>
+
+  <h2>What we are deliberately <em>not</em> doing</h2>
+  <ul>
+    <li>The actual crypto-math migration (that's a separate future arc, only if P3's numbers justify it).</li>
+    <li>Any change to the locked-down account binding (you ratified keeping it firmware-pinned last arc).</li>
+    <li>Wiring the fuzzer into CI; an external audit; new account types. All later.</li>
+  </ul>
+
+  <footer>
+    Order: P0 → P1 → P2 → P3, one branch, a signed checkpoint tag per step.
+    Full detail, validation gates, and the security analysis: <a href="plan.md">plan.md</a>.
+  </footer>
+</body>
+</html>
