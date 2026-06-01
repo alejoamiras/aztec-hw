@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Entrypoint-seam refactor — ELI5</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; max-width: 46rem; margin: 3rem auto; padding: 0 1.25rem;
+    color: #1a1a1a; background: #fbfbfa;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e6e6e6; background: #14150f; } a { color: #8fc7ff; } code { background:#222; } }
+  h1 { font-size: 1.8rem; line-height: 1.2; margin: 0 0 .25rem; }
+  .sub { color: #777; margin: 0 0 2.5rem; font-size: 1.02rem; }
+  h2 { font-size: 1.25rem; margin: 2.5rem 0 .5rem; }
+  h3 { font-size: 1.02rem; margin: 1.5rem 0 .25rem; color:#444; }
+  @media (prefers-color-scheme: dark){ h3{color:#bbb;} .sub{color:#999;} }
+  p { margin: .5rem 0; }
+  code { background: #f0efe9; padding: .1rem .35rem; border-radius: 4px; font-size: .9em; }
+  .card { background: rgba(127,127,127,.07); border: 1px solid rgba(127,127,127,.18); border-radius: 10px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .analogy { border-left: 3px solid #c9a227; padding-left: 1rem; color: #6b5d2a; }
+  @media (prefers-color-scheme: dark){ .analogy{ color:#d8c98a; } }
+  .tag { display:inline-block; font-size:.72rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:.12rem .5rem; border-radius:999px; background:rgba(80,160,90,.18); color:#3a7d44; margin-right:.4rem; }
+  @media (prefers-color-scheme: dark){ .tag{ color:#9ed8a8; } }
+  footer { margin-top:3rem; padding-top:1.25rem; border-top:1px solid rgba(127,127,127,.25); font-size:.92rem; color:#777; }
+  a { color:#1a6fc4; }
+</style>
+</head>
+<body>
+
+<h1>Re-wiring the wallet onto Aztec's "proper door"</h1>
+<p class="sub">A plain-language companion to <a href="plan.md">plan.md</a>. No jargon, no fluff.</p>
+
+<h2>The one-sentence version</h2>
+<p>Our hardware wallet talks to Aztec through a door that only lets the device feel a <em>fingerprint</em> of what it's signing; aztec.js actually has a better door that hands the device the <em>whole letter</em> — so we're moving to that door, deleting the clever-but-fragile hacks we built to work around the bad one, and proving it still works before we trust it.</p>
+
+<h2>What "clear-signing" even means (and why the door matters)</h2>
+<p>A hardware wallet's whole job is: <strong>show you what you're about to sign, on its own screen, and refuse if the computer lies.</strong> That's "clear-signing." For that, the device needs to <em>see the actual transaction</em> — "send 5 USDC to Alice" — not just a meaningless 32-byte number.</p>
+<div class="card analogy">
+  <strong>Analogy.</strong> Imagine signing a contract. The honest way: you read the contract, then sign it. Aztec's standard signing door is like a notary who slides you a sealed envelope and says "just sign the outside — trust me, the right contract's inside." Our device refuses to sign blind, so we'd been steaming the envelope open through a side window. Turns out there was a second door all along where the notary hands you the open contract. We're switching to that door.
+</div>
+
+<h2>How we got here (the honest bit)</h2>
+<p>We were about to send the Aztec framework team a document titled "here are the gaps in your library that forced us to build workarounds." Before sending, we had a tough reviewer (an AI playing the role of a skeptical senior maintainer) check every claim against the real source code. The verdict: <strong>most of our "gaps" weren't gaps — we'd used the wrong door.</strong> The proper door (a thing called a custom <code>EntrypointInterface</code>) was right there. That was humbling, but exactly what we wanted to find <em>before</em> emailing a senior engineer. So the plan flipped: don't write a complaint — fix our own wiring, and only then write up whatever genuinely remains.</p>
+
+<h2>The plan, one phase at a time</h2>
+
+<h3><span class="tag">P0</span> Prove the new door works (before changing anything)</h3>
+<p>Build the new wiring just enough to push <em>one real payment</em> and <em>one account creation</em> through it, on the live test network, with the device showing and signing the real details. We delete nothing yet. If the new door can't carry something the device needs, we stop and rethink — better to find out now with one transaction than after ripping everything out.</p>
+
+<h3><span class="tag">P1</span> Move everything over, then delete the hacks</h3>
+<p>Once the new door is proven, route all signing through it, throw away the three workarounds (a parallel signing path we drove by hand; a two-step "peek then replay" trick for account creation; and a hand-copied piece of Aztec's internal math we'd pinned to a frozen snapshot — we'll just import the real one). Net result: <strong>less code, not more.</strong></p>
+
+<h3><span class="tag">P2</span> Make sure nothing broke</h3>
+<p>Re-run the full set — create an account, get test funds, send public and private payments, with both signature types — on the real network and the emulator. Re-run the fuzzing + cross-checks from last milestone. The device's safety checks must behave <em>exactly</em> as before.</p>
+
+<h3><span class="tag">P3</span> Write the note to the framework team — only if there's something real left</h3>
+<p>After using the proper door, a few genuinely-useful suggestions may remain (e.g., "this signing path is great but hard to discover — add docs," or "publish your test vectors so the next hardware-wallet team doesn't rebuild them"). If so, we write a short, honest note. If not, we just keep internal notes. No sending a senior engineer a wall of text.</p>
+
+<h2>Two things that sound scary but aren't</h2>
+<div class="card">
+  <h3>"The nonce thing"</h3>
+  <p>Every transaction carries a one-time number (a "nonce") so it can't be replayed. The framework picks this number, and the device has to sign <em>that exact number</em>. Our old hack signed first and let the framework pick the number second — so they sometimes disagreed and everything broke. The fix is simple once you see it: <strong>do the signing at the exact moment the framework hands us the number</strong>, so the device always signs the real one. (The reviewers confirmed this works.)</p>
+</div>
+<div class="card">
+  <h3>"Account-creation context"</h3>
+  <p>When you <em>create</em> an account (vs. just paying), the device wants to show extra details about the account being made. The new door's main slot doesn't carry those details — but it has a labelled "extra options" slot (<code>feeEntrypointOptions</code>) that does. Phase&nbsp;0 confirms we can pass the account details through that slot. If we somehow can't, <em>that</em> would be the one genuine thing worth telling the framework team.</p>
+</div>
+
+<h2>What we're being careful about</h2>
+<p>This touches the signing path — the most safety-critical part. The iron rule: <strong>the device still independently re-computes what it's signing and refuses if the computer's version disagrees.</strong> The computer's answer is only ever a cross-check, never something the device trusts. We don't change the device's firmware at all; we only change how the laptop talks to it. And we delete no safety net until its replacement is proven on the real network.</p>
+
+<h2>Open questions (small)</h2>
+<p><strong>1.</strong> Does the account-creation "extra options" slot really carry our details cleanly? (Phase&nbsp;0 answers this.) <strong>2.</strong> After the move, is there anything genuinely worth upstreaming, or just internal notes? (Phase&nbsp;3 decides.) Everything else the reviewers already confirmed.</p>
+
+<footer>
+  Full detail: <a href="plan.md">plan.md</a> · reviews: <a href="audit-codex.md">audit-codex.md</a>, <a href="audit-opus.md">audit-opus.md</a> · progress logs will land in <a href="lessons/">lessons/</a>.
+</footer>
+
+</body>
+</html>
