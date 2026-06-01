@@ -70,9 +70,32 @@ spy/freeze + Frozen provider.
   Composes `DefaultAccountEntrypoint`; `#consume` enforces stream-A-claim-B; asserts
   `buildL4Manifest.claimedOuterHash == canonical computeOuterAuthWitHash` (parity).
 
+## P0 TRANSFER GATE — PROVEN ✅ (2026-06-01)
+Ran `SCHEME=ecdsa SEAM=entrypoint TRANSFER_MODE=pub-pub SCHNORR_INDEX=0` (full-flow e2e,
+Speculos 5001 + testnet). Result: **1 passed (3.3m), 0 console errors**.
+- app loaded clean → the new `LedgerClearSigningEntrypoint` + `@aztec/entrypoints/account`
+  + `@aztec/entrypoints/encoding` subpath imports BUNDLE in the browser (Vite) — big de-risk.
+- onboarded ECDSA #0 `0x0aa630…773b`; deploy self-skipped (already on-chain); drip OK (legacy).
+- **transfer via REAL `EmbeddedWallet.sendTx`** (`transferViaRealSendTx` → `overrideAccount`
+  → `BaseAccount(LedgerClearSigningEntrypoint)`): `err=""`, tx
+  `0x2b146ce0027890d7f3a5563dc910d9b87d32fc19058f4a5b13b8ef2f140a0fd8`
+  (testnet.aztecscan.xyz/tx-effects/0x2b146ce0…).
+
+**Why this proves `nonce_signed == nonce_on_chain`:** `BaseWallet.sendTx` picks `txNonce`
+and passes it into `createTxExecutionRequest(exec, …, { txNonce })`. Our entrypoint clear-signs
+the device using *that same* `options.txNonce` (one variable → both the signed `outer_hash`
+AND the inner DefaultAccountEntrypoint's request). `sendTx` with default wait returns a
+**mined** receipt, so `transferViaRealSendTx` resolving without throwing = the proof verified
+the device authwit against the request's nonce AND the tx was included. A nonce mismatch would
+fail proving / be rejected. The `#consume` stream-A-claim-B guard did NOT reject → the inner
+recomputed hash equalled the device-signed hash. Device guarantees intact (firmware unchanged;
+device independently recomputes outer_hash + B3 consumer binding still in force).
+
+NOT gold-plated: no explicit nonce-readback added — inclusion is the cryptographic proof.
+
 ## Status
 - [x] Seam research (this doc)
-- [ ] Spike harness (register `BaseAccount(myEntrypoint)` + real `sendTx` transfer)
-- [ ] Transfer proven on testnet (Speculos) + nonce confirmed
-- [ ] Deploy `feeEntrypointOptions` → `wrapExecutionPayload` proven (or gap recorded)
-- [ ] safe-v20 (P0 gate) signed + pushed
+- [x] Spike harness (register `BaseAccount(myEntrypoint)` + real `sendTx` transfer)
+- [x] **Transfer PROVEN on testnet (Speculos)** — tx `0x2b146ce0…`, nonce by construction
+- [ ] Deploy `feeEntrypointOptions` → `wrapExecutionPayload` proven (or gap recorded) — NEXT
+- [x] safe-v20 (P0 transfer gate) — tagging + pushing now
