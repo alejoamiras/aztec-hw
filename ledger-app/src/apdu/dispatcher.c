@@ -37,6 +37,9 @@
 #include "../handler/finalize_deploy_and_sign.h"
 #include "../handler/get_aztec_master_secret.h"
 #include "../handler/get_schnorr_pubkey.h"
+#ifdef CX_MATH_SPIKE
+#include "../handler/cxmath_spike.h"
+#endif
 
 static buffer_t make_buf(const command_t *cmd) {
     buffer_t buf = {0};
@@ -173,6 +176,15 @@ int apdu_dispatcher(const command_t *cmd) {
             if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
             buf = make_buf(cmd);
             return handler_get_aztec_master_secret(&buf);
+
+#ifdef CX_MATH_SPIKE
+        /* M12 P3 — throwaway cx_math spike (flag-gated; never in the shipped
+         * build). Pure field arithmetic, no session interaction. */
+        case INS_CXMATH_SPIKE:
+            if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
+            buf = make_buf(cmd);
+            return handler_cxmath_spike(&buf);
+#endif
 
         default:
             return reject_dispatch(SWO_INVALID_INS);

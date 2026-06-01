@@ -37,6 +37,9 @@ CURVE_APP_LOAD_PARAMS = secp256k1
 AZTEC_COIN_TYPE ?= 1666
 PATH_APP_LOAD_PARAMS = "44'/$(AZTEC_COIN_TYPE)'" "13'"
 DEFINES += AZTEC_COIN_TYPE=$(AZTEC_COIN_TYPE)
+# Opt-in extra defines (empty by default → shipped build byte-identical). Used by
+# the M12 P3 throwaway spike: `make … EXTRA_DEFINES=CX_MATH_SPIKE`.
+DEFINES += $(EXTRA_DEFINES)
 
 # Variant (just one — no token / family forks)
 VARIANT_PARAM = COIN

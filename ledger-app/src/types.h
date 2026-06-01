@@ -39,6 +39,11 @@ typedef enum {
      * The Schnorr signing scalar is derived device-side from the BIP-32 child
      * priv (distinct domain, reduced mod the Grumpkin order) — never exported. */
     INS_GET_SCHNORR_PUBKEY = 0x13,
+#ifdef CX_MATH_SPIKE
+    /* M12 P3 — THROWAWAY cx_math prototype-spike INS (flag-gated; never in the
+     * shipped build). cx_bn_mod_mul vs native fr_mul/gk_fq_mul for both moduli. */
+    INS_CXMATH_SPIKE = 0x70,
+#endif
 } command_e;
 
 /**
