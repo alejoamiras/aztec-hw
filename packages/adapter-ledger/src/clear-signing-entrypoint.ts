@@ -22,10 +22,11 @@
  * inner entrypoint's recomputed hash MUST equal the hash we showed+signed on the
  * device, else we refuse to hand back a witness.
  *
- * P0 keeps `buildL4Manifest` (our device wire-encoding) for the stream, and
- * asserts its `claimedOuterHash` equals the CANONICAL `computeOuterAuthWitHash`
- * over `EncodedAppEntrypointCalls` — the parity that justifies dropping the
- * replica in P1.
+ * P1: `buildL4Manifest` provides the device WIRE bytes only; the signed outer_hash is
+ * the CANONICAL `computeOuterAuthWitHash` over `EncodedAppEntrypointCalls`. The old
+ * host replica (the 2770bcb-pinned `claimedOuterHash`) is retired — the device rejects
+ * on mismatch at runtime, and `l4-manifest-parity.test.ts` verifies the device's
+ * algorithm matches the installed canonical (4.2.1).
  */
 import {
   AccountFeePaymentMethodOptions,
@@ -162,18 +163,17 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     );
     const messageHashBytes = new Uint8Array(messageHash.toBuffer());
 
-    // Device wire stream (our encoding) + PARITY: our replica == canonical.
+    // Device WIRE stream. We sign the CANONICAL messageHash (below, via
+    // @aztec/entrypoints/encoding); the device independently recomputes the outer_hash
+    // from this stream and rejects on mismatch (SW_HASH_MISMATCH). The host-vs-canonical
+    // parity of this wire encoding is covered by l4-manifest-parity.test.ts — no per-tx
+    // host replica (the old 2770bcb-pinned claimedOuterHash) is needed.
     const manifest = await buildL4Manifest({
       intent,
       bip32Path: this.options.bip32Path,
       txNonce: new Uint8Array(nonce.toBuffer()),
       curveId: this.options.curveId,
     });
-    if (!bytesEqual(manifest.claimedOuterHash, messageHashBytes)) {
-      throw new Error(
-        'clear-sign parity failure: device manifest outer_hash != canonical EncodedAppEntrypointCalls hash',
-      );
-    }
 
     await this.device.abortAuthwit();
     await this.device.beginAuthwit(manifest.header);

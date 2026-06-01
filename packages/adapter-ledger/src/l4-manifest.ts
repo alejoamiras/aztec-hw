@@ -1,15 +1,14 @@
 /**
- * L4 manifest builder — turns a `CallIntent` into the bytes that the Aztec Ledger
- * app's BEGIN_AUTHWIT + APPEND_CALL stream + claimed_outer_hash expect, plus the
- * host-computed `outer_hash` that gets shipped in FINALIZE_AND_SIGN.
+ * L4 manifest builder — turns a `CallIntent` into the DEVICE WIRE bytes the Aztec
+ * Ledger app's BEGIN_AUTHWIT + APPEND_CALL stream expect.
  *
- * Algorithm pinned to aztec-packages `2770bcb…`; mirrors the device-side
- * `l4/parity.c` byte-for-byte. Any drift between this file and the device
- * recomputation surfaces as `SW_HASH_MISMATCH` on FINALIZE. The L4.1 host
- * parity test already proved both sides match for the golden vectors.
- *
- * Use `bun run packages/adapter-ledger/scripts/gen-l4-vectors.ts` to regenerate
- * the golden JSON if the upstream changes.
+ * P1 (entrypoint-seam-refactor): the outer_hash shipped in FINALIZE_AND_SIGN is the
+ * CANONICAL `EncodedAppEntrypointCalls` hash, computed by `LedgerClearSigningEntrypoint`
+ * via `@aztec/entrypoints/encoding` — there is no host replica pinned to an
+ * aztec-packages commit anymore. `deviceOuterHashForIntent` (below) is a TEST-ONLY
+ * mirror of the device's `l4/parity.c` algorithm, verified against the installed
+ * canonical (4.2.1) by `l4-manifest-parity.test.ts`. The device independently
+ * recomputes the outer_hash from this stream and rejects on mismatch (SW_HASH_MISMATCH).
  */
 
 import { poseidon2HashWithSeparator } from '@aztec/foundation/crypto/poseidon';
@@ -36,7 +35,7 @@ import {
 
 /** Aztec domain separators — must equal the device-side constants in `l4/wire.h`. */
 const SIGNATURE_PAYLOAD = 463525807;
-const AUTHWIT_OUTER = 3283595782;
+const _AUTHWIT_OUTER = 3283595782;
 const PUBLIC_CALLDATA = 2760353947;
 const FUNCTION_ARGS = 3576554347; /* private-call args_hash separator */
 
@@ -130,36 +129,41 @@ export interface L4Manifest {
   readonly header: AzManifestHeader;
   /** ONLY the non-padding calls; the device synthesizes padding internally. */
   readonly calls: readonly AzCall[];
-  /** Device-claimable outer_hash, computed host-side via Aztec libs. 32 BE bytes. */
-  readonly claimedOuterHash: Uint8Array;
   /** Useful for logging / UI; matches what's in the header. */
   readonly txNonce: Uint8Array;
 }
 
-/**
- * Build everything the L4 streaming flow needs from a CallIntent + path + nonce.
- *
- * Returns the device-claimable `outer_hash` along with the wire-shaped calls.
- * The signer streams BEGIN_AUTHWIT(header) → APPEND_CALL(calls[i]) → FINALIZE(claimedOuterHash).
- */
-export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manifest> {
-  const { intent, bip32Path } = inputs;
-
-  const realCalls = intent.calls.filter((c) => !c.isPadding);
-  if (realCalls.length > APP_MAX_CALLS) {
-    throw new Error(`too many real calls: ${realCalls.length} > ${APP_MAX_CALLS}`);
+function normalizeTxNonce(txNonce: Uint8Array | bigint | undefined): Uint8Array {
+  if (txNonce === undefined) return new Uint8Array(FR_BYTES);
+  if (txNonce instanceof Uint8Array) {
+    if (txNonce.length !== FR_BYTES) {
+      throw new Error(`txNonce must be 32 bytes, got ${txNonce.length}`);
+    }
+    return txNonce;
   }
+  return bigintToFrBytes(txNonce);
+}
 
-  /* Encode the real calls, then pad to APP_MAX_CALLS for the host-side outer_hash. */
+/**
+ * P1 — host MIRROR of the device's `l4/parity.c` outer_hash algorithm. Used ONLY by
+ * the parity test (`l4-manifest-parity.test.ts`) to prove the device's independent
+ * recompute equals the CANONICAL `EncodedAppEntrypointCalls` of the installed
+ * `@aztec/*` (4.2.1). NOT on the production signing path: `LedgerClearSigningEntrypoint`
+ * computes + signs the canonical hash directly (via `@aztec/entrypoints/encoding`), and
+ * the device recomputes + rejects on mismatch — so this mirror never gates a signature.
+ * (Replaces the old in-line replica that was pinned to an aztec-packages commit.)
+ */
+export async function deviceOuterHashForIntent(inputs: L4ManifestInputs): Promise<Uint8Array> {
+  const { intent } = inputs;
   const realEncoded: AzCall[] = [];
-  for (const c of realCalls) {
+  for (const c of intent.calls.filter((x) => !x.isPadding)) {
     realEncoded.push(await encodeRealCall(c));
   }
   const padding = await encodePaddingCall();
   const padded: AzCall[] = [...realEncoded];
   while (padded.length < APP_MAX_CALLS) padded.push(padding);
 
-  /* Build the 31-field payload exactly as the device does (parity.c). */
+  /* The 31-field payload exactly as the device builds it (parity.c). */
   const payloadFields: AztecFr[] = [];
   for (const c of padded) {
     payloadFields.push(Fr.fromBuffer(Buffer.from(c.argsHash)));
@@ -169,18 +173,7 @@ export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manif
     payloadFields.push(new Fr(c.flags & CALL_FLAG.HIDE_MSG_SENDER ? 1n : 0n));
     payloadFields.push(new Fr(c.flags & CALL_FLAG.STATIC ? 1n : 0n));
   }
-
-  const txNonceBytes: Uint8Array = (() => {
-    if (inputs.txNonce === undefined) return new Uint8Array(FR_BYTES);
-    if (inputs.txNonce instanceof Uint8Array) {
-      if (inputs.txNonce.length !== FR_BYTES) {
-        throw new Error(`txNonce must be 32 bytes, got ${inputs.txNonce.length}`);
-      }
-      return inputs.txNonce;
-    }
-    return bigintToFrBytes(inputs.txNonce);
-  })();
-  payloadFields.push(Fr.fromBuffer(Buffer.from(txNonceBytes)));
+  payloadFields.push(Fr.fromBuffer(Buffer.from(normalizeTxNonce(inputs.txNonce))));
 
   const innerHash = await poseidon2HashWithSeparator(payloadFields, SIGNATURE_PAYLOAD);
   const outerHash = await computeOuterAuthWitHash(
@@ -189,6 +182,29 @@ export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manif
     intent.chainInfo.version,
     innerHash,
   );
+  return frToBytes(outerHash);
+}
+
+/**
+ * Build the DEVICE WIRE bytes the L4 streaming flow needs from a CallIntent + path +
+ * nonce. The signer streams BEGIN_AUTHWIT(header) → APPEND_CALL(calls[i]) → FINALIZE,
+ * passing the CANONICAL outer_hash (computed by the entrypoint via
+ * `@aztec/entrypoints/encoding`) — NOT a host replica. The device recomputes from this
+ * stream and rejects (SW_HASH_MISMATCH) if it disagrees.
+ */
+export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manifest> {
+  const { intent, bip32Path } = inputs;
+
+  const realCalls = intent.calls.filter((c) => !c.isPadding);
+  if (realCalls.length > APP_MAX_CALLS) {
+    throw new Error(`too many real calls: ${realCalls.length} > ${APP_MAX_CALLS}`);
+  }
+
+  const realEncoded: AzCall[] = [];
+  for (const c of realCalls) {
+    realEncoded.push(await encodeRealCall(c));
+  }
+  const txNonceBytes = normalizeTxNonce(inputs.txNonce);
 
   const key: AzKeyPath = {
     curveId: inputs.curveId ?? CURVE_ID.SECP256K1,
@@ -206,12 +222,7 @@ export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manif
     callCount: realCalls.length,
   };
 
-  return {
-    header,
-    calls: realEncoded,
-    claimedOuterHash: frToBytes(outerHash),
-    txNonce: txNonceBytes,
-  };
+  return { header, calls: realEncoded, txNonce: txNonceBytes };
 }
 
 /** Serialize an `AzManifestHeader` to the wire bytes BEGIN_AUTHWIT expects. */
