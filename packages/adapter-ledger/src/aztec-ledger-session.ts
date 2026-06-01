@@ -342,15 +342,10 @@ export class AztecLedgerSession {
     }
     const work = (async (): Promise<SubmitResult> => {
       const step = opts.onStep ?? (() => {});
-      const { session, ledgerProvider } = this.deps;
-      const accountContract = this.deps.accountContract;
-      if (!(accountContract instanceof LedgerEcdsaKAccountContract)) {
-        // P0 (b) proves the ECDSA-K deploy seam; the Schnorr mirror (same override
-        // mechanism on LedgerSchnorrAccountContract) lands in P1 after this is proven.
-        throw new Error(
-          'deployAccountViaEntrypoint: ECDSA-K only for the P0 spike (Schnorr mirror in P1)',
-        );
-      }
+      const { session, accountContract, ledgerProvider } = this.deps;
+      /* P1: both contracts extend LedgerAccountContractBase → both expose
+       * setEntrypointOverride, so the deploy seam is scheme-agnostic (ECDSA-K + Schnorr).
+       * The provider's createClearSigningEntrypoint is likewise scheme-generic (curveId). */
 
       const deployProfile = csDeployProfileLookup(DEPLOY_PROFILE_BY_SCHEME[this.deps.scheme]);
       if (!deployProfile) {
