@@ -33,10 +33,16 @@ These two cover ~80% of the untrusted-input parser attack surface (opus). No BOL
 
 **Stale-comment fix found incidentally:** `sw.h` called SW_DEPLOY_PUBKEY_HASH_MISMATCH/ADDRESS_MISMATCH "reserved: fires when M8 Grumpkin EC lift lands" — but `begin_deploy_account.c:303/308` returns them on every deploy (M8 P6 wired the check; the lift landed M8 P3). Comment corrected.
 
-## Remaining (this phase, → safe-v17)
-- **Crafted valid seeds** under `corpus/seeds/` (committed): a device-valid BEGIN_AUTHWIT + a device-valid BEGIN_DEPLOY (→0x9000) + a valid APPEND_CALL (TRANSFER_PUB_PUB, from==consumer=0x0C…). Authwit/append reservoirs have NO accept yet; deploy has parse-accepts but no device-valid.
-- **`wire-differential-replay.test.ts`** (`skipIf(!SPECULOS_URL)`): replay reservoir ∪ corpus ∪ seeds through the oracle + Speculos; assert SW-class agreement — authwit/append EXACT; deploy parse-reject EXACT, parse-accept → device ∈ {0x9000, 0x6F0F, 0x6F0E}. append prep = a real BEGIN_AUTHWIT matching the seeded session.
-- Speculos on the freshly-built `bin/app.elf` (P2b extraction) on an ephemeral port.
-- Triage + FIX any divergence **in the device handler, not the shim** → `safe-v17`.
+## Bidirectional differential-replay gate — GREEN (P2 → safe-v17 COMPLETE)
+`wire-differential-replay.test.ts` (`skipIf(!SPECULOS_URL)`) replayed **779 inputs** (corpus ∪ reservoir) through BOTH the off-device oracle (`replay_*`, the same compiled handler `run_one`) and the real device firmware (freshly-built `bin/app.elf`, P2b extraction, Speculos nanosp on :5001) — **3/3 pass, ZERO divergences:**
+- **begin_authwit** (261 inputs + 1 crafted valid seed): oracle SW === device SW EXACT for every input; the crafted valid BEGIN_AUTHWIT accepted (0x9000) by both (accepts>0). begin_authwit self-resets so no prep needed.
+- **begin_deploy parse-seam** (363 inputs): every parse-reject EXACT; the corpus's parse-accepted inputs (oracle 0x9000) all map on-device to the binding bucket {0x9000, 0x6F0F, 0x6F0E} (random parse-valid → device's own pkh check fails → 0x6F0F). parseAccepts>0. ABORT (0x08) before each to force L4_IDLE.
+- **append_call** (155 inputs): oracle SW === device SW EXACT, with prep = ABORT → real BEGIN_AUTHWIT(consumer=0x0C…, call_count=1) reproducing the harness's seeded {HEADER_PARSED,1,0,0x0C…} session exactly (append reads only those 4 fields — verified append_call.c:84/85/143).
+
+**The gate is live, not theater:** the first run FAILED (transport rejected a stale 261-byte corpus entry, Lc>255) — fixed by clamping the device body to the same first-255 bytes the oracle's WIRE_MAX_LC caps to. ~16ms/round-trip × 779 = real device traffic.
+
+**Deploy →0x9000 (full-accept) coverage:** the differential-replay exercises the parse-accept→binding *asymmetry* (→0x6F0F), NOT a full 0x9000 deploy — that path is already proven by **P0's MANDATORY on-chain dual-scheme deploy** (real accounts deployed → device 0x9000 → signed → on-chain). So a redundant device-valid 0x9000 seed here would be gold-plating; the two together cover both post-parse branches. (codex High noted the missing 0x9000 seed; this is the honest resolution.)
+
+**P2 status: COMPLETE.** P2a fuzz-clean + P2b fuzz-clean + reject reservoir + bidirectional differential-replay GREEN. → `safe-v17` (tag + push pending 1Password recovery; all M12 commits are UNSIGNED this session — the SSH agent can't sign).
 
 (Committed UNSIGNED — the 1Password SSH agent is flaking this session, blocking commit-signing + push auth; backfill + push on recovery.)
