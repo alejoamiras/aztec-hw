@@ -50,11 +50,6 @@ export {
   defaultDeployPath,
   encodeBeginDeployAccountBody,
 } from './deploy-context.ts';
-export {
-  FrozenAuthWitnessProvider,
-  FrozenWitnessMismatchError,
-  FrozenWitnessUsedError,
-} from './frozen-auth-witness-provider.ts';
 export { deviceCacheKey, type RevealedMasterSecret, revealMasterSecret } from './onboarding.ts';
 export {
   LedgerProvider,

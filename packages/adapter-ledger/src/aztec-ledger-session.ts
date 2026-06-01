@@ -7,28 +7,18 @@
  *  - The session's master `secret: Fr` and deterministic `salt: Fr`.
  *  - Pinned contract instances for the demo (USDC, Dripper, SponsoredFPC).
  *
- * Two submission paths:
- *  1. `deployAccount()` — two-pass CLEAR-signed deploy (M8). A spy auth
- *     provider captures the framework's deploy outer_hash; the device verifies
- *     its own publicKeysHash + address + recomputes the outer_hash (P6), signs;
- *     a FrozenAuthWitnessProvider replays the device witness on the second
- *     `request()`. The deploy authwit nonce is PINNED (feeEntrypointOptions.
- *     txNonce) so both passes + the device agree on the hash.
- *  2. `submitClearSignedIntent(exec)` — bypasses `BaseWallet.sendTx` (which
- *     hardcodes `txNonce: Fr.random()` at base_wallet.ts:180) and runs the
- *     9-step recipe to pre-sign on-device with clear-signing, then hand
- *     the witness to the framework via FrozenAuthWitnessProvider.
- *     M5 manifest already covers the verbs:
- *       - DRIP_PUB     (dripUsdc)
- *       - TRANSFER_PUB_PUB    (transferUsdcPubToPub)
- *       - TRANSFER_PRIV_PUB   (transferUsdcPrivToPub)
- *       - TRANSFER_PUB_PRIV   (transferUsdcPubToPriv)
- *       - TRANSFER_PRIV_PRIV  (transferUsdcPrivToPriv)
+ * P1 (entrypoint-seam-refactor): all signing routes through the proper seam —
+ * `LedgerClearSigningEntrypoint` — via the real framework flow:
+ *  1. `deployAccountViaEntrypoint()` — self-paid deploy; the DeployContext rides in
+ *     `fee.feeEntrypointOptions` → `account.wrapExecutionPayload(...)` → the device
+ *     DEPLOY flow (begin_deploy_account sovereignty re-derive + finalize sign). No
+ *     spy/freeze; the device signs the canonical outer_hash in-band.
+ *  2. `transferViaRealSendTx(exec)` — drip + all transfer verbs go through the REAL
+ *     `EmbeddedWallet.sendTx`, which picks `txNonce` and proves THAT request; our
+ *     entrypoint clear-signs that exact nonce in-band (no pre-sign/freeze drift).
  *
- * Concurrency: `submitClearSignedIntent` is serialized via an in-flight
- * mutex. The Ledger holds a single L4 session at a time; two parallel
- * submissions would corrupt the device state. Convenience wrappers
- * route through `submitClearSignedIntent`, so they share the mutex.
+ * Concurrency: submissions are serialized via an in-flight mutex. The Ledger holds a
+ * single device session at a time; two parallel submissions would corrupt its state.
  */
 
 import { BaseAccount } from '@aztec/aztec.js/account';
@@ -148,11 +138,6 @@ export type SubmitStepHandler = (phase: PhaseId, label: string) => void;
 
 export interface SubmitOptions {
   readonly onStep?: SubmitStepHandler;
-  /** P0 seam spike — route this submission through the REAL `EmbeddedWallet.sendTx`
-   * via `LedgerClearSigningEntrypoint` (in-band device clear-signing) instead of the
-   * `submitClearSignedIntent` bypass. Gated behind `?seam=entrypoint` in the demo;
-   * the legacy path stays the default until the seam is proven (delete-nothing). */
-  readonly viaEntrypoint?: boolean;
   /** Fired ONCE per submission, the moment the proven tx's hash is known
    * (between `prove` and `submit`). Lets the UI surface an aztecscan link
    * while we're still waiting for L2 inclusion — handy when testnet is
