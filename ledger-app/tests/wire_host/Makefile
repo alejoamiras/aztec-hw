@@ -30,6 +30,17 @@ AUTHWIT_SRCS := $(HANDLER)/begin_authwit.c $(L4)/session.c $(L4)/fr_canonical.c 
 fuzz_authwit: $(AUTHWIT_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -o $@ $(AUTHWIT_SRCS)
 
+# --- P2a: append_call (richest parser: allowlist gates + args_hash recompute) ---
+POSEIDON2 := $(SRC)/crypto/poseidon2
+CS        := $(SRC)/clear_signing_v0
+APPEND_SRCS := $(HANDLER)/append_call.c $(L4)/session.c $(L4)/fr_canonical.c \
+  $(CS)/args_hash.c $(CS)/registry.gen.c $(CS)/selectors.gen.c \
+  $(POSEIDON2)/poseidon2.c $(POSEIDON2)/fr.c $(POSEIDON2)/fr_params.c $(POSEIDON2)/constants.c \
+  $(VENDOR) fuzz_append_call.c
+
+fuzz_append_call: $(APPEND_SRCS)
+	$(CLANG) $(FUZZ) $(INC) -I$(CS) -I$(POSEIDON2) -o $@ $(APPEND_SRCS)
+
 # Supply-chain drift check for the vendored lib_standard_app cluster (VENDORED.md).
 verify-vendored:
 	@bash hostshim/verify-vendored.sh
