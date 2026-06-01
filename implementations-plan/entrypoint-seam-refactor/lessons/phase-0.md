@@ -93,6 +93,37 @@ device independently recomputes outer_hash + B3 consumer binding still in force)
 
 NOT gold-plated: no explicit nonce-readback added — inclusion is the cryptographic proof.
 
+## P0 DEPLOY HALF — seam confirmed + built (codex GO-with-edits)
+**Seam (verified in 4.2.1 source):** `DeployAccountMethod.request({ deployer: ZERO, fee })` →
+self-deploy branch (deploy_account_method.js:60) → `getSelfFeePaymentMethod` →
+`AccountEntrypointMetaPaymentMethod.getExecutionPayload` (account_entrypoint_meta_payment_method.js:42,55):
+`options = feeEntrypointOptions; return account.wrapExecutionPayload(innerPayload, chainInfo, options)`.
+So **feeEntrypointOptions is forwarded VERBATIM** as our entrypoint's `wrapExecutionPayload` `options`.
+The deploy authwit uses the SAME `computeOuterAuthWitHash(addr,chainId,version,
+EncodedAppEntrypointCalls.create(calls,txNonce).hash())` formula as a normal tx (account_entrypoint.js:92
+— NO deploy domain-sep / is_deployment bit); the outer `DefaultMultiCallEntrypoint` wrap happens AFTER
+the fee payload is signed, so it doesn't perturb that hash. `getAccount` override is the only clean
+injection (DefaultAccountContract hardcodes `new DefaultAccountEntrypoint`).
+
+**Built:** `wrapExecutionPayload` detects `ledgerDeployContext` in options → `#deploySignOnDevice`
+(canonical outer_hash + device DEPLOY flow `beginDeployAccount`+`finalizeDeployAndSign`, M8-P6
+sovereignty); reversible `setEntrypointOverride` on the contract; `session.deployAccountViaEntrypoint()`
+carries the ctx via `fee.feeEntrypointOptions`; `?seam=entrypoint` routes the demo deploy. ECDSA-K
+only for P0 (Schnorr mirror = P1). Delete-nothing: legacy spy/freeze `deployAccount` intact.
+
+**codex consult (xhigh, session 019e83ee-d770-7742-9cc1-135a0373722a) — GO-with-edits, ALL folded:**
+- HIGH: signed hash covers ONLY calls+txNonce, NOT fee-mode/cancellable → enforce
+  `feePaymentMethodOptions===EXTERNAL && cancellable===false` before signing (they're unsigned);
+  namespaced sideband `ledgerDeployContext`. ✅
+- MED: `request()` not pure (simulate/send re-call it) → keep "request() once, manual prove/send"
+  (we do) + documented. ✅
+- MED: host pre-validate ctx vs runtime (address/chain/version/nonce) before the review → added
+  bytesEqual checks (device STILL re-verifies = the real gate). ✅
+- LOW: one-slot `#pending` → session in-flight mutex serializes + fresh entrypoint per call. ✅
+- Confirmed FINE: plumbing facts, the same-outer-hash formula (no deploy domain-sep), getAccount injection.
+
+NEXT: prove on-chain — fresh ECDSA index, `?seam=entrypoint`, deploy lands on testnet.
+
 ## Status
 - [x] Seam research (this doc)
 - [x] Spike harness (register `BaseAccount(myEntrypoint)` + real `sendTx` transfer)

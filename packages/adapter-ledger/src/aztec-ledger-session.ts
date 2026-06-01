@@ -526,6 +526,125 @@ export class AztecLedgerSession {
   }
 
   /**
+   * P0 SPIKE (b) — DEPLOY through the PROPER seam. Routes a self-paid account
+   * deploy through our `LedgerClearSigningEntrypoint.wrapExecutionPayload` using the
+   * framework's OWN carrier: `fee.feeEntrypointOptions`. The flow (verified in 4.2.1):
+   * `DeployAccountMethod.request({ deployer: ZERO, fee })` → self-deploy branch →
+   * `getSelfFeePaymentMethod` → `AccountEntrypointMetaPaymentMethod.getExecutionPayload`
+   * → `account.wrapExecutionPayload(feePayload, chainInfo, feeEntrypointOptions)`. We
+   * carry the `DeployContext` in `feeEntrypointOptions`, so our entrypoint runs the
+   * device DEPLOY flow IN-BAND (M8-P6 sovereignty re-derive + deploy-review) — NO
+   * spy/freeze. Delete-nothing: the entrypoint override is reversible and the legacy
+   * `deployAccount` stays intact until this is proven on-chain.
+   */
+  async deployAccountViaEntrypoint(opts: SubmitOptions = {}): Promise<SubmitResult> {
+    if (this.inflight) {
+      throw new Error(
+        'AztecLedgerSession: another submission in flight; await it before issuing a new one',
+      );
+    }
+    const work = (async (): Promise<SubmitResult> => {
+      const step = opts.onStep ?? (() => {});
+      const { session, ledgerProvider } = this.deps;
+      const accountContract = this.deps.accountContract;
+      if (!(accountContract instanceof LedgerEcdsaKAccountContract)) {
+        // P0 (b) proves the ECDSA-K deploy seam; the Schnorr mirror (same override
+        // mechanism on LedgerSchnorrAccountContract) lands in P1 after this is proven.
+        throw new Error(
+          'deployAccountViaEntrypoint: ECDSA-K only for the P0 spike (Schnorr mirror in P1)',
+        );
+      }
+
+      const deployProfile = csDeployProfileLookup(DEPLOY_PROFILE_BY_SCHEME[this.deps.scheme]);
+      if (!deployProfile) {
+        throw new Error(`deployAccountViaEntrypoint: no deploy profile for '${this.deps.scheme}'`);
+      }
+      const isSchnorr = this.deps.scheme === 'schnorr';
+      const deployCurveId = isSchnorr ? CURVE_ID.GRUMPKIN : CURVE_ID.SECP256K1;
+
+      step('build', 'Building deploy (entrypoint seam)…');
+      const chainInfo = await this.getChainInfo();
+      const txNonce = Fr.random();
+
+      /* DeployContext the device needs (identical to the legacy path) — rides in
+       * feeEntrypointOptions. The device re-derives pkh+address from its own secret
+       * and rejects if != expectedAddress (M8-P6 sovereignty). */
+      const publicKeysHash = await this.completeAddress.publicKeys.hash();
+      const deployContext: DeployContext = {
+        profileId: deployProfile.profile_index,
+        curveId: deployCurveId,
+        bip32Path: this.deps.bip32Path,
+        chainId: toBE32(chainInfo.chainId),
+        protocolVersion: toBE32(chainInfo.version),
+        txNonce: toBE32(txNonce),
+        salt: toBE32(this.deps.salt),
+        publicKeysHash: toBE32(publicKeysHash),
+        expectedAddress: toBE32(this.address),
+      };
+
+      /* Install our entrypoint so getDeployMethod() snapshots it (ordering rule). */
+      const entrypoint = ledgerProvider.createClearSigningEntrypoint(this.address);
+      accountContract.setEntrypointOverride(entrypoint);
+      let executionPayload: ExecutionPayload;
+      try {
+        const deployFee = {
+          paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress),
+          feeEntrypointOptions: {
+            txNonce,
+            feePaymentMethodOptions: AccountFeePaymentMethodOptions.EXTERNAL,
+            cancellable: false,
+            /* The carrier under test: our entrypoint reads this (namespaced) in
+             * wrapExecutionPayload. request() is called ONCE here, then we prove/send
+             * manually — so the device is prompted exactly once (codex: request() is
+             * not pure; simulate/send would re-call it). */
+            ledgerDeployContext: deployContext,
+          },
+        };
+        step('sign', 'Awaiting clear-signed deploy approval on device…');
+        const deployMethod = await this.accountManager.getDeployMethod();
+        executionPayload = await deployMethod.request({
+          deployer: AztecAddress.ZERO,
+          fee: deployFee,
+        });
+      } finally {
+        accountContract.setEntrypointOverride(null);
+      }
+
+      step('prove', 'Signature received — building tx request…');
+      const currentMinFees = await session.nodeClient.getCurrentMinFees();
+      const gasSettings = GasSettings.fallback({ maxFeesPerGas: currentMinFees.mul(2.5) });
+      /* deployer:ZERO universal-deploy wraps via DefaultMultiCallEntrypoint already,
+       * so the outer tx uses DefaultEntrypoint (single pre-wrapped call). */
+      const txRequest = await new DefaultEntrypoint().createTxExecutionRequest(
+        executionPayload,
+        gasSettings,
+        chainInfo,
+      );
+
+      step('prove', 'Proving deploy tx (in-browser WASM)…');
+      const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
+      const tx = await provenTx.toTx();
+      const txHash = tx.getTxHash();
+      opts.onTxHash?.(txHash.toString());
+      step('submit', `Submitting tx ${txHash.toString().slice(0, 10)}…`);
+      await session.nodeClient.sendTx(tx);
+      step('include', `Awaiting L2 inclusion (${txHash.toString().slice(0, 10)}…)`);
+      const receipt = await waitForTx(session.nodeClient, txHash, {
+        waitForStatus: TxStatus.PROPOSED,
+        timeout: 900,
+      });
+      step('done', 'Account deployed (entrypoint seam)');
+      return { txHash, receipt };
+    })();
+    this.inflight = work;
+    try {
+      return await work;
+    } finally {
+      this.inflight = null;
+    }
+  }
+
+  /**
    * Read-only view of the session deps for rendering metadata (instances,
    * fee-payer, artifacts). M8 P7.2 (impl-audit `bb56tmdxj` MAJOR): the
    * viewing-root `secret` is STRIPPED — it must not be reachable via any public

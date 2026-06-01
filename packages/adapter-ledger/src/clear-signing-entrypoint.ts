@@ -28,6 +28,7 @@
  * replica in P1.
  */
 import {
+  AccountFeePaymentMethodOptions,
   DefaultAccountEntrypoint,
   type DefaultAccountEntrypointOptions,
 } from '@aztec/entrypoints/account';
@@ -42,6 +43,7 @@ import type { ExecutionPayload, TxExecutionRequest } from '@aztec/stdlib/tx';
 import { packEcdsaSignature } from '@aztec-hwwallet-poc/core';
 import type { CurveId } from './apdu.ts';
 import { preflightIntent } from './clear_signing_v0/preflight.ts';
+import type { DeployContext } from './deploy-context.ts';
 import { buildL4Manifest } from './l4-manifest.ts';
 import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
 import type { LedgerProvider, SignOuterHashOptions } from './provider.ts';
@@ -50,6 +52,22 @@ export interface ClearSigningEntrypointOptions {
   readonly bip32Path: readonly number[];
   readonly curveId?: CurveId;
   readonly signOptions?: SignOuterHashOptions;
+}
+
+/**
+ * Options for a DEPLOY routed through `wrapExecutionPayload` — the standard
+ * entrypoint options PLUS the `DeployContext` the device needs for its M8-P6
+ * sovereignty re-derivation (device re-derives pkh+address from its own secret,
+ * rejects if != ctx.expectedAddress) + the deploy-review UI. The host carries it
+ * via `fee.feeEntrypointOptions`, which aztec.js passes verbatim as `options`
+ * (AccountEntrypointMetaPaymentMethod → account.wrapExecutionPayload). The inner
+ * `DefaultAccountEntrypoint` only reads {cancellable,txNonce,feePaymentMethodOptions},
+ * so the extra `deployContext` field is inert to it.
+ */
+export interface ClearSignDeployOptions extends DefaultAccountEntrypointOptions {
+  /** Namespaced sideband (codex: avoid a raw top-level field collision) carried via
+   * `fee.feeEntrypointOptions`; the stock entrypoint ignores unknown fields. */
+  readonly ledgerDeployContext?: DeployContext;
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -93,7 +111,32 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     chainInfo: ChainInfo,
     options: DefaultAccountEntrypointOptions,
   ): Promise<ExecutionPayload> {
-    await this.#clearSignOnDevice(exec, chainInfo, options.txNonce);
+    // DEPLOY (P0 b): the framework routes a self-paid account deploy through here
+    // (DeployAccountMethod[deployer:ZERO] → getSelfFeePaymentMethod →
+    // AccountEntrypointMetaPaymentMethod.getExecutionPayload →
+    // account.wrapExecutionPayload(feePayload, chainInfo, feeEntrypointOptions)).
+    // When a DeployContext rides in `options`, run the device DEPLOY flow (sovereignty
+    // re-derive + deploy-review) over the SAME canonical outer_hash; else normal clear-sign.
+    const deployContext = (options as ClearSignDeployOptions).ledgerDeployContext;
+    if (deployContext) {
+      // The signed outer_hash covers ONLY calls+txNonce — NOT the fee MODE or
+      // `cancellable` (account_entrypoint.js:94-106; codex High). They are therefore
+      // NOT clear-signed, so constrain them to the safe constants here — otherwise a
+      // host could alter the unsigned fee semantics after the device review.
+      if (options.feePaymentMethodOptions !== AccountFeePaymentMethodOptions.EXTERNAL) {
+        throw new Error(
+          'LedgerClearSigningEntrypoint: deploy requires feePaymentMethodOptions=EXTERNAL (fee mode is NOT clear-signed)',
+        );
+      }
+      if (options.cancellable !== false) {
+        throw new Error(
+          'LedgerClearSigningEntrypoint: deploy requires cancellable=false (cancellability is NOT clear-signed)',
+        );
+      }
+      await this.#deploySignOnDevice(exec, chainInfo, options.txNonce, deployContext);
+    } else {
+      await this.#clearSignOnDevice(exec, chainInfo, options.txNonce);
+    }
     return this.#inner.wrapExecutionPayload(exec, chainInfo, options);
   }
 
@@ -137,6 +180,60 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     for (const call of manifest.calls) await this.device.appendCall(call);
     const sig = await this.device.finalizeAndSign(messageHashBytes, this.options.signOptions ?? {});
 
+    this.#pending = {
+      hashHex: messageHash.toString(),
+      wit: new AuthWitness(messageHash, Array.from(packEcdsaSignature(sig.r, sig.s))),
+    };
+  }
+
+  /**
+   * DEPLOY variant of `#clearSignOnDevice`: identical canonical outer_hash (so the
+   * inner `wrapExecutionPayload`'s `createAuthWit(messageHash)` matches `#consume`),
+   * but the device runs the DEPLOY flow — `begin_deploy_account` encodes the
+   * DeployContext and re-derives publicKeysHash + address FROM THE DEVICE SECRET
+   * (M8-P6), rejecting if != ctx.expectedAddress; `finalize_deploy_and_sign` renders
+   * the deploy-review UI and signs the canonical outer_hash. The host messageHash is
+   * a CROSS-CHECK (re-verified in `#consume`), never a trust input.
+   */
+  async #deploySignOnDevice(
+    exec: ExecutionPayload,
+    chainInfo: ChainInfo,
+    txNonce: Fr | undefined,
+    deployContext: DeployContext,
+  ): Promise<void> {
+    const nonce = txNonce ?? Fr.ZERO;
+    const encoded = await EncodedAppEntrypointCalls.create(exec.calls, nonce);
+    const payloadHash = await encoded.hash();
+    const messageHash = await computeOuterAuthWitHash(
+      this.address,
+      chainInfo.chainId,
+      chainInfo.version,
+      payloadHash,
+    );
+    const messageHashBytes = new Uint8Array(messageHash.toBuffer());
+
+    // Host pre-validation (codex Medium): fail fast on a ctx that can't match runtime,
+    // instead of sending the user into a doomed device review + opaque SW_HASH_MISMATCH.
+    // The device STILL independently re-derives + verifies (M8-P6 sovereignty) — this is
+    // a cross-check, never the gate.
+    const ctxOk =
+      bytesEqual(deployContext.expectedAddress, new Uint8Array(this.address.toBuffer())) &&
+      bytesEqual(deployContext.chainId, new Uint8Array(chainInfo.chainId.toBuffer())) &&
+      bytesEqual(deployContext.protocolVersion, new Uint8Array(chainInfo.version.toBuffer())) &&
+      bytesEqual(deployContext.txNonce, new Uint8Array(nonce.toBuffer()));
+    if (!ctxOk) {
+      throw new Error(
+        'LedgerClearSigningEntrypoint: DeployContext mismatches runtime (address/chain/version/nonce) — refusing to review',
+      );
+    }
+
+    // Device DEPLOY flow (mirrors LedgerEcdsaKAuthWitnessProvider.createAuthWitForDeploy):
+    // begin encodes + verifies the DeployContext (sovereignty), finalize reviews + signs.
+    await this.device.beginDeployAccount(deployContext);
+    const sig = await this.device.finalizeDeployAndSign(
+      messageHashBytes,
+      this.options.signOptions ?? {},
+    );
     this.#pending = {
       hashHex: messageHash.toString(),
       wit: new AuthWitness(messageHash, Array.from(packEcdsaSignature(sig.r, sig.s))),

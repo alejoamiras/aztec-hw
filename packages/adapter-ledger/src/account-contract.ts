@@ -10,7 +10,8 @@
  */
 import { DefaultAccountContract } from '@aztec/accounts/defaults';
 import { EcdsaKAccountContractArtifact } from '@aztec/accounts/ecdsa';
-import type { AuthWitnessProvider } from '@aztec/aztec.js/account';
+import { type Account, type AuthWitnessProvider, BaseAccount } from '@aztec/aztec.js/account';
+import type { EntrypointInterface } from '@aztec/entrypoints/interfaces';
 import type { ContractArtifact } from '@aztec/stdlib/abi';
 import type { CompleteAddress } from '@aztec/stdlib/contract';
 
@@ -30,6 +31,14 @@ export class LedgerEcdsaKAccountContract extends DefaultAccountContract {
    * `FrozenAuthWitnessProvider` carrying the pre-signed device witness (pass 2).
    * Outside of the deploy flow it's always `null`. */
   private overrideProvider: AuthWitnessProvider | null = null;
+  /** P0 seam spike — temporary `EntrypointInterface` override. When set,
+   * `getAccount()` builds the account around THIS entrypoint (our
+   * `LedgerClearSigningEntrypoint`) instead of the framework's
+   * `DefaultAccountEntrypoint`. The deploy spike uses it to route
+   * `getDeployMethod()` through the proper clear-signing seam; `null` restores the
+   * default. Reversible, never persisted across deploy boundaries (mirrors
+   * `setAuthWitnessOverride`). */
+  private entrypointOverride: EntrypointInterface | null = null;
 
   constructor(transport: LedgerTransport, options: LedgerEcdsaKAccountContractOptions) {
     super();
@@ -73,5 +82,27 @@ export class LedgerEcdsaKAccountContract extends DefaultAccountContract {
   /** Exposed for tests + the demo CLI; the framework only sees this via `getAuthWitnessProvider`. */
   getProvider(): LedgerEcdsaKAuthWitnessProvider {
     return this.defaultProvider;
+  }
+
+  /** P0 seam spike — install/clear the `EntrypointInterface` override (see field). */
+  setEntrypointOverride(entrypoint: EntrypointInterface | null): void {
+    this.entrypointOverride = entrypoint;
+  }
+
+  /**
+   * When an entrypoint override is installed, build the account around it (our
+   * proper clear-signing seam) instead of the framework's `DefaultAccountEntrypoint`.
+   * `getDeployMethod()` SNAPSHOTS this at build time, so the override MUST be set
+   * before the deploy method is built (same ordering rule as `setAuthWitnessOverride`).
+   */
+  override getAccount(completeAddress: CompleteAddress): Account {
+    if (this.entrypointOverride) {
+      return new BaseAccount(
+        this.entrypointOverride,
+        this.getAuthWitnessProvider(completeAddress),
+        completeAddress,
+      );
+    }
+    return super.getAccount(completeAddress);
   }
 }

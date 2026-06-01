@@ -102,7 +102,12 @@ export function AccountPanel({ state, setState }: Props) {
               type="button"
               onClick={() =>
                 runAction('deploy', (onStep, onTxHash) =>
-                  session.session.deployAccount({ onStep, onTxHash }),
+                  /* P0 seam spike: ?seam=entrypoint routes the deploy through the proper
+                   * seam (deployAccountViaEntrypoint → wrapExecutionPayload via
+                   * fee.feeEntrypointOptions), else the legacy spy/freeze deployAccount. */
+                  new URLSearchParams(window.location.search).get('seam') === 'entrypoint'
+                    ? session.session.deployAccountViaEntrypoint({ onStep, onTxHash })
+                    : session.session.deployAccount({ onStep, onTxHash }),
                 )
               }
               disabled={state.kind === 'submitting' || alreadyDeployed}
