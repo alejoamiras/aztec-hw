@@ -23,8 +23,8 @@
 #define SW_DELEGATED_SPEND_UNSUPPORTED    0x6F0C  // 4-arg transfer with from != consumer
 /* M7 P3 — clear-signed deploy (DEPLOY_ACCOUNT_ECDSAK_V1). */
 #define SW_UNKNOWN_PROFILE_ID             0x6F0D  // profile_index out of range / not allowlisted
-#define SW_DEPLOY_ADDRESS_MISMATCH        0x6F0E  // reserved: fires when M8 Grumpkin EC lift lands
-#define SW_DEPLOY_PUBKEY_HASH_MISMATCH    0x6F0F  // reserved: fires under §7 lift
+#define SW_DEPLOY_ADDRESS_MISMATCH        0x6F0E  // device-derived address != host expected_address (M8 P6)
+#define SW_DEPLOY_PUBKEY_HASH_MISMATCH    0x6F0F  // device-derived publicKeysHash != host (M8 P6 sovereignty gate)
 #define SW_DEPLOY_CONTEXT_TWICE           0x6F10  // BEGIN_DEPLOY_ACCOUNT sent twice in one session
 #define SW_DEPLOY_CONTEXT_WRONG_STATE     0x6F11  // BEGIN_DEPLOY before GET_VERSION or after auth
 /* M9 B3 — device-verified `From` on authwit. The device recomputes its OWN

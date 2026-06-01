@@ -14,6 +14,7 @@
 
 #include "buffer.h"
 #include "io.h" /* g_wire_host_last_sw — reject() records the SW here */
+#include "reservoir.h"
 
 #include "begin_deploy_account.h" /* deploy_parse_and_validate */
 #include "session.h"              /* l4_session_reset, G_l4_session */
@@ -71,27 +72,41 @@ static int is_known_deploy_parse_sw(uint16_t sw) {
     }
 }
 
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+/* Shared body — used by BOTH the libFuzzer entrypoint and the replay oracle
+ * (replay_main.c). Returns the SW the seam decision maps to: SWO_SUCCESS when the
+ * parse ACCEPTS (the seam returns without io_send — the device would then run the
+ * binding tail), else the io_send'd reject SW. The replay gate maps a seam-accept
+ * to the device emitting 0x9000 OR a binding-tail SW (never a parse-level SW). */
+/* Buffer model: fixed 260B backing for the device's over-read semantics; body
+ * capped at WIRE_MAX_LC=255 (device's one-byte Lc); slack poisoned 0xAA. */
+#define WIRE_MAX_LC 255
+uint16_t run_one(const uint8_t *data, size_t size) {
     l4_session_reset(); /* L4_IDLE; the parse populates the deploy session */
     const cs_deploy_profile_t *profile = NULL;
 
     uint8_t apdu[260];
-    size_t n = size > sizeof(apdu) ? sizeof(apdu) : size;
+    memset(apdu, 0xAA, sizeof(apdu));
+    size_t n = size > WIRE_MAX_LC ? WIRE_MAX_LC : size;
     memcpy(apdu, data, n);
     buffer_t cdata = {.ptr = apdu, .size = n, .offset = 0};
 
     g_wire_host_last_sw = 0xFFFF;
     int prc = deploy_parse_and_validate(&cdata, &profile);
 
-    /* On success the fn returns SWO_SUCCESS without io_send (g_wire_host_last_sw
-     * stays the sentinel); on a reject, reject() io_send'd the real SW. */
-    uint16_t sw = (prc == SW_OK) ? (uint16_t)SW_OK : g_wire_host_last_sw;
-    if (!is_known_deploy_parse_sw(sw)) {
-        __builtin_trap(); /* unknown/garbage SW from the parser = finding */
-    }
     /* A successful parse must have resolved a profile (the pairing gate ran). */
     if (prc == SW_OK && profile == NULL) {
         __builtin_trap();
+    }
+    /* On success the fn returns SWO_SUCCESS without io_send (g_wire_host_last_sw
+     * stays the sentinel); on a reject, reject() io_send'd the real SW. */
+    return (prc == SW_OK) ? (uint16_t)SW_OK : g_wire_host_last_sw;
+}
+
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    uint16_t sw = run_one(data, size);
+    reservoir_maybe_put(data, size, sw);
+    if (!is_known_deploy_parse_sw(sw)) {
+        __builtin_trap(); /* unknown/garbage SW from the parser = finding */
     }
     return 0;
 }

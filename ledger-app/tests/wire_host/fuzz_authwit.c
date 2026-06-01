@@ -15,6 +15,7 @@
 
 #include "buffer.h"
 #include "io.h" /* g_wire_host_last_sw */
+#include "reservoir.h"
 
 #include "begin_authwit.h"
 
@@ -41,22 +42,35 @@ static int is_known_authwit_sw(uint16_t sw) {
     }
 }
 
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    /* On-device, cdata points into the fixed 260-byte G_io_apdu_buffer. Mirror
-     * that: a fixed 260B array so over-read-past-`size` semantics match the device
-     * (a tight malloc would let ASan flag OOB the device wouldn't hit). The slack
-     * past `size` is left fuzzer-influenced via the leftover stack bytes; P2's full
-     * gate seeds it explicitly — for the parser this is already faithful since
-     * begin_authwit only reads within `size` (buffer_read_* bounds-check). */
+/* Shared body — used by BOTH the libFuzzer entrypoint and the replay oracle
+ * (replay_main.c) so the differential-replay measures EXACTLY what was fuzzed.
+ * Returns the emitted SW.
+ *
+ * Buffer model (codex differential-replay review): keep a fixed 260B backing
+ * array to mirror the device's G_io_apdu_buffer over-read semantics, but cap the
+ * handler-visible body at WIRE_MAX_LC=255 — Speculos frames a one-byte Lc, so the
+ * device can NEVER receive size>255; testing those sizes would be unfaithful. The
+ * slack past the body is poisoned 0xAA so the oracle is DETERMINISTIC and diverges
+ * from the device's stale-tail content (an over-read past Lc then yields a
+ * different SW → caught by replay). begin_authwit only reads within `size`
+ * (buffer_read_* bounds-check), so this is already faithful for the parser. */
+#define WIRE_MAX_LC 255
+uint16_t run_one(const uint8_t *data, size_t size) {
     uint8_t apdu[260];
-    size_t n = size > sizeof(apdu) ? sizeof(apdu) : size;
+    memset(apdu, 0xAA, sizeof(apdu));
+    size_t n = size > WIRE_MAX_LC ? WIRE_MAX_LC : size;
     memcpy(apdu, data, n);
 
     buffer_t cdata = {.ptr = apdu, .size = n, .offset = 0};
     g_wire_host_last_sw = 0xFFFF; /* sentinel: handler must emit a real SW */
     handler_begin_authwit(&cdata);
+    return g_wire_host_last_sw;
+}
 
-    if (!is_known_authwit_sw(g_wire_host_last_sw)) {
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    uint16_t sw = run_one(data, size);
+    reservoir_maybe_put(data, size, sw); /* harvest stratified rejects (WIRE_RESERVOIR) */
+    if (!is_known_authwit_sw(sw)) {
         __builtin_trap(); /* unknown/garbage SW from the parser = finding */
     }
     return 0;

@@ -15,6 +15,8 @@
 
 CLANG ?= /opt/homebrew/opt/llvm/bin/clang
 FUZZ  := -fsanitize=fuzzer,address,undefined -g -O1 -std=c11 -Wall -Wextra
+# Replay oracle: same sources + sanitizers, NO libFuzzer (replay_main.c owns main).
+REPLAY := -fsanitize=address,undefined -g -O1 -std=c11 -Wall -Wextra
 SRC     := ../../src
 HANDLER := $(SRC)/handler
 L4      := $(SRC)/l4
@@ -25,10 +27,13 @@ INC     := -I$(SHIM) -I$(SRC) -I$(L4) -I$(HANDLER)
 VENDOR := $(SHIM)/buffer.c $(SHIM)/read.c $(SHIM)/varint.c $(SHIM)/write.c $(SHIM)/bip32.c
 
 # --- P2a: begin_authwit (pure wire parser: version/curve/path/Fr-canonical gates) ---
-AUTHWIT_SRCS := $(HANDLER)/begin_authwit.c $(L4)/session.c $(L4)/fr_canonical.c $(VENDOR) fuzz_authwit.c
+AUTHWIT_SRCS := $(HANDLER)/begin_authwit.c $(L4)/session.c $(L4)/fr_canonical.c $(VENDOR) reservoir.c fuzz_authwit.c
 
 fuzz_authwit: $(AUTHWIT_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -o $@ $(AUTHWIT_SRCS)
+
+replay_authwit: $(AUTHWIT_SRCS) replay_main.c
+	$(CLANG) $(REPLAY) $(INC) -o $@ $(AUTHWIT_SRCS) replay_main.c
 
 # --- P2a: append_call (richest parser: allowlist gates + args_hash recompute) ---
 POSEIDON2 := $(SRC)/crypto/poseidon2
@@ -36,10 +41,13 @@ CS        := $(SRC)/clear_signing_v0
 APPEND_SRCS := $(HANDLER)/append_call.c $(L4)/session.c $(L4)/fr_canonical.c \
   $(CS)/args_hash.c $(CS)/registry.gen.c $(CS)/selectors.gen.c \
   $(POSEIDON2)/poseidon2.c $(POSEIDON2)/fr.c $(POSEIDON2)/fr_params.c $(POSEIDON2)/constants.c \
-  $(VENDOR) fuzz_append_call.c
+  $(VENDOR) reservoir.c fuzz_append_call.c
 
 fuzz_append_call: $(APPEND_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -I$(CS) -I$(POSEIDON2) -o $@ $(APPEND_SRCS)
+
+replay_append_call: $(APPEND_SRCS) replay_main.c
+	$(CLANG) $(REPLAY) $(INC) -I$(CS) -I$(POSEIDON2) -o $@ $(APPEND_SRCS) replay_main.c
 
 # --- P2b: begin_deploy parse-only seam (Option X — owner-approved) ---
 # Fuzzes deploy_parse_and_validate() — the parse+validate half extracted from
@@ -52,16 +60,23 @@ fuzz_append_call: $(APPEND_SRCS)
 # — so "crypto is off the fuzz path" is self-enforcing, not just asserted.
 # deploy_profiles.gen.c is dependency-free (no poseidon2 drag).
 DEPLOY_SRCS := $(HANDLER)/begin_deploy_account.c $(L4)/session.c $(L4)/fr_canonical.c \
-  $(CS)/deploy_profiles.gen.c $(VENDOR) fuzz_deploy_parse.c
+  $(CS)/deploy_profiles.gen.c $(VENDOR) reservoir.c fuzz_deploy_parse.c
 
 fuzz_deploy_parse: $(DEPLOY_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -I$(CS) -o $@ $(DEPLOY_SRCS)
+
+replay_deploy_parse: $(DEPLOY_SRCS) replay_main.c
+	$(CLANG) $(REPLAY) $(INC) -I$(CS) -o $@ $(DEPLOY_SRCS) replay_main.c
+
+# Convenience: build all three replay oracles for the differential-replay gate.
+replay-all: replay_authwit replay_append_call replay_deploy_parse
 
 # Supply-chain drift check for the vendored lib_standard_app cluster (VENDORED.md).
 verify-vendored:
 	@bash hostshim/verify-vendored.sh
 
 clean:
-	rm -f fuzz_authwit fuzz_append_call fuzz_deploy_parse
+	rm -f fuzz_authwit fuzz_append_call fuzz_deploy_parse \
+	      replay_authwit replay_append_call replay_deploy_parse
 
-.PHONY: clean verify-vendored
+.PHONY: clean verify-vendored replay-all
