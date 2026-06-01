@@ -723,7 +723,9 @@ export class AztecLedgerSession {
     const exec = await callContractMethod(this.deps.usdcInstance.address, amount).request({
       fee: { paymentMethod: this.sponsoredFee() },
     });
-    return this.submitClearSignedIntent(exec, opts);
+    /* P1: drip is a TX — route it through the proper seam (real sendTx + entrypoint),
+     * same as transfers. transferViaRealSendTx is generic over the fee-merged exec. */
+    return this.transferViaRealSendTx(exec, opts);
   }
 
   /**
@@ -811,12 +813,10 @@ export class AztecLedgerSession {
         argsLen: c.args.length,
       })),
     );
-    /* P0 seam spike: route through the real sendTx + entrypoint when requested
-     * (?seam=entrypoint). Same fee-merged exec; the difference is WHO drives the
-     * tx-request assembly + nonce — the framework, not our bypass. */
-    return opts.viaEntrypoint
-      ? this.transferViaRealSendTx(exec, opts)
-      : this.submitClearSignedIntent(exec, opts);
+    /* P1: TX now ALWAYS routes through the proper seam — the real EmbeddedWallet.sendTx
+     * via LedgerClearSigningEntrypoint (in-band nonce). The submitClearSignedIntent
+     * bypass is retired now that P0 proved this path on-chain (safe-v20/safe-v21). */
+    return this.transferViaRealSendTx(exec, opts);
   }
 
   /**
