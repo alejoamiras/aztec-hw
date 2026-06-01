@@ -464,17 +464,6 @@ export class AztecLedgerSession {
   }
 
   /**
-   * Drip 1000 USDC into this Ledger account (sponsored). Wraps the
-   * `Dripper.drip_to_public(USDC, amount)` call with the SponsoredFPC
-   * fee path and submits via the clear-signing recipe.
-   *
-   * Convenience-wrapper status: SIGNATURE-ONLY for v0.5. The frontend
-   * (M6.4) can call `submitClearSignedIntent(exec)` directly with a
-   * pre-built fee-merged ExecutionPayload. Full wrappers land at M6.5
-   * (alpha-testnet e2e) once the in-browser PXE has a contract artifact
-   * loaded for nulo's Dripper.
-   */
-  /**
    * Common builder: instantiate a contract handle bound to our session wallet.
    * `Contract.at` itself does not hit the chain — the artifact + address are
    * all it needs to dispatch method calls.
