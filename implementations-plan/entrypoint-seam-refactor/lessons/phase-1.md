@@ -75,11 +75,36 @@ hash PARITY test against installed 4.2.1 (the entrypoint already asserts
 
 ### P1.5 — codex post-impl review of the P1 diff (adversarial) → fold → safe-v22 (signed, pushed)
 
+## Validation (testnet, no ?seam = the new default)
+- **ECDSA #2:** drip+transfer via entrypoint green (tx `0x285ad017…`).
+- **Schnorr #1 (curveId=GRUMPKIN):** drip+transfer via entrypoint green (tx `0x2d5296e2…`,
+  1 passed / 0 console errors) — the Schnorr TX path on the new seam is PROVEN.
+- Schnorr DEPLOY via entrypoint: #1 self-skipped (already on-chain); proving on a fresh
+  index (#3 attempt). If all dropdown indices [0..4] are deployed → composition argument
+  (ECDSA-deploy-via-entrypoint proven safe-v21 + Schnorr device deploy-sign M10/M11-proven +
+  scheme-generic deployAccountViaEntrypoint + byte-identical device APDUs).
+
+## Schnorr deploy-via-entrypoint — composition argument (index exhaustion)
+Schnorr dropdown indices #1 + #3 are both already on-chain (deploy self-skips); the
+[0..4] UI range appears exhausted by M10/M11 demos, so a FRESH Schnorr deploy isn't
+reachable. Evidence the Schnorr deploy-via-entrypoint works regardless:
+1. `deployAccountViaEntrypoint` is scheme-generic + PROVEN on-chain for ECDSA (safe-v21).
+2. The device deploy-sign APDUs (`begin_deploy_account`+`finalize_deploy_and_sign`,
+   curveId=GRUMPKIN) are BYTE-IDENTICAL whether called from the (deleted) legacy
+   `createAuthWitForDeploy` or the entrypoint's `#deploySignOnDevice` — the device can't
+   tell the caller; those Schnorr deploy APDUs are M10/M11-proven on-chain.
+3. Schnorr drip+transfer via the entrypoint PROVEN on-chain just now (#1 `0x2d5296e2…`,
+   #3 `0x171714fd…`) — confirms the Schnorr device authwit sign via the entrypoint.
+RESIDUAL: a fresh-index Schnorr deploy-via-entrypoint isn't proven on-chain (environmental,
+not a code gap). Opportunistically close in P2 if a fresh index frees up.
+
 ## Status
 - [x] P1.1 default flip + validated (4ba86f3)
-- [x] P1.2a session legacy deleted (a14bc4d)
-- [ ] P1.2b shared base + Schnorr mirror + drop spy/freeze (fixes the regression)
-- [ ] P1.2c delete provider intent/deploy methods + Frozen + viaEntrypoint; re-validate Schnorr
-- [ ] P1.3 encoder reuse + parity test
-- [ ] P1.4 stream-A-claim-B + device-guarantee tests
-- [ ] P1.5 codex review → safe-v22
+- [x] P1.2a session legacy deleted (a14bc4d, −352)
+- [x] P1.2b shared base + Schnorr mirror + drop spy/freeze from contracts (94a0374) — regression fixed
+- [x] P1.2c delete provider createAuthWitFromIntent/createAuthWitForDeploy + Frozen + viaEntrypoint (64b821e, −351)
+- [x] **P1.2 COMPLETE — all workarounds gone from code (git grep clean), net −734 LOC, branch pushed**
+- [ ] P1.3 reuse @aztec/entrypoints/encoding — drop l4-manifest REPLICA hash + 2770bcb pin (keep device wire bytes) + parity test
+- [ ] P1.4 stream-A-claim-B rejection test + device-guarantee confirmation
+- [ ] tidy stray stale comments (session:472, project-call-intent:3 still name deleted methods)
+- [ ] P1.5 codex post-impl review of the P1 diff → fold → safe-v22
