@@ -30,7 +30,11 @@ import { Fr } from '@aztec/foundation/curves/bn254';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import type { CallIntent } from '@aztec-hwwallet-poc/core';
 import { CURVE_ID, defaultAztecPath, INS, SW } from './apdu.ts';
-import { buildL4Manifest, encodeBeginAuthwitBody } from './l4-manifest.ts';
+import {
+  buildL4Manifest,
+  deviceOuterHashForIntent,
+  encodeBeginAuthwitBody,
+} from './l4-manifest.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
@@ -55,6 +59,15 @@ describe.skipIf(!SPECULOS_URL)('M11 P5 — B3 fail-closed consumer binding (real
       bip32Path: defaultAztecPath(0),
       curveId: CURVE_ID.SECP256K1,
     });
+    /* The self-consistent outer_hash the device will recompute from this stream.
+     * P1: claimedOuterHash left buildL4Manifest (production path signs the canonical
+     * hash); deviceOuterHashForIntent is the device's parity.c mirror — exactly what
+     * the device recomputes — so it passes the outer_hash gate, isolating the B3 reject. */
+    const claimedOuterHash = await deviceOuterHashForIntent({
+      intent,
+      bip32Path: defaultAztecPath(0),
+      curveId: CURVE_ID.SECP256K1,
+    });
 
     /* Header accepted: zero calls → session goes straight to CALLS_COMPLETE. */
     const begin = await transport.send({
@@ -73,7 +86,7 @@ describe.skipIf(!SPECULOS_URL)('M11 P5 — B3 fail-closed consumer binding (real
       ins: INS.FINALIZE_AND_SIGN as never,
       p1: 0,
       p2: 0,
-      data: manifest.claimedOuterHash,
+      data: claimedOuterHash,
     });
     expect(Number(fin.sw)).not.toBe(SW.HASH_MISMATCH);
     expect(Number(fin.sw)).toBe(SW.AUTHWIT_CONSUMER_MISMATCH);

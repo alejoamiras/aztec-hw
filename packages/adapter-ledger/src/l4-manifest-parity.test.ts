@@ -91,6 +91,47 @@ describe('l4-manifest parity — device algorithm == canonical EncodedAppEntrypo
         }),
       ]),
     },
+    {
+      name: 'sponsor(private) + transfer_public_to_private (public, 4 args)',
+      exec: payload([
+        mkCall({ to: SPONSOR, selectorU32: 0x23d77f89, args: [], type: FunctionType.PRIVATE }),
+        mkCall({
+          to: USDC,
+          selectorU32: 0x1f3b2c4d,
+          args: [CONSUMER.toField(), new Fr(0xabcdn), new Fr(7n), new Fr(0n)],
+          type: FunctionType.PUBLIC,
+        }),
+      ]),
+    },
+    {
+      name: 'sponsor(private) + transfer_private_to_public (private, 4 args)',
+      exec: payload([
+        mkCall({ to: SPONSOR, selectorU32: 0x23d77f89, args: [], type: FunctionType.PRIVATE }),
+        mkCall({
+          to: USDC,
+          selectorU32: 0x9a8b7c6d,
+          args: [CONSUMER.toField(), new Fr(0xabcdn), new Fr(3n), new Fr(0n)],
+          type: FunctionType.PRIVATE,
+        }),
+      ]),
+    },
+    {
+      name: 'sponsor(private) + drip_to_public (public, 2 args)',
+      exec: payload([
+        mkCall({ to: SPONSOR, selectorU32: 0x23d77f89, args: [], type: FunctionType.PRIVATE }),
+        mkCall({
+          to: USDC,
+          selectorU32: 0x5e6f7081,
+          args: [USDC.toField(), new Fr(1_000_000_000n)],
+          type: FunctionType.PUBLIC,
+        }),
+      ]),
+    },
+    {
+      /* B3 shape: zero real calls (all padding) — the consumer-binding test's payload. */
+      name: 'zero-call (B3 shape, all padding)',
+      exec: payload([]),
+    },
   ];
 
   for (const { name, exec } of cases) {

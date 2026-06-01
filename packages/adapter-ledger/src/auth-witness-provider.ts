@@ -80,6 +80,18 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
   }
 
   async createAuthWit(messageHash: Fr | Buffer): Promise<AuthWitness> {
+    /* HASH-ONLY (blind) sign via the K1-only `signOuterHash` APDU — kept for K1
+     * app-level authwits. It is NOT scheme-generic: there is no raw hash-only Schnorr
+     * sign APDU (Schnorr signs only via the clear-signing authwit/deploy device flows).
+     * FAIL-CLOSED for Grumpkin rather than emit a wrong ECDSA witness for a Schnorr
+     * account (codex P1 Major). Schnorr authwits must go through the clear-signing
+     * entrypoint (`createClearSigningEntrypoint`). */
+    if (this.options.curveId === CURVE_ID.GRUMPKIN) {
+      throw new Error(
+        'createAuthWit: hash-only blind sign is ECDSA-K only; a Schnorr account must use the ' +
+          'clear-signing entrypoint (createClearSigningEntrypoint), not a raw outer_hash sign',
+      );
+    }
     const outerHash = messageHash instanceof Fr ? messageHash : Fr.fromBuffer(messageHash);
     return this.signAndWrap(outerHash);
   }
