@@ -41,6 +41,22 @@ APPEND_SRCS := $(HANDLER)/append_call.c $(L4)/session.c $(L4)/fr_canonical.c \
 fuzz_append_call: $(APPEND_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -I$(CS) -I$(POSEIDON2) -o $@ $(APPEND_SRCS)
 
+# --- P2b: begin_deploy parse-only seam (Option X — owner-approved) ---
+# Fuzzes deploy_parse_and_validate() — the parse+validate half extracted from
+# begin_deploy_account.c. The REAL handler .c is linked (so the parser is byte-
+# identical to the device), but the fuzzer calls ONLY the parse fn, never the
+# crypto/binding tail. begin_deploy_account.c #includes cx.h + crypto_helpers.h:
+# both are EMPTY hostshim headers (no cx_* symbol is used directly here), and the
+# three binding-tail crypto fns (account_binding_deploy_*, az_account_derive_from_
+# path) are dead link-stubs IN fuzz_deploy_parse.c that __builtin_trap if reached
+# — so "crypto is off the fuzz path" is self-enforcing, not just asserted.
+# deploy_profiles.gen.c is dependency-free (no poseidon2 drag).
+DEPLOY_SRCS := $(HANDLER)/begin_deploy_account.c $(L4)/session.c $(L4)/fr_canonical.c \
+  $(CS)/deploy_profiles.gen.c $(VENDOR) fuzz_deploy_parse.c
+
+fuzz_deploy_parse: $(DEPLOY_SRCS)
+	$(CLANG) $(FUZZ) $(INC) -I$(CS) -o $@ $(DEPLOY_SRCS)
+
 # Supply-chain drift check for the vendored lib_standard_app cluster (VENDORED.md).
 verify-vendored:
 	@bash hostshim/verify-vendored.sh

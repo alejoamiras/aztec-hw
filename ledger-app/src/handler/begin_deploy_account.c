@@ -60,18 +60,7 @@ static int ct_memcmp32(const uint8_t a[32], const uint8_t b[32]) {
  * the session's curve_id / path / salt explicitly (no module reads of the
  * session global). Byte-identical behavior. */
 
-int handler_begin_deploy_account(buffer_t *cdata) {
-    /* Mutual-exclusion with the AUTHWIT path. The session_reset call
-     * inside reject() clears BOTH structs, so we don't need to be
-     * defensive here. We allow re-issue only from L4_IDLE — running a
-     * second BEGIN_DEPLOY mid-flight is a state-machine violation. */
-    if (G_l4_session.state != L4_IDLE) {
-        return reject(SW_DEPLOY_CONTEXT_WRONG_STATE);
-    }
-    /* Reset both: deploy session is the one we'll populate, but the
-     * AUTHWIT struct must be zero too in case of a recovered residue. */
-    l4_session_reset();
-
+int deploy_parse_and_validate(buffer_t *cdata, const cs_deploy_profile_t **out_profile) {
     uint8_t manifest_version;
     if (!buffer_read_u8(cdata, &manifest_version)) return reject(SWO_WRONG_DATA_LENGTH);
     if (manifest_version != L4_MANIFEST_VERSION) return reject(SW_UNKNOWN_MANIFEST_VERSION);
@@ -171,6 +160,26 @@ int handler_begin_deploy_account(buffer_t *cdata) {
     G_l4_deploy_session.curve_id = curve_id;
     G_l4_deploy_session.path_scheme = path_scheme;
     G_l4_deploy_session.bip32_path_len = path_len;
+
+    *out_profile = profile;
+    return SWO_SUCCESS;
+}
+
+int handler_begin_deploy_account(buffer_t *cdata) {
+    /* Mutual-exclusion with the AUTHWIT path. The session_reset call
+     * inside reject() clears BOTH structs, so we don't need to be
+     * defensive here. We allow re-issue only from L4_IDLE — running a
+     * second BEGIN_DEPLOY mid-flight is a state-machine violation. */
+    if (G_l4_session.state != L4_IDLE) {
+        return reject(SW_DEPLOY_CONTEXT_WRONG_STATE);
+    }
+    /* Reset both: deploy session is the one we'll populate, but the
+     * AUTHWIT struct must be zero too in case of a recovered residue. */
+    l4_session_reset();
+
+    const cs_deploy_profile_t *profile = NULL;
+    int prc = deploy_parse_and_validate(cdata, &profile);
+    if (prc != SWO_SUCCESS) return prc;
 
     /* --- Parity pass 1: derive pubkey + compute partial address ----- */
     uint8_t signing_pubkey_x[32];
