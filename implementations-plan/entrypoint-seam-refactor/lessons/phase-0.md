@@ -122,11 +122,28 @@ only for P0 (Schnorr mirror = P1). Delete-nothing: legacy spy/freeze `deployAcco
 - LOW: one-slot `#pending` → session in-flight mutex serializes + fresh entrypoint per call. ✅
 - Confirmed FINE: plumbing facts, the same-outer-hash formula (no deploy domain-sep), getAccount injection.
 
-NEXT: prove on-chain — fresh ECDSA index, `?seam=entrypoint`, deploy lands on testnet.
+**PROVEN on-chain (2026-06-01):** fresh ECDSA #3 deploy via `?seam=entrypoint` →
+`deployAccountViaEntrypoint` LANDED on testnet — tx
+`0x1c36fd8ddadce67f3812caa86536d18e6544b07087c9c130ab5bda345ddd713b`, `deploy err=""`.
+Device screens: "Deploy your Aztec account?" → "Transaction signed" (deploy-review +
+M8-P6 sovereignty ran). Instrumented run confirmed the seam end-to-end:
+`wrapExecutionPayload deployCtx=true feeMode=EXTERNAL cancellable=false` → `deploySign DONE
+(r=32B s=32B)` → `consume match=true` → `request() done` → `submitted txHash=0x1c36fd8d…`.
+**proveTx SUCCEEDED ⇒ the device-signed outer_hash verified IN-CIRCUIT ⇒ the deploy is
+cryptographically valid** (a wrong hash makes the ClientIVC circuit unsatisfiable → prove
+would throw). Run #1 (#4) timed out at 900s = testnet slowness; the IDENTICAL code mined on
+the #3 retry. **feeEntrypointOptions→wrapExecutionPayload pass-through CONFIRMED USABLE — no
+gap, no STOP.** Temp `[seam]` instrumentation removed (proven code = 18aba84, logging-free).
 
 ## Status
 - [x] Seam research (this doc)
 - [x] Spike harness (register `BaseAccount(myEntrypoint)` + real `sendTx` transfer)
 - [x] **Transfer PROVEN on testnet (Speculos)** — tx `0x2b146ce0…`, nonce by construction
-- [ ] Deploy `feeEntrypointOptions` → `wrapExecutionPayload` proven (or gap recorded) — NEXT
-- [x] safe-v20 (P0 transfer gate) — tagging + pushing now
+- [x] **Deploy PROVEN on testnet (Speculos)** — tx `0x1c36fd8d…`; feeEntrypointOptions→wrapExecutionPayload usable (no gap, no STOP)
+- [x] safe-v20 (P0 transfer gate) signed + pushed
+- [x] **safe-v21 (P0 deploy gate) — P0 HARD GATE FULLY CLEARED** (both transfer + deploy proven on-chain)
+
+**P0 COMPLETE.** The proper seam works for BOTH transactions (real sendTx, in-band nonce) AND
+deploys (feeEntrypointOptions→wrapExecutionPayload, sovereignty intact). Delete-nothing held —
+the legacy submitClearSignedIntent bypass + spy/freeze deployAccount + FrozenAuthWitnessProvider
+are all still present; they get retired in P1 now that their replacement is proven.
