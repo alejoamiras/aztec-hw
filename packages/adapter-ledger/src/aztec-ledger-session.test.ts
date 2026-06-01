@@ -1,14 +1,13 @@
 /**
- * AztecLedgerSession structural/contract tests. The full submission recipe
- * needs a real PXE and a deployed Ledger account — those land at M6.5
- * (alpha-testnet e2e). What we CAN cover here:
+ * AztecLedgerSession structural/contract tests. The full submission flow needs a
+ * real PXE + a deployed Ledger account (covered by the testnet e2e). What we CAN
+ * cover here:
  *
  *   - The in-flight mutex serializes submissions.
- *   - The `exec.calls.length === 2` shape guard fires on malformed payloads.
  *   - Public address getters return what was passed in.
  *
- * Uses minimal stub objects so the tests don't transitively pull in PXE
- * setup, prover WASM, or device transport.
+ * Uses minimal stub objects so the tests don't transitively pull in PXE setup,
+ * prover WASM, or device transport.
  */
 import { describe, expect, test } from 'bun:test';
 import { AztecAddress } from '@aztec/aztec.js/addresses';
@@ -40,24 +39,17 @@ describe('AztecLedgerSession (shape + mutex)', () => {
     expect(sess.address.toString()).toBe(ADDR.toString());
   });
 
-  test('rejects payloads with calls.length !== 2', async () => {
-    const sess = makeSession();
-    await expect(sess.submitClearSignedIntent(stubExec(1))).rejects.toThrow(
-      /expects \[sponsor, app\] \(2 calls\); got 1/,
-    );
-    await expect(sess.submitClearSignedIntent(stubExec(3))).rejects.toThrow(
-      /expects \[sponsor, app\] \(2 calls\); got 3/,
-    );
-  });
-
+  /* P1: TX submission migrated to `transferViaRealSendTx` (the real
+   * EmbeddedWallet.sendTx via LedgerClearSigningEntrypoint); the
+   * `submitClearSignedIntent` bypass + its 2-call shape guard are retired. The
+   * in-flight mutex (single L4 device session) is preserved on the new path. */
   test('in-flight mutex rejects concurrent submissions', async () => {
     const sess = makeSession();
-    /* With an empty `deps` stub, the wired runRecipe will throw when it
-     * tries to call `deps.session.nodeClient.getNodeInfo()` — that error
-     * surfaces asynchronously, which is exactly what we want for the mutex
-     * check: it gives us a window where `this.inflight !== null` is true. */
-    const first = sess.submitClearSignedIntent(stubExec(2));
-    await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.toThrow(
+    /* With an empty `deps` stub, the async work rejects when it touches
+     * `deps.ledgerProvider` — surfacing asynchronously, which gives us a window
+     * where `this.inflight !== null` is true. */
+    const first = sess.transferViaRealSendTx(stubExec(2));
+    await expect(sess.transferViaRealSendTx(stubExec(2))).rejects.toThrow(
       /another submission in flight/,
     );
     /* Drain the first promise so the test completes cleanly. */
@@ -66,11 +58,11 @@ describe('AztecLedgerSession (shape + mutex)', () => {
 
   test('mutex clears after a failed submission (so next call is accepted)', async () => {
     const sess = makeSession();
-    /* First call fails inside runRecipe (no real session deps). The mutex
-     * must clear so the second call can proceed past the in-flight guard
-     * and hit the SAME failure (proves mutex released, not stuck). */
-    await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.toThrow();
-    await expect(sess.submitClearSignedIntent(stubExec(2))).rejects.not.toThrow(
+    /* First call fails inside the async work (no real device deps). The mutex
+     * must clear so the second call proceeds past the in-flight guard and hits
+     * the SAME failure (proves the mutex released, not stuck). */
+    await expect(sess.transferViaRealSendTx(stubExec(2))).rejects.toThrow();
+    await expect(sess.transferViaRealSendTx(stubExec(2))).rejects.not.toThrow(
       /another submission in flight/,
     );
   });

@@ -31,29 +31,20 @@
  * route through `submitClearSignedIntent`, so they share the mutex.
  */
 
-import { type AuthWitnessProvider, BaseAccount } from '@aztec/aztec.js/account';
+import { BaseAccount } from '@aztec/aztec.js/account';
 import { AztecAddress, type CompleteAddress } from '@aztec/aztec.js/addresses';
-import {
-  Contract,
-  type ContractMethod,
-  getContractInstanceFromInstantiationParams,
-} from '@aztec/aztec.js/contracts';
+import { Contract, type ContractMethod } from '@aztec/aztec.js/contracts';
 import { SponsoredFeePaymentMethod } from '@aztec/aztec.js/fee';
 import { waitForTx } from '@aztec/aztec.js/node';
 import { AccountManager, ContractInitializationStatus } from '@aztec/aztec.js/wallet';
-import {
-  AccountFeePaymentMethodOptions,
-  DefaultAccountEntrypoint,
-} from '@aztec/entrypoints/account';
+import { AccountFeePaymentMethodOptions } from '@aztec/entrypoints/account';
 import { DefaultEntrypoint } from '@aztec/entrypoints/default';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import type { ContractArtifact } from '@aztec/stdlib/abi';
 import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
-import { GasFees, GasSettings } from '@aztec/stdlib/gas';
+import { GasSettings } from '@aztec/stdlib/gas';
 import { type ExecutionPayload, type TxHash, type TxReceipt, TxStatus } from '@aztec/stdlib/tx';
 import type { ChainInfo } from '@aztec-hwwallet-poc/core';
-
-import { AuthWitness } from '@aztec-hwwallet-poc/core';
 
 import { LedgerEcdsaKAccountContract } from './account-contract.ts';
 import { LedgerSchnorrAccountContract } from './schnorr-account-contract.ts';
@@ -68,8 +59,6 @@ import {
   csDeployProfileLookup,
 } from './clear_signing_v0/deploy_profiles.generated.ts';
 import type { DeployContext } from './deploy-context.ts';
-import { FrozenAuthWitnessProvider } from './frozen-auth-witness-provider.ts';
-import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
 import { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
 import type { LedgerTransport } from './transport.ts';
 
@@ -331,198 +320,6 @@ export class AztecLedgerSession {
       dripperArtifact: opts.dripperArtifact,
     };
     return new AztecLedgerSession(deps, accountAddress, accountCompleteAddress, accountManager);
-  }
-
-  /**
-   * Deploy the Ledger-backed account contract on-chain.
-   *
-   * M8 P1 — two-pass clear-signed deploy via the M7-P3-shipped device
-   * handlers (`INS_BEGIN_DEPLOY_ACCOUNT` + `INS_FINALIZE_DEPLOY_AND_SIGN`).
-   * Replaces the legacy blind-sign fallback. Sequence:
-   *
-   *   Pass 1 (spy): inject an `AuthWitnessProvider` that captures the
-   *       framework-computed outer_hash and returns a stub witness; discard
-   *       the resulting ExecutionPayload.
-   *   Device sign: send DeployContext via BEGIN_DEPLOY_ACCOUNT (device runs
-   *       its 3-pass partial_address parity recompute), then claimed_outer_hash
-   *       via FINALIZE_DEPLOY_AND_SIGN. Device renders the NBGL deploy-review
-   *       UI (address + path + fee), waits for user approval, signs.
-   *   Pass 2 (frozen): inject a FrozenAuthWitnessProvider carrying the
-   *       device witness. Re-run `deployMethod.request(...)` — the framework
-   *       picks up the witness via createAuthWit. Discard nothing this time.
-   *
-   * deployer: AztecAddress.ZERO gates the multicall-wrap branch in
-   * `request()` (deploy_account_method.js:60-70). Without it the request
-   * returns a 2-call payload and DefaultEntrypoint throws "Expected a
-   * single call, got 2".
-   *
-   * Phase 6 (safe-v4) closes the device-side publicKeysHash + address +
-   * outer_hash recompute against host claims. As of Phase 1 the device
-   * still records host-supplied publicKeysHash/expected_address without
-   * refuting them — same trust model as M7 P3, just reached via the
-   * clear-signed UI instead of blind-sign.
-   */
-  async deployAccount(opts: SubmitOptions = {}): Promise<SubmitResult> {
-    const step = opts.onStep ?? (() => {});
-    const session = this.deps.session;
-    const accountContract = this.deps.accountContract;
-
-    /* M10: scheme-aware deploy. The accountContract (chosen in connect) is already
-     * the Schnorr or ECDSA-K contract — its getInitializationFunctionAndArgs pulls
-     * the matching device pubkey for the ctor, and its provider carries the right
-     * curveId. Here we pick the matching device deploy PROFILE + curve; the device
-     * enforces the (curveId, profile arg_schema) pair and signs the (scheme-
-     * independent) deploy outer_hash with the scheme's primitive. */
-    const isSchnorr = this.deps.scheme === 'schnorr';
-    /* M12 P1: resolve the deploy profile-id from generated metadata (was a
-     * hardcoded `isSchnorr ? 1 : 0`). Fail-closed on a lookup miss. */
-    const deployProfile = csDeployProfileLookup(DEPLOY_PROFILE_BY_SCHEME[this.deps.scheme]);
-    if (!deployProfile) {
-      throw new Error(`deployAccount: no deploy profile for scheme '${this.deps.scheme}'`);
-    }
-    const deployProfileId = deployProfile.profile_index;
-    const deployCurveId = isSchnorr ? CURVE_ID.GRUMPKIN : CURVE_ID.SECP256K1;
-
-    step('build', 'Building deploy method…');
-    const chainInfo = await this.getChainInfo();
-
-    /* DETERMINISTIC deploy authwit nonce. The deploy authwit is the account
-     * entrypoint wrapping the sponsor fee call; its tx nonce defaults to
-     * `Fr.random()` inside the framework (EncodedAppEntrypointCalls.create).
-     * We MUST pin it via `feeEntrypointOptions.txNonce` and reuse the SAME
-     * value in both request() passes — otherwise the spy pass and the frozen
-     * pass would compute DIFFERENT outer_hashes and FrozenAuthWitnessProvider
-     * would reject (this was a latent bug in the two-pass flow). The device
-     * also needs this exact nonce to recompute + verify the outer_hash (P6d). */
-    const txNonce = Fr.random();
-    const deployFee = {
-      paymentMethod: new SponsoredFeePaymentMethod(this.deps.sponsoredFpcAddress),
-      feeEntrypointOptions: {
-        txNonce,
-        feePaymentMethodOptions: AccountFeePaymentMethodOptions.EXTERNAL,
-        cancellable: false,
-      },
-    };
-
-    /* Pass 1: spy AuthWitnessProvider captures the framework's outer_hash.
-     *
-     * CRITICAL ORDERING (codex-confirmed root cause): `getDeployMethod()` →
-     * `getAccount()` SNAPSHOTS `getAuthWitnessProvider()` into the entrypoint at
-     * build time (@aztec/accounts account_contract.ts:25-31 — the entrypoint's
-     * `this.auth` is fixed then; it is NOT re-queried per createAuthWit). So the
-     * override MUST be installed BEFORE the deploy method is built, and a FRESH
-     * deploy method is built per pass. Installing it after `getDeployMethod()`
-     * left the entrypoint on the default DEVICE provider, so neither the spy nor
-     * the frozen override ever fired ("did not capture" in-browser; a device-APDU
-     * timeout headless). */
-    step('build', 'Computing deploy outer_hash (host)…');
-    let capturedHash: Fr | undefined;
-    const spyProvider: AuthWitnessProvider = {
-      createAuthWit: async (messageHash: Fr | Buffer): Promise<AuthWitness> => {
-        capturedHash =
-          messageHash instanceof Fr ? messageHash : Fr.fromBuffer(Buffer.from(messageHash));
-        /* Stub witness: 64 zero bytes. Pass-1's ExecutionPayload is never used. */
-        return new AuthWitness(capturedHash, new Array(64).fill(0));
-      },
-    };
-    accountContract.setAuthWitnessOverride(spyProvider);
-    try {
-      const spyDeployMethod = await this.accountManager.getDeployMethod();
-      await spyDeployMethod.request({ deployer: AztecAddress.ZERO, fee: deployFee });
-    } finally {
-      accountContract.setAuthWitnessOverride(null);
-    }
-    if (!capturedHash) {
-      throw new Error(
-        'deployAccount: spy AuthWitnessProvider did not capture an outer_hash — ' +
-          'override not installed before getDeployMethod() (ordering bug).',
-      );
-    }
-
-    /* Build the DeployContext for the device. The device re-derives + verifies
-     * publicKeysHash + address (P6c) and recomputes the deploy outer_hash from
-     * this txNonce (P6d); the host-supplied fields are cross-checked, not trusted. */
-    /* M9 A2: the deploy context path MUST be the session's configured path
-     * (was hardcoded `defaultDeployPath(0)` — opus MAJOR: that diverges from
-     * the account's signing/authwit path for any account index ≠ 0, and the
-     * device would reject with 0x6F0E). Single source = this.deps.bip32Path. */
-    const path = this.deps.bip32Path;
-    const publicKeysHash = await this.completeAddress.publicKeys.hash();
-    const deployCtx: DeployContext = {
-      profileId: deployProfileId,
-      curveId: deployCurveId,
-      bip32Path: path,
-      chainId: toBE32(chainInfo.chainId),
-      protocolVersion: toBE32(chainInfo.version),
-      txNonce: toBE32(txNonce),
-      salt: toBE32(this.deps.salt),
-      publicKeysHash: toBE32(publicKeysHash),
-      expectedAddress: toBE32(this.address),
-    };
-
-    /* Device sign via BEGIN_DEPLOY_ACCOUNT + FINALIZE_DEPLOY_AND_SIGN. */
-    step('sign', 'Awaiting clear-signed approval on device…');
-    const witness = await this.deps.ledgerProvider.createAuthWitForDeploy(deployCtx, capturedHash);
-
-    /* Pass 2: frozen provider carries the device witness. The framework's
-     * createAuthWit hits the frozen provider, asserts hash-match, returns
-     * the pre-signed witness. Result: ExecutionPayload with device sig. */
-    step('prove', 'Signature received — building tx request…');
-    const frozen = new FrozenAuthWitnessProvider(witness, capturedHash);
-    accountContract.setAuthWitnessOverride(frozen);
-    let executionPayload: ExecutionPayload;
-    try {
-      /* Fresh deploy method so its entrypoint snapshots the FROZEN provider
-       * (same ordering rule as pass 1). Same `deployFee` (incl. the pinned
-       * txNonce), so the framework recomputes the identical INNER auth hash
-       * (the outer_hash the device signed); FrozenAuthWitnessProvider asserts
-       * that match and returns the device witness. NB (codex MINOR): only the
-       * inner auth hash is pinned here — the outer multicall wrapping may vary
-       * between passes, but pass-1's payload is discarded, so it's irrelevant. */
-      const frozenDeployMethod = await this.accountManager.getDeployMethod();
-      executionPayload = await frozenDeployMethod.request({
-        deployer: AztecAddress.ZERO,
-        fee: deployFee,
-      });
-    } finally {
-      accountContract.setAuthWitnessOverride(null);
-    }
-
-    const currentMinFees = await session.nodeClient.getCurrentMinFees();
-    const maxFeesPerGas = currentMinFees.mul(2.5);
-    const gasSettings = GasSettings.fallback({ maxFeesPerGas });
-    /* deployer:ZERO universal-deploy path uses DefaultEntrypoint, NOT
-     * DefaultAccountEntrypoint — the wrapped init+sponsor is already a
-     * single call from request()'s multicall-wrap branch. */
-    const entrypoint = new DefaultEntrypoint();
-    const txRequest = await entrypoint.createTxExecutionRequest(
-      executionPayload,
-      gasSettings,
-      chainInfo,
-    );
-
-    step('prove', 'Proving deploy tx (in-browser WASM)…');
-    /* PXE v4.2.1 positional: proveTx(txRequest, scopes). The deploy's
-     * additionalScopes injection from prepareDeployOptions lands here. */
-    const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
-    const tx = await provenTx.toTx();
-    const txHash = tx.getTxHash();
-    opts.onTxHash?.(txHash.toString());
-
-    step('submit', `Submitting tx ${txHash.toString().slice(0, 10)}…`);
-    await session.nodeClient.sendTx(tx);
-
-    step('include', `Awaiting L2 inclusion (${txHash.toString().slice(0, 10)}…)`);
-    /* Codex consult: PROPOSED matches aztec.js's isMined() + aztecscan
-     * "mined" surface. waitForTx default CHECKPOINTED routinely 300s-times-out
-     * on testnet while the tx is already on-chain. */
-    const receipt = await waitForTx(session.nodeClient, txHash, {
-      waitForStatus: TxStatus.PROPOSED,
-      timeout: 900,
-    });
-
-    step('done', 'Account deployed (included in proposed block)');
-    return { txHash, receipt };
   }
 
   /**
@@ -796,59 +593,10 @@ export class AztecLedgerSession {
     const exec = await callContractMethod(this.address, to, amount, 0n).request({
       fee: { paymentMethod: this.sponsoredFee() },
     });
-    /* Codex 019e6ad4 Bug 2 diagnostic: pub→priv / priv→pub / priv→priv
-     * trip a PreflightError on selector 0x32c5dcf8, which isn't any of
-     * our four registered transfer selectors. Codex's read: artifact-
-     * driven method-surface drift — log name+selector+type per call so
-     * we can see whether the method lookup picked a wrong ABI entry. */
-    // biome-ignore lint/suspicious/noConsole: temporary live-debug instrumentation
-    console.log(
-      '[transferUsdc] method=%s exec.calls=%o',
-      method,
-      exec.calls.map((c) => ({
-        name: c.name,
-        to: c.to.toString(),
-        selector: c.selector.toString(),
-        type: c.type,
-        argsLen: c.args.length,
-      })),
-    );
     /* P1: TX now ALWAYS routes through the proper seam — the real EmbeddedWallet.sendTx
      * via LedgerClearSigningEntrypoint (in-band nonce). The submitClearSignedIntent
      * bypass is retired now that P0 proved this path on-chain (safe-v20/safe-v21). */
     return this.transferViaRealSendTx(exec, opts);
-  }
-
-  /**
-   * The 9-step recipe from plan-final.md §2.
-   * Accepts a FEE-MERGED ExecutionPayload — exactly the shape produced by
-   *   contract.methods.X(...).request({ fee: { paymentMethod: sponsoredFee } })
-   * which yields `[sponsor_unconditionally, app_call]` in that order.
-   *
-   * For v0 we assert `exec.calls.length === 2` (single-app-call contract).
-   * Multi-app batches are out of scope until a future arc.
-   */
-  async submitClearSignedIntent(
-    exec: ExecutionPayload,
-    opts: SubmitOptions = {},
-  ): Promise<SubmitResult> {
-    if (this.inflight) {
-      throw new Error(
-        'AztecLedgerSession: another submission in flight; await it before issuing a new one',
-      );
-    }
-    if (exec.calls.length !== 2) {
-      throw new Error(
-        `submitClearSignedIntent expects [sponsor, app] (2 calls); got ${exec.calls.length}`,
-      );
-    }
-    const work = this.runRecipe(exec, opts);
-    this.inflight = work;
-    try {
-      return await work;
-    } finally {
-      this.inflight = null;
-    }
   }
 
   /**
@@ -922,97 +670,5 @@ export class AztecLedgerSession {
       version: new Fr(BigInt(nodeInfo.rollupVersion)),
     };
     return this.chainInfoCache;
-  }
-
-  /**
-   * 9-step submission recipe (plan-final.md §2). Pre-signs on the Ledger
-   * with full clear-signing UI, then hands the witness to the framework
-   * via FrozenAuthWitnessProvider.
-   */
-  private async runRecipe(exec: ExecutionPayload, opts: SubmitOptions = {}): Promise<SubmitResult> {
-    const step = opts.onStep ?? (() => {});
-    const { ledgerProvider, session } = this.deps;
-
-    step('build', 'Fetching chain info…');
-    const chainInfo = await this.getChainInfo();
-
-    const txNonce = Fr.random();
-
-    step('build', 'Projecting clear-sign intent…');
-    const intent = projectExecutionPayloadIntoCallIntent(exec, this.address, chainInfo);
-
-    step('sign', 'Awaiting clear-signed approval on device…');
-    const witness = await ledgerProvider.createAuthWitFromIntent(intent, txNonce);
-
-    step('prove', 'Signature received — building tx request…');
-
-    /* 5. Wrap in FrozenAuthWitnessProvider — one-shot, hash-asserted.
-     *    The framework's account_entrypoint.ts:131 computes its own
-     *    messageHash and calls this provider's createAuthWit; if there's
-     *    drift between our pre-sign hash and the framework's recompute,
-     *    we throw FrozenWitnessMismatchError rather than handing over
-     *    a witness for the wrong tx. */
-    const frozen = new FrozenAuthWitnessProvider(witness, witness.requestHash);
-
-    /* 6. Build a one-shot DefaultAccountEntrypoint pointed at our
-     *    frozen provider. The framework's normal sendTx path would
-     *    construct the same shape via AccountManager + the registered
-     *    AuthWitnessProvider — we bypass that here because we need
-     *    control over txNonce. */
-    const entrypoint = new DefaultAccountEntrypoint(this.address, frozen);
-
-    /* 7. Construct the tx request with OUR chosen txNonce.
-     *    Codex post-impl §BLOCKER 2: even with a sponsored FPC fee-payer,
-     *    upstream validation still checks maxFeesPerGas
-     *    (gas_validator.ts:167-178). The wallet-sdk's BaseWallet fills
-     *    this from aztecNode.getCurrentMinFees() (base_wallet.ts:245);
-     *    we do the same here. The 10% padding mirrors `minFeePadding`. */
-    const currentMinFees = await session.nodeClient.getCurrentMinFees();
-    /* User feedback (M6.14): drip + transfer were taking minutes to reach
-     * CHECKPOINTED. 10% padding was fine for empty blocks but doesn't
-     * outbid competing transactions on a busy testnet. Bumped to 2.5x
-     * the node-reported minimum — generous because the FPC pays the
-     * fee anyway and we want fast inclusion for the demo. */
-    const maxFeesPerGas = currentMinFees.mul(2.5);
-    const gasSettings = GasSettings.fallback({ maxFeesPerGas });
-    /* `feePaymentMethodOptions` is the u8 fee-payment-mode arg the entrypoint
-     * ABI requires (account_entrypoint.ts:204). For the sponsored FPC path
-     * the account contract is NOT the fee payer — the FPC contract is —
-     * so EXTERNAL (=0). Passing `undefined` here surfaced as
-     * "Undefined argument fee_payment_method of type integer" at first
-     * playwright drip. */
-    const txRequest = await entrypoint.createTxExecutionRequest(exec, gasSettings, chainInfo, {
-      cancellable: false,
-      txNonce,
-      feePaymentMethodOptions: AccountFeePaymentMethodOptions.EXTERNAL,
-    });
-
-    /* 8. Prove + send via the session's PXE + AztecNode. PXE v4.2.1
-     *    takes `scopes: AztecAddress[]` as a positional 2nd arg
-     *    (pxe.d.ts:201). 4.3.0 changed this to a ProveTxOpts object —
-     *    codex 019e69ef flagged it as an upgrade trap. Pinned to 4.2.1
-     *    because nulo's deployed contracts (USDC + Dripper) were
-     *    address-derived at 4.2.0; mixing 4.3.0 PXE with 4.2.0 addresses
-     *    risks address-derivation drift on registerContract. */
-    step('prove', 'Proving tx (in-browser WASM)…');
-    const provenTx = await session.pxeClient.proveTx(txRequest, [this.address]);
-    const tx = await provenTx.toTx();
-    const txHash = tx.getTxHash();
-    /* Surface the hash before submit so the UI can render an aztecscan
-     * link mid-flight (testnet inclusion can take minutes). */
-    opts.onTxHash?.(txHash.toString());
-    step('submit', `Submitting tx ${txHash.toString().slice(0, 10)}…`);
-    await session.nodeClient.sendTx(tx);
-
-    step('include', `Awaiting L2 inclusion (${txHash.toString().slice(0, 10)}…)`);
-    /* See deployAccount() above for the rationale on these opts —
-     * same trade: PROPOSED unblocks the UI when aztecscan is already
-     * showing the tx, 900s safety buffer for slow testnet days. */
-    const receipt = await waitForTx(session.nodeClient, txHash, {
-      waitForStatus: TxStatus.PROPOSED,
-      timeout: 900,
-    });
-    step('done', 'Tx included');
-    return { txHash, receipt };
   }
 }
