@@ -28,6 +28,12 @@ const TRANSFER_MODE = process.env.TRANSFER_MODE;
  * ECDSA-K account (the device review/approve sequence is scheme-independent).
  * Default 'schnorr' keeps the demo flow unchanged. */
 const SCHEME = (process.env.SCHEME ?? 'schnorr') as 'schnorr' | 'ecdsa';
+/* P0 seam spike: SEAM=entrypoint loads the demo with ?seam=entrypoint, routing the
+ * TRANSFER step through the REAL EmbeddedWallet.sendTx via LedgerClearSigningEntrypoint
+ * (in-band device clear-signing) instead of the submitClearSignedIntent bypass. The
+ * transfer landing on-chain proves nonce_signed==nonce_on_chain (a mismatch would fail
+ * the proof). Deploy + drip are unaffected (still the legacy path). */
+const SEAM = process.env.SEAM;
 
 async function pressSpeculos(button: 'left' | 'right' | 'both'): Promise<void> {
   await fetch(`${SPECULOS_URL}/button/${button}`, {
@@ -104,7 +110,8 @@ test('schnorr full flow: deploy + drip + transfer on testnet', async ({ page }) 
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto(SEAM === 'entrypoint' ? '/?seam=entrypoint' : '/');
+  if (SEAM === 'entrypoint') console.log('[full-flow] SEAM=entrypoint — transfer via real sendTx');
   const addr = await onboardSchnorr(page, SCHNORR_INDEX);
   console.log(`[schnorr-full] onboarded Schnorr #${SCHNORR_INDEX} = ${addr}`);
 

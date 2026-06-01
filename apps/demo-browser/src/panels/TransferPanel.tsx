@@ -43,7 +43,11 @@ function callWrapper(
   onStep: (phase: PhaseId, label: string) => void,
   onTxHash: (hash: string) => void,
 ): Promise<SubmitResult> {
-  const opts = { onStep, onTxHash };
+  /* P0 seam spike: ?seam=entrypoint routes the transfer through the REAL
+   * EmbeddedWallet.sendTx via LedgerClearSigningEntrypoint (in-band clear-sign)
+   * instead of the submitClearSignedIntent bypass. No visible UI change. */
+  const viaEntrypoint = new URLSearchParams(window.location.search).get('seam') === 'entrypoint';
+  const opts = { onStep, onTxHash, viaEntrypoint };
   switch (mode) {
     case 'pub-pub':
       return s.transferUsdcPubToPub(to, amount, opts);

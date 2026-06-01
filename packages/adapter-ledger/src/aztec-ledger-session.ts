@@ -159,6 +159,11 @@ export type SubmitStepHandler = (phase: PhaseId, label: string) => void;
 
 export interface SubmitOptions {
   readonly onStep?: SubmitStepHandler;
+  /** P0 seam spike — route this submission through the REAL `EmbeddedWallet.sendTx`
+   * via `LedgerClearSigningEntrypoint` (in-band device clear-signing) instead of the
+   * `submitClearSignedIntent` bypass. Gated behind `?seam=entrypoint` in the demo;
+   * the legacy path stays the default until the seam is proven (delete-nothing). */
+  readonly viaEntrypoint?: boolean;
   /** Fired ONCE per submission, the moment the proven tx's hash is known
    * (between `prove` and `submit`). Lets the UI surface an aztecscan link
    * while we're still waiting for L2 inclusion — handy when testnet is
@@ -687,7 +692,12 @@ export class AztecLedgerSession {
         argsLen: c.args.length,
       })),
     );
-    return this.submitClearSignedIntent(exec, opts);
+    /* P0 seam spike: route through the real sendTx + entrypoint when requested
+     * (?seam=entrypoint). Same fee-merged exec; the difference is WHO drives the
+     * tx-request assembly + nonce — the framework, not our bypass. */
+    return opts.viaEntrypoint
+      ? this.transferViaRealSendTx(exec, opts)
+      : this.submitClearSignedIntent(exec, opts);
   }
 
   /**
