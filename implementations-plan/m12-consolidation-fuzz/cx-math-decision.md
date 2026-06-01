@@ -1,7 +1,7 @@
 # cx_math migrate-vs-accept decision (M12 P3)
 
 **Verdict: ACCEPT THE RESIDUAL now (Outcome C). Gate any future migration on a real-silicon eval (M13).**
-Confidence: **high** on the correctness finding; **moderate-high** on the recommendation; the perf + CT axes are *explicitly unresolved* — Speculos cannot settle them.
+Confidence: **high** that `cx_bn` handles *our two specific moduli* correctly (the narrow thing the spike tested); **moderate** on broad `cx_bn` correctness (only 4 vectors × 2 fields — see caveat below); **moderate-high** on the recommendation. The perf + CT axes are *explicitly unresolved* — Speculos cannot settle them.
 
 ## The question
 
@@ -20,9 +20,9 @@ Driven by `ledger-app/tests/cxmath_spike/measure.ts` against Speculos (Nano S+, 
 
 ## Raw numbers
 
-### 1. Correctness — DEFINITIVE (the one thing Speculos settles)
+### 1. Correctness — the one thing Speculos settles (for the moduli tested)
 
-`iters=1`, result vs a BigInt `(a·b) mod p` reference, 4 vectors × 2 fields = **8/8 MATCH** (`cx_bn === native === reference`):
+`iters=1`, result vs a BigInt `(a·b) mod p` reference, **4 vectors × 2 fields = 8/8 MATCH** (`cx_bn === native === reference`). This is a targeted spot-check (incl. the `(p−1)²` reduction edge), **not** an exhaustive correctness proof — 4 vectors per field:
 
 | vector | Fr (cx_bn / native) | Fq (cx_bn / native) |
 |---|---|---|
@@ -31,7 +31,7 @@ Driven by `ledger-app/tests/cxmath_spike/measure.ts` against Speculos (Nano S+, 
 | `mid·mid` | OK / OK | OK / OK |
 | pseudo-random | OK / OK | OK / OK |
 
-**Finding:** `cx_bn_mod_mul` is correct for an **arbitrary** 254-bit modulus — both Fr and Fq. The codex+opus "named-curve-only support / silent wrong-field reduction" failure mode is **disproven**. ⟹ there is **no correctness block**, so Outcome B (hand-roll a CT Montgomery) is *not* forced.
+**Finding:** `cx_bn_mod_mul` correctly handles **both of our custom 254-bit moduli** (Fr and Fq) across these vectors — including the full-reduction edge. This is **strong evidence against** the codex+opus "named-curve-only support / silent wrong-field reduction" failure mode for the moduli we actually use (it accepts an arbitrary modulus argument and reduces in the right field), though it is not an exhaustive proof. ⟹ there is **no correctness block** for our use, so Outcome B (hand-roll a CT Montgomery) is *not* forced.
 
 ### 2. Latency — CRUDE, EMULATED, **NOT silicon** (4096 chained muls, best of 5)
 

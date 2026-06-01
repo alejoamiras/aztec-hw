@@ -18,8 +18,18 @@ USB. They are the only divergence from the device, and they touch no parser logi
 ## Drift control
 A stale vendored copy that diverges from the SDK silently weakens the fuzzer
 (false negatives). `make verify-vendored` diffs these against the pinned SDK image
-(when docker is available) and fails on any difference. Re-vendor (and re-pin the
-tag above) only deliberately, when bumping the SDK.
+and fails on any difference. It now **fails closed** when docker is unavailable
+(can't verify ≠ verified; `VERIFY_VENDORED_ALLOW_NO_DOCKER=1` downgrades to an
+advisory skip). **Run it before trusting any fuzz/differential-replay result** —
+it is intentionally NOT a build prerequisite (that would force docker on every
+iterative fuzz build).
+
+**SDK-version coupling (codex P7 Major-3):** this drift check pins the SDK to
+`v26.1.6` (the image hash above), but the *firmware* build uses whatever
+`BOLOS_SDK` the caller passes (`ledger-app/Makefile`). If those diverge, the
+harness fuzzes one buffer-reader revision while the device ships another, and the
+differential-replay's faithfulness claim breaks. **When bumping the SDK, re-pin
+BOTH the firmware `BOLOS_SDK` and this image hash together, then re-vendor.**
 
 Closure is light by construction — none of these pull `os.h`/`cx.h` or any
 crypto/USB surface (verified at vendoring time), which is why the off-device build

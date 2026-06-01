@@ -22,13 +22,14 @@
  *    fuzz harness seeds {HEADER_PARSED, 1, 0, consumer=0x0C…}. A real BEGIN_AUTHWIT
  *    with call_count=1 + consumer=0x0C… reproduces that EXACTLY → exact-SW match.
  *  - deploy is a PARSE-ONLY seam (Option X): a parse-reject must equal the device
- *    SW exactly; a parse-accept (oracle 0x9000) maps to the device running the
- *    binding tail → {0x9000, PUBKEY_HASH_MISMATCH 0x6F0F, ADDRESS_MISMATCH 0x6F0E}
- *    (a random parse-valid input fails the device's own pkh/addr check → 0x6F0F).
+ *    SW exactly; a parse-accept (oracle 0x9000) on a RANDOM input must hit the
+ *    device's pkh sovereignty gate → EXACTLY 0x6F0F (tightened per codex P7; see
+ *    DEPLOY_RANDOM_PARSE_ACCEPT_SW for why, and the shared-parser limitation).
  *
  * PREREQ (this gate is NOT in CI — run locally):
  *   make -C ledger-app/tests/wire_host replay-all
- *   # harvest a reservoir (optional but recommended — else corpus-only):
+ *   # harvest the reject reservoir — REQUIRED (the gate fails without it; it is the
+ *   # anti-false-negative core, not optional — codex P7 Major-2):
  *   for t in authwit append deploy; do
  *     WIRE_RESERVOIR=ledger-app/tests/wire_host/reservoir/$t \
  *       ledger-app/tests/wire_host/fuzz_$([ $t = deploy ] && echo deploy_parse || echo $t) \
@@ -50,16 +51,22 @@ const WIRE_HOST = join(import.meta.dir, '../../../ledger-app/tests/wire_host');
 const FR = 32;
 const SW_OK = 0x9000;
 const SW_DEPLOY_PUBKEY_HASH_MISMATCH = 0x6f0f;
-const SW_DEPLOY_ADDRESS_MISMATCH = 0x6f0e;
-/* After a parse-accept the device runs the binding tail; for a non-device-valid
- * input it fails its own pkh/addr equality → 0x6F0F (or 0x6F0E). A truly device-
- * valid seed would give 0x9000. SWO_UNKNOWN / 0x6F01 are internal-fault SWs and
- * are deliberately EXCLUDED (their appearance on Speculos = a real finding). */
-const DEPLOY_ACCEPT_BUCKET = new Set([
-  SW_OK,
-  SW_DEPLOY_PUBKEY_HASH_MISMATCH,
-  SW_DEPLOY_ADDRESS_MISMATCH,
-]);
+/* Codex P7 Major-1 tightening: every parse-accepted input in the corpus/reservoir
+ * is RANDOM (not device-valid) — its host-supplied public_keys_hash will not match
+ * THIS device's seed-derived pkh (~2^-254), so the device's sovereignty gate fires
+ * at the pkh check (begin_deploy_account.c:300) BEFORE the address check, giving
+ * EXACTLY 0x6F0F. So we assert the precise SW, not a loose bucket: a device
+ * returning 0x9000 (accepted a random deploy!), 0x6F0E (addr before pkh?), or an
+ * internal-fault SW (SWO_UNKNOWN / 0x6F01) on a parse-accepted input is a FINDING.
+ *   LIMITATION (codex P7 Major-1): the oracle IS the same parser, so this gate
+ * proves device-FAITHFULNESS to deploy_parse_and_validate, NOT parser CORRECTNESS.
+ * A shared over-accept (both parse a malformed input, device then rejects in the
+ * tail) is invisible here — that class is covered by (a) the fuzzer's known-SW +
+ * ASan/UBSan assertions and (b) the device's binding tail itself, which CANNOT be
+ * bypassed (a parse-accepted-but-malformed input still fails pkh → 0x6F0F, never
+ * deploys a wrong account). A truly device-VALID seed (→0x9000) is intentionally
+ * out of scope here; that accept path is proven by P0's on-chain dual-scheme deploy. */
+const DEPLOY_RANDOM_PARSE_ACCEPT_SW = SW_DEPLOY_PUBKEY_HASH_MISMATCH;
 
 const hex = (n: number): string => `0x${n.toString(16).padStart(4, '0')}`;
 
@@ -113,6 +120,24 @@ function listInputs(subdir: string): string[] {
   return files;
 }
 
+/* Codex P7 Major-2: the reject reservoir is the anti-false-negative core of this
+ * gate (libFuzzer's corpus is coverage-minimized, NOT a representative reject
+ * sample). Make it REQUIRED so a green run can never silently degrade to
+ * corpus-only — fail loudly with the harvest command if it's missing/sparse. */
+const MIN_RESERVOIR = 20;
+function requireReservoir(subdir: string): void {
+  const d = join(WIRE_HOST, 'reservoir', subdir);
+  const n = existsSync(d) ? readdirSync(d).length : 0;
+  if (n < MIN_RESERVOIR) {
+    throw new Error(
+      `reject reservoir too small for '${subdir}' (${n} < ${MIN_RESERVOIR}). Harvest first:\n` +
+        `  WIRE_RESERVOIR=ledger-app/tests/wire_host/reservoir/${subdir} \\\n` +
+        `    ledger-app/tests/wire_host/fuzz_${subdir === 'deploy' ? 'deploy_parse' : subdir} \\\n` +
+        `    -runs=1000000 -max_len=255 ledger-app/tests/wire_host/corpus/${subdir}`,
+    );
+  }
+}
+
 /** Off-device oracle SW per input, via the compiled replay binary (zip by index —
  * the binary prints one line per argv file, in order). */
 function oracleSWs(binary: string, files: string[]): Map<string, number> {
@@ -146,6 +171,7 @@ describe.skipIf(!SPECULOS_URL)(
     const abortReset = () => send(INS.ABORT, new Uint8Array(0));
 
     test('begin_authwit — oracle SW === device SW (exact), incl. a crafted valid accept', async () => {
+      requireReservoir('authwit');
       const tmp = mkdtempSync(join(tmpdir(), 'wdr-aw-'));
       const seed = join(tmp, 'seed_valid_authwit.bin');
       writeFileSync(seed, validAuthwitBody(CONSUMER_0C, 1));
@@ -164,7 +190,8 @@ describe.skipIf(!SPECULOS_URL)(
       expect(accepts).toBeGreaterThan(0); // the crafted valid seed must be accepted by both
     }, 180_000);
 
-    test('begin_deploy parse-seam — parse-reject exact; parse-accept → device binding bucket', async () => {
+    test('begin_deploy parse-seam — parse-reject exact; random parse-accept → device pkh gate (0x6F0F)', async () => {
+      requireReservoir('deploy');
       const files = listInputs('deploy');
       const oracle = oracleSWs('replay_deploy_parse', files);
       const divergences: string[] = [];
@@ -175,8 +202,13 @@ describe.skipIf(!SPECULOS_URL)(
         const exp = oracle.get(f) ?? -1;
         if (exp === SW_OK) {
           parseAccepts++;
-          if (!DEPLOY_ACCEPT_BUCKET.has(dev)) {
-            divergences.push(`${f}: seam ACCEPT but device=${hex(dev)} ∉ {9000,6f0f,6f0e}`);
+          // Random parse-valid input → MUST be rejected at the device's pkh
+          // sovereignty gate (0x6F0F). 0x9000 here = device accepted a random
+          // deploy (over-accept); any other SW = the gate didn't fire as expected.
+          if (dev !== DEPLOY_RANDOM_PARSE_ACCEPT_SW) {
+            divergences.push(
+              `${f}: seam ACCEPT but device=${hex(dev)} (expected 0x6f0f pkh-mismatch)`,
+            );
           }
         } else if (dev !== exp) {
           divergences.push(`${f}: oracle=${hex(exp)} device=${hex(dev)}`);
@@ -187,6 +219,7 @@ describe.skipIf(!SPECULOS_URL)(
     }, 300_000);
 
     test('append_call — oracle SW === device SW (exact), with session prep matching the harness seed', async () => {
+      requireReservoir('append');
       const files = listInputs('append');
       const oracle = oracleSWs('replay_append_call', files);
       const divergences: string[] = [];

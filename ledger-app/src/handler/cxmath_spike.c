@@ -4,7 +4,7 @@
  * NOT compiled into the shipped app: the default build defines no CX_MATH_SPIKE,
  * so types.h adds no INS and the dispatcher adds no case — the production app.elf
  * is byte-identical (the B3 empty-diff gate is unaffected). Build the spike with:
- *   make BOLOS_SDK=/opt/nanosplus-secure-sdk DEFINES_EXTRA=CX_MATH_SPIKE
+ *   make BOLOS_SDK=/opt/nanosplus-secure-sdk EXTRA_DEFINES=CX_MATH_SPIKE
  *
  * PURPOSE: get REAL numbers for the cx_math migrate-vs-accept decision
  * (cx-math-decision.md). The residual the M11 dudect flagged is the
