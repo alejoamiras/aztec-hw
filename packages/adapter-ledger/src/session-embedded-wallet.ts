@@ -48,14 +48,24 @@ export class SessionEmbeddedWallet extends EmbeddedWallet {
     account: Account,
     secret: Fr,
     salt: Fr,
+    /* Scheme-correct WalletDB type. `EmbeddedWallet.sendTx` ALWAYS pre-simulates
+     * (embedded_wallet.js:78 → simulateViaEntrypoint → buildAccountOverrides), and
+     * that path reads the stored `type` to pick the stub artifact + args
+     * (`type === 'schnorr' ? [Fr.ZERO, Fr.ZERO] : [Buffer32, Buffer32]`, :146) and
+     * `createStubAccount(addr, type)` (:187). Storing a Schnorr account as
+     * 'ecdsasecp256k1' gas-estimated it against an ECDSA-K stub — benign ONLY because
+     * both schemes share the `entrypoint` selector, so it simulated OK by luck. We
+     * store the correct type so the right-scheme stub is used. The Schnorr stub takes
+     * Fr.ZERO args (not our placeholder signingKey), and the sim is gas-estimation
+     * only, so the real proved/sent tx (our registered BaseAccount) is unaffected. */
+    accountType: 'ecdsasecp256k1' | 'schnorr',
   ): Promise<void> {
     this.externalAccounts.set(address.toString(), account);
-    /* WalletDB only needs `type` and `secretKey` / `salt` to satisfy the
-     * upstream lookup — `signingKey` is consumed by `createAccountInternal`
-     * which we never reach (our `getAccountFromAddress` short-circuits).
-     * Pass a 32-byte zero Buffer as a placeholder. */
+    /* WalletDB only needs `type` and `secretKey` / `salt` to satisfy the upstream
+     * lookup — `signingKey` is consumed by `createAccountInternal` which we never
+     * reach (our `getAccountFromAddress` short-circuits). Zero Buffer placeholder. */
     await this.walletDB.storeAccount(address, {
-      type: 'ecdsasecp256k1',
+      type: accountType,
       secretKey: secret,
       salt,
       signingKey: Buffer.alloc(32),

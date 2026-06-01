@@ -264,7 +264,13 @@ export class AztecLedgerSession {
      * Surfaced via playwright as "Account 0x… does not exist on this
      * wallet" when Deploy first ran. */
     const accountForCache = await accountManager.getAccount();
-    await session.registerExternalAccount(accountAddress, accountForCache, secret, salt);
+    await session.registerExternalAccount(
+      accountAddress,
+      accountForCache,
+      secret,
+      salt,
+      scheme === 'schnorr' ? 'schnorr' : 'ecdsasecp256k1',
+    );
 
     /* Register the user's account-contract instance FIRST. PXE rejects
      * tx simulation with "Unknown contract" until the consumer address is
