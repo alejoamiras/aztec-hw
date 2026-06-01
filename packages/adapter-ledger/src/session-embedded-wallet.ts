@@ -63,6 +63,15 @@ export class SessionEmbeddedWallet extends EmbeddedWallet {
     });
   }
 
+  /** P0 seam spike — swap the cached `Account` for `address` (e.g. to a
+   * `BaseAccount` backed by `LedgerClearSigningEntrypoint`) so the real
+   * `sendTx` routes through it. The walletDB entry written by
+   * `registerExternalAccount` already covers upstream's direct
+   * `retrieveAccount(from)` path, so no DB write is needed here. */
+  overrideAccount(address: AztecAddress, account: Account): void {
+    this.externalAccounts.set(address.toString(), account);
+  }
+
   protected override async getAccountFromAddress(address: AztecAddress): Promise<Account> {
     const cached = this.externalAccounts.get(address.toString());
     if (cached) return cached;

@@ -31,7 +31,7 @@
  * route through `submitClearSignedIntent`, so they share the mutex.
  */
 
-import type { AuthWitnessProvider } from '@aztec/aztec.js/account';
+import { type AuthWitnessProvider, BaseAccount } from '@aztec/aztec.js/account';
 import { AztecAddress, type CompleteAddress } from '@aztec/aztec.js/addresses';
 import {
   Contract,
@@ -714,6 +714,63 @@ export class AztecLedgerSession {
       );
     }
     const work = this.runRecipe(exec, opts);
+    this.inflight = work;
+    try {
+      return await work;
+    } finally {
+      this.inflight = null;
+    }
+  }
+
+  /**
+   * P0 SPIKE (hard gate) — drive a transfer through the REAL `EmbeddedWallet.sendTx`
+   * via `LedgerClearSigningEntrypoint` (in-band device clear-signing). Proves the
+   * proper seam end-to-end WITHOUT touching `getAccount()` or the deploy path —
+   * delete-nothing. The framework picks `txNonce`, hands it to our
+   * `createTxExecutionRequest`; the device clear-signs THAT nonce and the same
+   * request is proven + sent → `nonce_signed == nonce_on_chain` by construction
+   * (a mismatch would fail the proof / be rejected). Returns the mined receipt.
+   *
+   * NB1: `sendTx` pre-simulates via a stub account (no device prompt); the device
+   *   is invoked exactly once, on the real prove (codex-confirmed).
+   * NB2: `exec` is FEE-MERGED — the SponsoredFPC payment method is embedded in the
+   *   payload (via `.request({ fee: { paymentMethod } })`), same as
+   *   `submitClearSignedIntent`. The wallet-level `SendOptions.fee` only carries
+   *   `gasSettings`, not the payment method.
+   */
+  async transferViaRealSendTx(
+    exec: ExecutionPayload,
+    opts: SubmitOptions = {},
+  ): Promise<SubmitResult> {
+    if (this.inflight) {
+      throw new Error(
+        'AztecLedgerSession: another submission in flight; await it before issuing a new one',
+      );
+    }
+    const work = (async (): Promise<SubmitResult> => {
+      const step = opts.onStep ?? (() => {});
+      const { ledgerProvider, session } = this.deps;
+
+      step('build', 'Building in-band clear-signing account…');
+      const entrypoint = ledgerProvider.createClearSigningEntrypoint(this.address);
+      const account = new BaseAccount(entrypoint, ledgerProvider, this.accountCompleteAddress);
+      session.overrideAccount(this.address, account);
+
+      /* Gas parity with runRecipe: 2.5x the node minimum for fast testnet
+       * inclusion (the SponsoredFPC pays). The fee PAYMENT METHOD is already
+       * embedded in `exec`; wallet-level SendOptions.fee carries only gasSettings. */
+      const currentMinFees = await session.nodeClient.getCurrentMinFees();
+      const gasSettings = GasSettings.fallback({ maxFeesPerGas: currentMinFees.mul(2.5) });
+
+      step('sign', 'Awaiting clear-signed approval on device (real sendTx)…');
+      const sent = await session.sendTx(exec, { from: this.address, fee: { gasSettings } });
+
+      const { receipt } = sent;
+      const { txHash } = receipt;
+      opts.onTxHash?.(txHash.toString());
+      step('done', `Tx included (${txHash.toString().slice(0, 10)}…)`);
+      return { txHash, receipt };
+    })();
     this.inflight = work;
     try {
       return await work;

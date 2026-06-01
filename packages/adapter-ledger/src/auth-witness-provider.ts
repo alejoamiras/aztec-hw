@@ -28,6 +28,8 @@
  * blind-sign path, kept available for txs the framework can't route through
  * the intent surface (account deploys, etc.).
  */
+
+import type { AztecAddress } from '@aztec/stdlib/aztec-address';
 import {
   AuthWitness,
   type CallIntent,
@@ -37,6 +39,7 @@ import {
 } from '@aztec-hwwallet-poc/core';
 import { CURVE_ID, type CurveId } from './apdu.ts';
 import { preflightIntent } from './clear_signing_v0/preflight.ts';
+import { LedgerClearSigningEntrypoint } from './clear-signing-entrypoint.ts';
 import type { DeployContext } from './deploy-context.ts';
 import { buildL4Manifest } from './l4-manifest.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
@@ -136,6 +139,22 @@ export class LedgerEcdsaKAuthWitnessProvider implements IntentAuthWitnessProvide
     const sigBytes = packEcdsaSignature(sig.r, sig.s);
     const outerHash = Fr.fromBuffer(Buffer.from(manifest.claimedOuterHash));
     return new AuthWitness(outerHash, Array.from(sigBytes));
+  }
+
+  /**
+   * P0 seam spike — build the in-band clear-signing entrypoint backed by THIS
+   * provider's device + options. `BaseAccount(entrypoint, …)` then routes the
+   * real `EmbeddedWallet.sendTx` through `createTxExecutionRequest`, which
+   * clear-signs the full payload on the device in-band (consuming the framework
+   * `txNonce`) — the proper seam, replacing the `submitClearSignedIntent` bypass.
+   * Reuses the SAME device transport + options (path/curve/signOptions).
+   */
+  createClearSigningEntrypoint(address: AztecAddress): LedgerClearSigningEntrypoint {
+    return new LedgerClearSigningEntrypoint(address, this.inner, {
+      bip32Path: this.options.bip32Path,
+      curveId: this.options.curveId,
+      signOptions: this.options.signOptions,
+    });
   }
 
   /**
