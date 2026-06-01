@@ -114,4 +114,15 @@ not a code gap). Opportunistically close in P2 if a fresh index frees up.
   defense-in-depth (structurally unreachable-reject in the composed entrypoint). Adapter suite
   104 pass / 32 skip (Speculos-gated) / 0 fail. Stray debug log + stale comments tidied (e4f0804);
   git-grep workaround-clean in code.
-- [~] P1.5 codex post-impl review of the P1 diff (running) → fold → safe-v22
+- [x] **P1.5 codex post-impl review DONE** (session 019e8447-6eac-7cf0-95bd-a6fc71e04c9b,
+  SHIP-with-fixes, no Critical) — folded in 253147b:
+  - MAJOR: `createAuthWit` (hash-only) used the K1-only `signOuterHash` → silently-wrong ECDSA
+    witness for a Schnorr account → now FAIL-CLOSED for GRUMPKIN.
+  - MAJOR: `b3-consumer-binding.test.ts` (key B3 backstop) still used the removed `claimedOuterHash`
+    → broke typecheck → ported to `deviceOuterHashForIntent`.
+  - MINOR: parity test broadened 2 → 6 shapes (all transfer modes + drip + zero-call/B3). 6/6 pass.
+  - codex OK'd: Schnorr deploy composition (device has explicit GRUMPKIN finalize branch), the
+    dropped runtime assert (device authoritative, rejects drift), the `#consume` TOCTOU guard, and
+    found no path bypassing B3 / M8-P6. Full adapter suite green (140 tests, 0 fail).
+- [x] **P1 COMPLETE → safe-v22** (signed, pushed). NOTE: the b3-consumer-binding port + the full
+  device matrix get re-run on Speculos in P2 (Speculos-gated tests skip in plain `bun test`).
