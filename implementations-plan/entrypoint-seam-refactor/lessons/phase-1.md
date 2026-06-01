@@ -104,7 +104,14 @@ not a code gap). Opportunistically close in P2 if a fresh index frees up.
 - [x] P1.2b shared base + Schnorr mirror + drop spy/freeze from contracts (94a0374) — regression fixed
 - [x] P1.2c delete provider createAuthWitFromIntent/createAuthWitForDeploy + Frozen + viaEntrypoint (64b821e, −351)
 - [x] **P1.2 COMPLETE — all workarounds gone from code (git grep clean), net −734 LOC, branch pushed**
-- [ ] P1.3 reuse @aztec/entrypoints/encoding — drop l4-manifest REPLICA hash + 2770bcb pin (keep device wire bytes) + parity test
-- [ ] P1.4 stream-A-claim-B rejection test + device-guarantee confirmation
-- [ ] tidy stray stale comments (session:472, project-call-intent:3 still name deleted methods)
-- [ ] P1.5 codex post-impl review of the P1 diff → fold → safe-v22
+- [x] P1.3 reuse @aztec/entrypoints/encoding — l4-manifest = wire bytes only; replica → test-only
+  `deviceOuterHashForIntent`; 2770bcb pin gone; `l4-manifest-parity.test.ts` proves device-algo ==
+  canonical (4.2.1), 2/2 pass; entrypoint signs canonical directly (4d4efa3)
+- [x] P1.4 device guarantees CONFIRMED: firmware UNCHANGED ⇒ outer_hash recompute reject-on-mismatch,
+  B3 consumer/address binding, M8-P6 sovereignty all intact. **stream-A-claim-B rejected** = the
+  existing `b3-consumer-binding.test.ts` (device rejects SW_AUTHWIT_CONSUMER_MISMATCH 0x6F12 on the
+  real app.elf, via the same `buildL4Manifest` wire stream the entrypoint uses). Host `#consume` is
+  defense-in-depth (structurally unreachable-reject in the composed entrypoint). Adapter suite
+  104 pass / 32 skip (Speculos-gated) / 0 fail. Stray debug log + stale comments tidied (e4f0804);
+  git-grep workaround-clean in code.
+- [~] P1.5 codex post-impl review of the P1 diff (running) → fold → safe-v22
