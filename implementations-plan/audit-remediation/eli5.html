@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit remediation — in plain words</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; color: #1a1a1a; background: #fbfbfa;
+  }
+  @media (prefers-color-scheme: dark) { body { color: #e8e8e6; background: #16161a; } a { color: #8ab4f8; } code { background:#2a2a30; } .card{background:#1d1d22;border-color:#33333a;} .tag{background:#2a2a30;} }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .25rem; }
+  h2 { font-size: 1.3rem; margin: 2.6rem 0 .6rem; }
+  .lede { color: #666; font-size: 1.05rem; margin: 0 0 2rem; }
+  @media (prefers-color-scheme: dark){ .lede{color:#9a9a9a;} }
+  .card { border: 1px solid #e6e6e3; border-radius: 10px; padding: 1rem 1.25rem; margin: .9rem 0; background: #fff; }
+  .card h3 { margin: 0 0 .35rem; font-size: 1.08rem; }
+  .tag { display:inline-block; font-size:.72rem; letter-spacing:.03em; text-transform:uppercase; background:#f0f0ee; border-radius:5px; padding:.1rem .45rem; margin-right:.4rem; color:#777; vertical-align:middle; }
+  .what { margin:.3rem 0 .2rem; } .why { color:#666; margin:.2rem 0 0; } @media (prefers-color-scheme: dark){ .why{color:#9a9a9a;} }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; background:#f0f0ee; padding:.05rem .3rem; border-radius:4px; }
+  .q { border-left: 3px solid #d9a441; padding-left: 1rem; margin: 1rem 0; }
+  footer { margin-top: 3rem; color:#888; font-size:.9rem; }
+  a { color:#1a6dd6; }
+</style>
+</head>
+<body>
+
+<h1>Fixing what the audit found — in plain words</h1>
+<p class="lede">We red-teamed our own Ledger wallet and found 83 things to tidy before a professional auditor sees it. This is the plan to fix the serious ones, written so anyone can follow it. The full technical version is in <a href="plan.md">plan.md</a>.</p>
+
+<h2>The one idea behind most of it</h2>
+<p>A hardware wallet's whole job is: <strong>what you see on the little screen is exactly what you're approving</strong>. We found that the device was rock-solid at the hard maths and at refusing to sign a transaction it didn't recompute itself — but it was <em>sloppy about showing you the full picture</em>. A couple of things got signed that never appeared on screen, and the recipient address was shown so abbreviated that a look-alike could sneak past. Most of this plan is closing that gap, plus some spring-cleaning.</p>
+<p><strong>Good news the audit confirmed:</strong> the cryptography is correct (we checked every constant by hand), there are no memory bugs, and the device never signs anything it didn't independently re-derive. Those are the scary failure modes — and they're already solid. We are <em>not</em> touching the maths.</p>
+
+<h2>The work, phase by phase</h2>
+
+<div class="card"><h3>P0 · Clear the clutter, fix the broken check</h3>
+<p class="what tag">housekeeping</p>
+<p class="what">Delete a dead second wallet adapter and an old demo (code nobody uses but an auditor still has to read — and one of them even had a wrong signature). Fix the project's own automatic quality-check, which was failing and being worked around. Stop exposing internal "back doors" that let code skip the safe path.</p>
+<p class="why">Why first: a smaller, green codebase makes everything after it trustworthy and easy to verify.</p></div>
+
+<div class="card"><h3>P1 · The computer can't sneak extra things past you</h3>
+<p class="what tag">no blind signing</p>
+<p class="what">Today, a transaction can quietly trigger <em>extra</em> permission-grants that get signed without a review. We make the wallet <strong>refuse</strong> to do that by default, and refuse anything carrying hidden extras. We also write the tests that prove the most important safety guard actually works.</p>
+<p class="why">Why: "no blind signing" — the thing you most care about. Nothing gets your approval unless it was shown to you.</p></div>
+
+<div class="card"><h3>P2 · The device backstop + tidy hardening</h3>
+<p class="what tag">device · firmware</p>
+<p class="what">Add a <strong>"Blind signing" switch in the device Settings, OFF by default</strong> (exactly like Ledger's Ethereum app). With it off, the device refuses to sign anything it can't show you; turning it on requires going into Settings yourself and shows a big warning every time. Plus: tighten a couple of checks, and add a limit on how often the secret-key-derivation can be hammered (slows down a physical attacker).</p>
+<p class="why">Why a switch and not just "always refuse": it gives <em>you</em> the choice for advanced cases later, the honest Ledger way — without ever signing blind behind your back.</p></div>
+
+<div class="card"><h3>P3 · Show the whole truth on screen</h3>
+<p class="what tag">device · screen</p>
+<p class="what">Show the recipient address as <strong>8+8 bytes</strong> (was 4+4 — too easy to fake) with a "show full address" tap for the cautious. Show the real amount next to the pretty one so a bad "decimals" value can't make a big transfer look tiny. Add the missing screen for the faucet action. Make the "verified" label honest about <em>what</em> was verified. Fix the "reveal viewing key" wording so it tells the truth about what it shares.</p>
+<p class="why">Why: this is the screen you actually read. We give the risky bits more room without burying you in detail.</p></div>
+
+<div class="card"><h3>P4 · The one careful surgery (kept separate on purpose)</h3>
+<p class="what tag">device · the risky bit</p>
+<p class="what">The device's "this transaction is from <em>your</em> account" check currently assumes a default account setup. We make it work for any account by sending the account's <code>salt</code> and type to the device — but the device <strong>re-derives the account itself</strong> and refuses if it doesn't match. It never just trusts what the computer claims.</p>
+<p class="why">Why isolated + last: it changes the messages between computer and device, so it's the highest-risk change — it gets its own revertible step, lands on top of everything already proven, and the device must be updated first.</p></div>
+
+<div class="card"><h3>P5 · Privacy &amp; supply-chain polish</h3>
+<p class="what tag">cleanup</p>
+<p class="what">Quieter logging (stop printing your activity to the browser console), be honest about which server your transactions go through, register a real ID instead of a placeholder, and pin our build tools so results stay reproducible.</p>
+<p class="why">Why: small leaks and loose ends an auditor will flag — cheap to close now.</p></div>
+
+<div class="card"><h3>P6 · Prove it all still works</h3>
+<p class="what tag">validation</p>
+<p class="what">Re-run the whole flow (deploy / faucet / transfer, both signing schemes, switch on and off) on the emulator and live test network, re-run the fuzzing, and have a fresh codex review the finished work.</p>
+<p class="why">Why: we changed the device firmware — nothing ships until the full matrix is green again.</p></div>
+
+<h2>Three decisions worth a second look</h2>
+<p>These came up while three independent planners (a human + two AIs) compared notes. You should weigh in:</p>
+
+<div class="q"><strong>1. The "Blind signing" switch — keep it, or remove that path entirely?</strong><br>
+You chose the switch (Ledger-standard, future-proof). One planner argued that since <em>nothing today</em> needs blind signing, even the off-by-default switch is needless surface, and we should just delete the raw-sign feature for now. We'll build the switch as you chose — but if you'd rather be maximally minimal, say so.</div>
+
+<div class="q"><strong>2. Send the account "type" to the device too, not just the salt?</strong><br>
+You said carry the <code>salt</code>. A planner pointed out that salt-alone still hard-codes today's account <em>type</em> — so the fix would be only half-done. We're planning to carry both (the complete fix). It's a slightly bigger change to the device messages; confirm that's fine.</div>
+
+<div class="q"><strong>3. Make transfers "cancellable" to stop a fee-replay?</strong><br>
+There's a small risk a transaction could be replayed to spend the fee-sponsor's money again. Marking transfers "cancellable" closes it for free (no screen change). It slightly changes how a transfer behaves under the hood; confirm you're OK with it.</div>
+
+<h2>What we deliberately are NOT doing</h2>
+<p>We're not faking a "narrower" viewing-key reveal — the Aztec protocol derives all the privacy keys from one secret, so a partial reveal isn't really possible; we tell the truth in the wording instead. We're not touching the (correct) cryptography maths. And we're not papering over the one thing only Ledger can fix: the deepest side-channel certification, which stays documented for the auditor.</p>
+
+<footer>
+Companion to <a href="plan.md">plan.md</a> · implementation seeds in <a href="goal-loop-seeds.md">goal-loop-seeds.md</a> · findings register in <a href="../../audit/index.md">audit/index.md</a>.
+</footer>
+
+</body>
+</html>
