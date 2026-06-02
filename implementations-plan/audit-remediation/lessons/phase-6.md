@@ -1,6 +1,32 @@
-# Phase 6 — post-implementation codex review + fix loop (protocol steps 6–7)
+# Phase 6 — post-impl codex review + fix loop + testnet matrix (protocol steps 6–7)
 
 Commits unsigned (1Password down).
+
+## Testnet matrix — GREEN on live testnet (beast-5), against the FINAL elf + v3 host
+
+Ran the demo-browser full flow (onboard → deploy → drip → transfer) through Playwright +
+`speculos-aztec-playwright` (the CURRENT elf) + the in-browser PXE on beast-5 testnet:
+- **ECDSA** (`SCHEME=ecdsa`, #4 = `0x0366e521…`): deploy FRESH ("Deploy your Aztec account?" →
+  "Transaction signed") + drip + transfer — transfer tx `0x11c19f149eef33de…`. 0 console errors.
+- **Schnorr** (`SCHEME=schnorr`, #4 `0x11ce2beb…` + #2 `0x17499fbd…`): drip + transfer FRESH —
+  txs `0x2cdb84dc6e66f119…` and `0x1d874d5944305673…`. Deploy self-skipped (both indices ALREADY
+  on-chain from the M10/M11/M12 Schnorr sessions — the e2e confirms on-chain before skipping; the
+  [0..4] dropdown range is fully deployed for Schnorr so a fresh re-deploy isn't reachable via UI).
+
+So all six matrix cells are GREEN: ECDSA deploy/drip/transfer + Schnorr drip/transfer are FRESH this
+session; Schnorr deploy is on-chain-confirmed (prior) + its v3 deploy WIRE is proven by ECDSA's fresh
+deploy this session (the deploy path shares `MANIFEST_VERSION=3` + begin/finalize_deploy; only the
+curve/profile differs, and that is Speculos-proven via schnorr-deploy-review + provider.m8). This is
+the on-chain proof that the P4 wire-v3 + the post-impl cancellable/salt fixes work end-to-end. Toggle
+states: the clear-sign path (blind OFF default) is what these flows exercise; blind ON is the legacy
+SIGN_OUTER_HASH path, Speculos-proven separately (blind-signing-toggle.test.ts).
+
+**e2e fixes this needed (commit 3570ed9):** (1) playwright `DEMO_PORT` env — a stale 18h Vite from an
+unrelated project (`aztec-gate`) held :5173 and `reuseExistingServer` silently drove the WRONG app for
+20min; ran on :5174 without killing it. (2) the reveal auto-confirm hardcoded 4 right-presses, but
+AHW-047's longer "privacy root" subtitle shifted the approve prompt to 5 → "signal timed out"; now
+scrolls to the "root?" prompt (robust). Speculos `speculos-aztec-playwright` must serve the CURRENT
+elf (`ledger-app/bin`), not the orphaned container (the same stale-elf trap as phase-2).
 
 ```
 [x] Post-impl codex review (session 019e8907, xhigh, read-only) — verdict SHIP-with-fixes.
