@@ -114,7 +114,14 @@ export class SessionEmbeddedWallet extends EmbeddedWallet {
      * `SessionEmbeddedWallet` as the static-method `this` returns our subclass
      * type. The cast is needed because @aztec/wallets types the static `this`
      * via a constructor signature that the runtime resolves correctly. */
-    return (await SessionEmbeddedWallet.create(nodeUrl, options)) as SessionEmbeddedWallet;
+    const wallet = (await SessionEmbeddedWallet.create(nodeUrl, options)) as SessionEmbeddedWallet;
+    /* AHW-049: make clear-signed txs cancellable so the account entrypoint emits the
+     * tx-nonce nullifier — closes the public-tx SponsoredFPC replay (a replayed
+     * public tx would otherwise re-bill the sponsor). Deploy is unaffected: it sets
+     * `cancellable:false` explicitly via feeEntrypointOptions and self-protects via
+     * the constructor init-nullifier. */
+    wallet.cancellableTransactions = true;
+    return wallet;
   }
 
   /**

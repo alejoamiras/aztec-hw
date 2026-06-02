@@ -430,12 +430,21 @@ export class AztecLedgerSession {
   /**
    * Read-only view of the session deps for rendering metadata (instances,
    * fee-payer, artifacts). M8 P7.2 (impl-audit `bb56tmdxj` MAJOR): the
-   * viewing-root `secret` is STRIPPED — it must not be reachable via any public
-   * accessor. The PXE receives it internally during `connect()`
-   * (registerExternalAccount / registerContract); nothing outside needs it back.
+   * viewing-root `secret` is STRIPPED. AHW-002: `session` (its `.sendTx` routes
+   * through the default blind-sign account) and `ledgerProvider` (its
+   * `.createAuthWit` is the blind path) are ALSO withheld — exposing them is a raw
+   * bypass of the clear-signing seam. Internal code uses `this.deps` directly;
+   * nothing outside needs these handles.
    */
-  get internalDeps(): Readonly<Omit<AztecLedgerSessionDeps, 'secret'>> {
-    const { secret: _secret, ...rest } = this.deps;
+  get internalDeps(): Readonly<
+    Omit<AztecLedgerSessionDeps, 'secret' | 'session' | 'ledgerProvider'>
+  > {
+    const {
+      secret: _secret,
+      session: _session,
+      ledgerProvider: _ledgerProvider,
+      ...rest
+    } = this.deps;
     return rest;
   }
 

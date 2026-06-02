@@ -3,7 +3,7 @@
 Commits unsigned (1Password down — backfill later).
 
 ```
-[▶] P1 — host clear-signing policy
+[x] P1 — host clear-signing policy — COMPLETE (AHW-001/002/003/004/008/049; AHW-005 deferred; AHW-007 now type-enforced)
   [x] AHW-001 host fail-close — createAuthWit() throws (blind hash-only sign disabled);
       signAndWrap removed; non-gated fail-close test green. The device blind_signing
       toggle (P2) is the separate device-level backstop. Note: this also neuters the
