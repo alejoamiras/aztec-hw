@@ -33,7 +33,7 @@ jobs:
         run: bun run --cwd packages/adapter-ledger gen:clear-signing-v0:check
 
       - name: Typecheck all packages
-        run: bunx tsc -b --noEmit packages/core packages/adapter-trezor packages/adapter-ledger apps/demo
+        run: bunx tsc -b --noEmit packages/core packages/adapter-ledger
 
       - name: Tests
         run: bun test

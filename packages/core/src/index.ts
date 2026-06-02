@@ -2,8 +2,7 @@
  * Shared types for the Aztec hardware-wallet PoC.
  *
  * Re-exports the upstream `@aztec/*` signing primitives that adapter packages need,
- * plus the proposed Option A extension shape (`IntentAuthWitnessProvider`) and the
- * `CallIntent` type that a device-side manifest-verifying signer would consume.
+ * plus the `CallIntent` type that a device-side manifest-verifying signer would consume.
  *
  * Design basis: `../../../aztec-hardware-wallet/architectures/02-clear-signing-interface.md`.
  */
@@ -18,5 +17,3 @@ export {
 export { AztecAddress } from '@aztec/stdlib/aztec-address';
 export * from './ecdsa.ts';
 export * from './intent.ts';
-export * from './intent-utils.ts';
-export * from './provider.ts';
