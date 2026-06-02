@@ -38,4 +38,5 @@
  * template oracle), so both fail closed here. Every demo account is profile-0 /
  * zero-salt, so in practice this only fires on a genuine consumer mismatch. */
 #define SW_AUTHWIT_CONSUMER_MISMATCH      0x6F12
+#define SW_BLIND_SIGN_DISABLED            0x6F13  // SIGN_OUTER_HASH refused: blind_signing toggle is OFF (default)
 #define SW_USER_REJECTED                  0x6985

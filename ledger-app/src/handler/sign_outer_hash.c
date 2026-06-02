@@ -22,6 +22,7 @@
 
 #include "sign_outer_hash.h"
 #include "../globals.h"
+#include "../settings.h"
 #include "../sw.h"
 #include "../ui/display.h"
 #include "nbgl_use_case.h"
@@ -93,6 +94,19 @@ int handler_sign_outer_hash(buffer_t *cdata) {
     // Reject trailing bytes — protects against host-side framing bugs / malicious padding.
     if (cdata->size != cdata->offset) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
+    }
+
+    /* M-audit P3 (HARD ITEM a): blind-signing is the only raw-hash signing path and
+     * is OFF by default. Refuse here unless the user has explicitly enabled it in
+     * Settings (device-only toggle). This is the on-device backstop to the host's
+     * fail-closed createAuthWit (AHW-001): a malicious host that calls SIGN_OUTER_HASH
+     * directly is stopped BEFORE any UI/sign. The decoded clear-signing path is
+     * unaffected. We emit the SW first (so the host resolves), then a status screen. */
+    if (!settings_blind_signing_enabled()) {
+        explicit_bzero(&G_context, sizeof(G_context));
+        int rc = io_send_sw(SW_BLIND_SIGN_DISABLED);
+        nbgl_useCaseStatus("Blind signing disabled", false, ui_menu_main);
+        return rc;
     }
 
     // Defer the actual signing until the user approves on-device.

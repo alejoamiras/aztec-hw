@@ -13,12 +13,13 @@
  *
  *   SPECULOS_URL=http://localhost:5001 bun test packages/adapter-ledger
  */
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { Ecdsa, EcdsaSignature } from '@aztec/foundation/crypto/ecdsa';
 import { Point, verify } from '@noble/secp256k1';
-import { defaultAztecPath } from './apdu.ts';
+import { CAPS, defaultAztecPath } from './apdu.ts';
 import { LedgerProvider } from './provider.ts';
+import { toggleBlindSigning } from './speculos-settings.ts';
 import type { AutoConfirmContext } from './speculos-transport.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
 
@@ -55,16 +56,28 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
   const transport = new SpeculosTransport({ baseUrl: SPECULOS_URL ?? 'http://localhost:5000' });
   const provider = new LedgerProvider(transport);
 
+  /* P3: blind_signing defaults OFF, so SIGN_OUTER_HASH is refused (0x6F13) until the
+   * user enables it in Settings (no APDU can). Enable it once here so the blind-sign
+   * tests below reach the review. ASSUMES a FRESH emulator (NVRAM starts OFF) — the
+   * documented invocation for these device tests. No afterAll: a mis-timed toggle nav
+   * could land on "Quit app"; leaving blind_signing ON is harmless to the remaining
+   * (clear-signing-only) suites. */
+  beforeAll(async () => {
+    await new Promise((r) => setTimeout(r, 800)); // settle on home
+    await toggleBlindSigning(transport); // OFF -> ON
+  });
+
   test('GET_VERSION returns 0.0.1', async () => {
     const v = await provider.getVersion();
     expect(v).toEqual({ major: 0, minor: 0, patch: 1 });
   });
 
-  test('GET_CAPS advertises CAPS_K1 | CAPS_CLEAR_SIGN on the L4 build', async () => {
+  test('GET_CAPS advertises K1 | CLEAR_SIGN | GRUMPKIN on the L4+Schnorr build', async () => {
     const caps = await provider.getCaps();
-    /* L2 baseline advertised K1 (0x01) only. L4 build adds CLEAR_SIGN (0x04)
-     * so the host adapter can switch to the verified-calls streaming path. */
-    expect(caps).toBe(0x05);
+    /* L2 baseline advertised K1 (0x01) only. L4 added CLEAR_SIGN (0x04) for the
+     * verified-calls streaming path; M10 added GRUMPKIN (0x08) for Schnorr-over-
+     * Grumpkin. The current build advertises all three → 0x0D. */
+    expect(caps).toBe(CAPS.K1 | CAPS.CLEAR_SIGN | CAPS.GRUMPKIN);
   });
 
   test('GET_PUBLIC_KEY for Aztec path returns 64-byte uncompressed pubkey (X||Y)', async () => {
