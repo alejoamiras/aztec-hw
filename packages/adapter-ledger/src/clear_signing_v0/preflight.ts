@@ -126,12 +126,10 @@ function preflightCall(
   }
 
   /* 6. DRIP_PUB: args[0] (the token address) MUST resolve to a TOKEN-kind registry
-   * slot. AHW-041: this HOST preflight is the ONLY gate that REJECTS a non-TOKEN drip
-   * arg. append_call.c does NOT validate args[0]'s kind — when args[0] is not a
-   * registered token the device renders the DRIP with a "token" / decimals=0 fallback
-   * (it does not reject). We fail here for a clear TS error rather than an
-   * unverifiable on-device "Drip <amt> token". (The device's authoritative gate is the
-   * outer_hash recompute + B3, not the drip-arg kind.) */
+   * slot. AHW-041: this is now enforced on BOTH sides — append_call.c rejects a
+   * non-TOKEN args[0] with SW_REGISTRY_MISS (post-impl codex MED), and this host
+   * preflight rejects it earlier for a clear TS error instead of an opaque device SW.
+   * (The device's primary authority is still the outer_hash recompute + B3.) */
   if (verbEntry.verb === 'DRIP_PUB') {
     const tokenArg = call.args[0];
     if (!tokenArg) {
