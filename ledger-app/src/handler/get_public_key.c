@@ -18,6 +18,7 @@
 
 #include "get_public_key.h"
 #include "../globals.h"
+#include "../path_canonical.h"
 #include "../sw.h"
 #include "../ui/display.h"
 
@@ -40,6 +41,11 @@ int handler_get_public_key(buffer_t *cdata, bool display) {
     }
     if (cdata->size != cdata->offset) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
+    }
+    /* AHW-064: pubkey export is a dangerous surface that previously accepted any
+     * 1..10-component path. Enforce the canonical Aztec path, matching the L4 gates. */
+    if (!az_bip32_path_is_canonical(G_context.bip32_path, G_context.bip32_path_len)) {
+        return io_send_sw(SW_INVALID_PATH_SCHEME);
     }
 
     cx_err_t error = bip32_derive_get_pubkey_256(CX_CURVE_256K1,

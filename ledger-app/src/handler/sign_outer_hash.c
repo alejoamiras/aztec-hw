@@ -22,6 +22,7 @@
 
 #include "sign_outer_hash.h"
 #include "../globals.h"
+#include "../path_canonical.h"
 #include "../settings.h"
 #include "../sw.h"
 #include "../ui/display.h"
@@ -86,6 +87,11 @@ int handler_sign_outer_hash(buffer_t *cdata) {
     }
     if (!buffer_read_bip32_path(cdata, G_context.bip32_path, G_context.bip32_path_len)) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
+    }
+    /* AHW-064: the raw-hash blind-sign is the most dangerous surface — enforce the
+     * canonical Aztec path here too (was only 1<=len<=10), matching the L4 gates. */
+    if (!az_bip32_path_is_canonical(G_context.bip32_path, G_context.bip32_path_len)) {
+        return io_send_sw(SW_INVALID_PATH_SCHEME);
     }
     // Parse outer_hash (32 bytes BE)
     if (!buffer_read_bytes(cdata, G_context.sign_info.outer_hash, AZTEC_OUTER_HASH_LEN)) {

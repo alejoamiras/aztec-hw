@@ -15,6 +15,7 @@
 #include "get_schnorr_pubkey.h"
 #include "../constants.h"
 #include "../globals.h"
+#include "../path_canonical.h"
 #include "../sw.h"
 #include "../crypto/schnorr.h"
 #include "../l4/aztec_secret.h"
@@ -37,6 +38,10 @@ int handler_get_schnorr_pubkey(buffer_t *cdata) {
     }
     if (cdata->size != cdata->offset) {
         return io_send_sw(SWO_WRONG_DATA_LENGTH);
+    }
+    /* AHW-064: enforce the canonical Aztec path on the Schnorr pubkey export too. */
+    if (!az_bip32_path_is_canonical(G_context.bip32_path, G_context.bip32_path_len)) {
+        return io_send_sw(SW_INVALID_PATH_SCHEME);
     }
 
     uint8_t priv[32];

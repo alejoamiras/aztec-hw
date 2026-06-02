@@ -14,6 +14,7 @@
 
 #include "begin_authwit.h"
 #include "../constants.h"
+#include "../path_canonical.h"
 #include "../sw.h"
 #include "../l4/fr_canonical.h"
 #include "../l4/session.h"
@@ -54,19 +55,11 @@ int handler_begin_authwit(buffer_t *cdata) {
     if (!buffer_read_bip32_path(cdata, G_l4_session.bip32_path, path_len)) {
         return reject(SWO_WRONG_DATA_LENGTH);
     }
-    /* Match existing L2 path-canonicality checks: m / 44' / AZTEC_COIN_TYPE' */
-    if (G_l4_session.bip32_path[0] != (0x80000000u | 44u)) {
-        return reject(SW_INVALID_PATH_SCHEME);
-    }
-    if (G_l4_session.bip32_path[1] != AZTEC_COIN_TYPE_HARDENED) {
-        return reject(SW_INVALID_PATH_SCHEME);
-    }
-    /* M9 B3: the authwit now drives the device-VERIFIED `From` (FINALIZE
-     * recomputes this account's address from the path and cross-checks it
-     * against `consumer`). Enforce the full canonical shape
-     * m/44'/AZTEC'/<acct>'/0/0 — same gate as deploy/reveal (codex MAJOR). */
-    if (path_len != 5u || (G_l4_session.bip32_path[2] & 0x80000000u) == 0u ||
-        G_l4_session.bip32_path[3] != 0u || G_l4_session.bip32_path[4] != 0u) {
+    /* M9 B3: the authwit drives the device-VERIFIED `From` (FINALIZE recomputes this
+     * account's address from the path and cross-checks it against `consumer`), so the
+     * full canonical shape m/44'/AZTEC'/<acct>'/0/0 is required. AHW-064: this is now
+     * the SHARED check, identical to the one the blind-sign + pubkey surfaces use. */
+    if (!az_bip32_path_is_canonical(G_l4_session.bip32_path, path_len)) {
         return reject(SW_INVALID_PATH_SCHEME);
     }
 
