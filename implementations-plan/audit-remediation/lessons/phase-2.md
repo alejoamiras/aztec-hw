@@ -18,7 +18,9 @@ Proven: clean rebuild → fresh elf; Speculos runs it; `getPublicKeyXY` + `b3-co
       rejects 0x6F12 on the new elf (no regression). Widens BOTH the per-call To AND the account From
       (codex must-fix #1 prereq for the wire change).
   [x] AHW-052 — ASCII ".." marker (was U+2026, which the Nano font lacks). Same edit.
-  [ ] AHW-040 — DRIP render: add a DRIP case to format_action + render_call_pairs (amount/token/recipient).
+  [x] AHW-040 — DRIP render: format_action "Drip" (symbol omitted — faucet name ≠ token) +
+      render_call_pairs shows Amount (token decimals/symbol via args[0] cross-slot lookup) + "To: you (drip)".
+      Built clean + B3 no-regression on the new elf. GOLD proof = AHW-046 DRIP review-content test (next).
   [ ] AHW-051 — raw integer amount alongside the scaled one (skewed host `decimals` can't hide magnitude).
   [ ] AHW-046 — per-verb review-content tests (ragger/Speculos screen assertions) — the gap that hid AHW-040.
   [ ] AHW-055 — mint WARNING as a salient banner; AHW-054 — scope "(verified)"; AHW-053 — full outer_hash.

@@ -139,6 +139,11 @@ static void format_action(char *out, size_t out_len, uint8_t verb_id, const char
     /* ASCII-only labels — nano S+ NBGL font lacks U+2192 (→) and other Unicode
      * glyphs; non-ASCII falls back to substitution chars on-screen. */
     const char *base = "Call";
+    /* For most verbs the registry symbol IS the acted-on token, so we append it
+     * ("Transfer USDC ..."). For DRIP the registry symbol is the faucet ("DRIP"), not
+     * the token being dripped (that's args[0], shown in the Amount pair) — omit it to
+     * avoid a confusing "Drip DRIP". */
+    bool append_symbol = true;
     switch (verb_id) {
         case CS_VERB_TRANSFER_PRIV_PUB:  base = "Transfer priv->pub"; break;
         case CS_VERB_TRANSFER_PRIV_PRIV: base = "Transfer priv->priv"; break;
@@ -147,9 +152,10 @@ static void format_action(char *out, size_t out_len, uint8_t verb_id, const char
         case CS_VERB_MINT_PUB:           base = "Mint public"; break;
         case CS_VERB_MINT_PRIV:          base = "Mint private"; break;
         case CS_VERB_SPONSOR:            base = "Sponsor fee"; break;
+        case CS_VERB_DRIP_PUB:           base = "Drip"; append_symbol = false; break;
         default: break;
     }
-    if (symbol && symbol[0] != '\0') {
+    if (append_symbol && symbol && symbol[0] != '\0') {
         snprintf(out, out_len, "%s %s", base, symbol);
     } else {
         snprintf(out, out_len, "%s", base);
@@ -254,6 +260,28 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
                      "Testnet %s", reg->symbol);
             g_pairs[out_idx + pairs_added].item = "Via";
             g_pairs[out_idx + pairs_added].value = g_call_via[i];
+            pairs_added++;
+            break;
+        }
+        case CS_VERB_DRIP_PUB: {
+            /* AHW-040: drip_to_public(token, amount) — args[0]=TOKEN address,
+             * args[1]=u64 amount, recipient = the caller (you). The amount's
+             * decimals + symbol come from the TOKEN-arg's registry entry (the dripper's
+             * own decimals=0). Previously DRIP had no case here → the device showed
+             * "Call DRIP" with ZERO value pairs (signing an unrendered verb). */
+            const cs_registry_entry_t *tok = cs_registry_lookup(c->args[0]);
+            const char *tsym = (tok != NULL && tok->symbol[0] != '\0') ? tok->symbol : "token";
+            uint8_t tdec = (tok != NULL) ? tok->decimals : 0;
+            char amt[CS_FORMAT_MAX_LEN];
+            if (!cs_format_amount(c->args[1], tdec, amt, sizeof(amt))) {
+                snprintf(amt, sizeof(amt), "?");
+            }
+            snprintf(g_call_amount[i], sizeof(g_call_amount[i]), "%s %s", amt, tsym);
+            g_pairs[out_idx + pairs_added].item = "Amount";
+            g_pairs[out_idx + pairs_added].value = g_call_amount[i];
+            pairs_added++;
+            g_pairs[out_idx + pairs_added].item = "To";
+            g_pairs[out_idx + pairs_added].value = "you (drip)";
             pairs_added++;
             break;
         }
