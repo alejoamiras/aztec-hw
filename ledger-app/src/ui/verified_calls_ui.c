@@ -35,8 +35,12 @@
 #include "../handler/finalize_and_sign.h"
 
 #define REVIEW_TITLE "Authorize Aztec calls"
+/* AHW-054: scope the verification honestly. Only the From/account is
+ * device-verified (B3 address recompute); recipients + amounts are host-supplied
+ * (the on-device registry only pins token identity/decimals). Don't let the
+ * "(verified)" on From imply the whole review is device-attested. */
 #define REVIEW_SUBTITLE \
-    "INTERNAL build. Verified against on-device registry."
+    "INTERNAL build. Account verified on-device; amounts + recipients are host-provided."
 
 #if defined(TARGET_NANOX) || defined(TARGET_NANOS2)
 #define REVIEW_ICON_VC C_app_aztec_14px
@@ -65,6 +69,13 @@ static char g_call_to[L4_MAX_CALLS][40];              /* 8+8 truncated address (
 static char g_call_amount[L4_MAX_CALLS][2 * CS_FORMAT_MAX_LEN + 32]; /* "1.5 USDC (raw 1500000)" AHW-051 */
 static char g_call_mode[L4_MAX_CALLS][32];
 static char g_call_via[L4_MAX_CALLS][48];
+/* show-full (HARD-ITEM c): the recipient "To" is shown 8+8 as a glanceable
+ * summary, with an alias to the FULL 64-hex address. On wallet-size a ">" opens
+ * it; on Nano the value renders in white and a details page exposes the full
+ * address — so the user can always verify the complete recipient while the default
+ * review stays uncluttered (the "don't over-share, but no leakage" requirement). */
+static char g_call_to_full[L4_MAX_CALLS][67]; /* 0x + 64 hex + NUL */
+static nbgl_contentValueExt_t g_call_to_ext[L4_MAX_CALLS];
 
 static nbgl_contentTagValue_t g_pairs[VC_PAIR_CAPACITY];
 static nbgl_contentTagValueList_t g_pair_list;
@@ -95,6 +106,34 @@ static void short_hex_field(char *out, size_t out_len, const uint8_t bytes[32]) 
     out[18] = '.';
     out[19] = '.';
     hex_n(out + 20, bytes + 24, 8);  /* [20..35] = last 8 bytes, NUL at [36] */
+}
+
+/* AHW-053: full "0x" + 64 hex (no truncation) — used for the outer_hash anchor
+ * and the show-full recipient, both of which must expose every byte. */
+static void full_hex_field(char *out, size_t out_len, const uint8_t bytes[32]) {
+    if (out_len < 67) {
+        out[0] = '\0';
+        return;
+    }
+    out[0] = '0';
+    out[1] = 'x';
+    hex_n(out + 2, bytes, 32);
+}
+
+/* Populate g_pairs[idx] as a recipient "To": 8+8 summary value + an alias to the
+ * full 64-hex address (show-full). The bitfields/extension are set explicitly
+ * because g_pairs is a static pool reused across reviews (memset'd up front, but
+ * be defensive). */
+static void set_to_pair_aliased(size_t idx, uint8_t i, const uint8_t addr[32]) {
+    short_hex_field(g_call_to[i], sizeof(g_call_to[i]), addr);
+    full_hex_field(g_call_to_full[i], sizeof(g_call_to_full[i]), addr);
+    memset(&g_call_to_ext[i], 0, sizeof(g_call_to_ext[i]));
+    g_call_to_ext[i].fullValue = g_call_to_full[i];
+    g_call_to_ext[i].aliasType = NO_ALIAS_TYPE;
+    g_pairs[idx].item = "To";
+    g_pairs[idx].value = g_call_to[i];
+    g_pairs[idx].aliasValue = 1;
+    g_pairs[idx].extension = &g_call_to_ext[i];
 }
 
 /* Small Fr (chain id / version) → "0x.. (N)"; large → short hex. */
@@ -232,13 +271,12 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
         case CS_VERB_TRANSFER_PUB_PUB: {
             /* args = [from, to, amount, nonce] */
             format_from(g_call_from[i], sizeof(g_call_from[i]), c->args[0]);
-            short_hex_field(g_call_to[i], sizeof(g_call_to[i]), c->args[1]);
             format_amount_with_raw(g_call_amount[i], sizeof(g_call_amount[i]),
                                    c->args[2], reg->decimals, reg->symbol);
             format_mode(g_call_mode[i], sizeof(g_call_mode[i]), c->flags);
 
             g_pairs[out_idx + pairs_added].item = "From"; g_pairs[out_idx + pairs_added].value = g_call_from[i]; pairs_added++;
-            g_pairs[out_idx + pairs_added].item = "To";   g_pairs[out_idx + pairs_added].value = g_call_to[i];   pairs_added++;
+            set_to_pair_aliased(out_idx + pairs_added, i, c->args[1]); pairs_added++;
             g_pairs[out_idx + pairs_added].item = "Amount"; g_pairs[out_idx + pairs_added].value = g_call_amount[i]; pairs_added++;
             /* M10 P0: only show flags when STATIC/HIDE_SENDER is set — no
              * redundant "Mode: PUBLIC" on a plain transfer. */
@@ -252,15 +290,17 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
         case CS_VERB_MINT_PUB:
         case CS_VERB_MINT_PRIV: {
             /* args = [to, amount] */
-            short_hex_field(g_call_to[i], sizeof(g_call_to[i]), c->args[0]);
             format_amount_with_raw(g_call_amount[i], sizeof(g_call_amount[i]),
                                    c->args[1], reg->decimals, reg->symbol);
 
-            /* Mint-action warning pair (codex M5 plan §5 + opus suggestion). */
+            /* AHW-055: the MINTER warning is forced to the TOP OF ITS OWN PAGE
+             * (forcePageStart) so a privileged supply-creating action can't be
+             * skimmed past as one inline pair among many. */
             g_pairs[out_idx + pairs_added].item = "WARNING";
-            g_pairs[out_idx + pairs_added].value = "MINTER action";
+            g_pairs[out_idx + pairs_added].value = "MINTER action - creates new supply";
+            g_pairs[out_idx + pairs_added].forcePageStart = 1;
             pairs_added++;
-            g_pairs[out_idx + pairs_added].item = "To"; g_pairs[out_idx + pairs_added].value = g_call_to[i]; pairs_added++;
+            set_to_pair_aliased(out_idx + pairs_added, i, c->args[0]); pairs_added++;
             g_pairs[out_idx + pairs_added].item = "Amount"; g_pairs[out_idx + pairs_added].value = g_call_amount[i]; pairs_added++;
             break;
         }
@@ -310,7 +350,15 @@ int ui_display_verified_calls(void) {
     fr_as_u32_or_hex(g_chain_str, sizeof(g_chain_str), G_l4_session.chain_id);
     snprintf(g_calls_count_str, sizeof(g_calls_count_str), "%u",
              (unsigned)G_l4_session.call_count);
-    short_hex_field(g_outer_str, sizeof(g_outer_str), G_l4_session.outer_hash);
+    /* AHW-053: show the FULL outer_hash (was 8+8). This is the byte-level paranoia
+     * escape hatch — the blind-sign path already shows all 32 bytes, so the
+     * clear-sign tail must not be weaker on the exact field a paranoid user
+     * cross-checks against an independent host recompute. */
+    full_hex_field(g_outer_str, sizeof(g_outer_str), G_l4_session.outer_hash);
+
+    /* g_pairs is a static pool reused across reviews; clear stale bitfields
+     * (aliasValue / forcePageStart) + extension pointers before repopulating. */
+    memset(g_pairs, 0, sizeof(g_pairs));
 
     size_t n_pairs = 0;
     g_pairs[n_pairs].item = "From (verified)"; g_pairs[n_pairs].value = g_account_str;     n_pairs++;
