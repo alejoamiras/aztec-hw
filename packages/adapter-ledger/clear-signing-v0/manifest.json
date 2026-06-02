@@ -136,7 +136,7 @@
       "wire_arg_count": 2,
       "display_name": "Drip public",
       "amount_type": "u64",
-      "_note": "M6.0: Dripper.drip_to_public(token: AztecAddress, amount: u64). args[0] MUST be a TOKEN-kind slot in registry (enforced device-side in append_call). The amount is u64 (1 Fr slot, high 24 bytes zero per encoder.ts:24). Decimals for display come from the TOKEN-arg's registry entry (cross-slot lookup); Dripper's own slot has decimals=0. Selector computed via FunctionSelector.fromNameAndParameters from Dripper artifact at codegen-pinned aztec-standards version."
+      "_note": "M6.0: Dripper.drip_to_public(token: AztecAddress, amount: u64). args[0] MUST be a TOKEN-kind slot in registry (AHW-041: enforced by the HOST preflight ONLY — append_call.c does NOT validate args[0]'s kind; the device renders a 'token'/decimals=0 fallback for a non-registered arg rather than rejecting). The amount is u64 (1 Fr slot, high 24 bytes zero per encoder.ts:24). Decimals for display come from the TOKEN-arg's registry entry (cross-slot lookup); Dripper's own slot has decimals=0. Selector computed via FunctionSelector.fromNameAndParameters from Dripper artifact at codegen-pinned aztec-standards version."
     }
   ],
   "deploy_profiles": [

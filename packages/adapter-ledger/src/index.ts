@@ -1,13 +1,13 @@
 /**
- * Ledger adapter for Aztec.
+ * Ledger adapter for Aztec — the clear-signing account contracts + provider that
+ * drive the custom BOLOS app at `ledger-app/`.
  *
- * Implementation status: APDU spec + transport interface scaffolded.
- * Actual provider class lands once the C app at `ledger-app/` is buildable
- * (see `implementations-plan/hw-wallet-poc-ledger/plan-final.md` §6).
+ *   - `LedgerTransport` is the swap point between Speculos (test) and real device.
+ *   - `LedgerClearSigningEntrypoint` (via the account contracts' `getAccount`) is the
+ *     production signing seam; `LedgerProvider` is the low-level APDU driver.
  *
- * Architecture mirrors `@aztec-hwwallet-poc/adapter-trezor`:
- *   - `LedgerTransport` is the swap point between Speculos (test) and real device
- *   - `LedgerProvider` will implement `IntentAuthWitnessProvider` from core
+ * (The earlier Trezor adapter + the core `IntentAuthWitnessProvider` path this header
+ * once referenced were removed in the audit-remediation dead-code pass.)
  */
 
 export {

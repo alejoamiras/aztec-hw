@@ -229,8 +229,8 @@ export const SW = {
   DELEGATED_SPEND_UNSUPPORTED: 0x6f0c,
   /* M7 P3 — clear-signed deploy. */
   UNKNOWN_PROFILE_ID: 0x6f0d,
-  DEPLOY_ADDRESS_MISMATCH: 0x6f0e, // reserved: M8 Grumpkin lift
-  DEPLOY_PUBKEY_HASH_MISMATCH: 0x6f0f, // reserved: M8
+  DEPLOY_ADDRESS_MISMATCH: 0x6f0e, // AHW-006: LIVE M8 sovereignty gate — device-derived address != host expected_address
+  DEPLOY_PUBKEY_HASH_MISMATCH: 0x6f0f, // AHW-006: LIVE M8 sovereignty gate — device-derived publicKeysHash != host
   DEPLOY_CONTEXT_TWICE: 0x6f10,
   DEPLOY_CONTEXT_WRONG_STATE: 0x6f11,
   /* M9 B3 — authwit consumer ≠ device-recomputed account address (fail-closed). */

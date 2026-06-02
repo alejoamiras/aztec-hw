@@ -1,12 +1,13 @@
 /**
- * High-level driver for the Aztec Ledger app. Translates `AuthWitnessProvider`-style
- * calls (get public key, sign outer_hash) into APDU exchanges over a `LedgerTransport`.
+ * High-level driver for the Aztec Ledger app. Translates device operations (get
+ * public key, reveal master secret, stream + clear-sign authwits/deploys, blind-sign
+ * outer_hash) into APDU exchanges over a `LedgerTransport`.
  *
- * L2 K1 baseline scope (plan-final.md §2):
- *   - SECP256K1 only
- *   - Blind sign: device shows path + outer_hash hex; clear-sign UI lands at L4
- *   - Caller is responsible for wrapping `signOuterHash` into the Aztec
- *     `AuthWitnessProvider` interface (mirrors adapter-trezor).
+ * Scope has grown well past the original L2 K1 baseline: SECP256K1 + Grumpkin-Schnorr,
+ * the L4 clear-signing streaming path (BEGIN_AUTHWIT/APPEND_CALL/FINALIZE) and the
+ * deploy flow are all live. Blind-sign (SIGN_OUTER_HASH) is the LEGACY raw-hash path,
+ * now OFF by default behind the device blind_signing toggle. `AuthWitnessProvider` /
+ * entrypoint wrapping lives in auth-witness-provider.ts + clear-signing-entrypoint.ts.
  */
 import { type AzCall, type AzManifestHeader, FR_BYTES, INS, SW } from './apdu.ts';
 import { type DeployContext, encodeBeginDeployAccountBody } from './deploy-context.ts';

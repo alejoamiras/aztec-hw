@@ -1,11 +1,12 @@
 /**
  * Ledger `AuthWitnessProvider` implementation for Aztec's `EcdsaKAccount`.
  *
- * Mirrors `@aztec-hwwallet-poc/adapter-trezor`'s `TrezorEcdsaKAuthWitnessProvider`
- * but talks to the custom Aztec Ledger BOLOS app (`ledger-app/`) over an
+ * Talks to the custom Aztec Ledger BOLOS app (`ledger-app/`) over a
  * `LedgerTransport` (Speculos in tests, `@ledgerhq/hw-transport-*` in prod).
+ * (The Trezor adapter this once mirrored was removed in the audit-remediation
+ * dead-code pass — Ledger is the sole v0 target.)
  *
- * Key contract differences vs. Trezor:
+ * Device contract notes:
  *   - Device-side SHA-256: the Ledger app accepts the raw 32-byte `outer_hash`
  *     and internally computes `sha256(outer_hash)` before signing
  *     (plan-final.md §2 / final-critique §1). We send the outer_hash, NOT
