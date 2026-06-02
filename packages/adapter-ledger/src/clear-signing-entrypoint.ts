@@ -215,15 +215,27 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
 
     // Device DEPLOY flow (mirrors LedgerEcdsaKAuthWitnessProvider.createAuthWitForDeploy):
     // begin encodes + verifies the DeployContext (sovereignty), finalize reviews + signs.
-    await this.device.beginDeployAccount(deployContext);
-    const sig = await this.device.finalizeDeployAndSign(
-      messageHashBytes,
-      this.options.signOptions ?? {},
-    );
-    this.#pending = {
-      hashHex: messageHash.toString(),
-      wit: new AuthWitness(messageHash, Array.from(packEcdsaSignature(sig.r, sig.s))),
-    };
+    // AHW-057: abort proactively (clear any stale session, like the tx path) AND on throw.
+    // A failure AFTER begin_deploy leaves the device's deploy-session armed
+    // (L4_DEPLOY_CONTEXT); without the abort the NEXT op hits SW_DEPLOY_CONTEXT_WRONG_STATE
+    // (0x6F11) and the wallet wedges until reconnect. ABORT (→ l4_session_reset) un-parks it.
+    await this.device.abortAuthwit();
+    try {
+      await this.device.beginDeployAccount(deployContext);
+      const sig = await this.device.finalizeDeployAndSign(
+        messageHashBytes,
+        this.options.signOptions ?? {},
+      );
+      this.#pending = {
+        hashHex: messageHash.toString(),
+        wit: new AuthWitness(messageHash, Array.from(packEcdsaSignature(sig.r, sig.s))),
+      };
+    } catch (e) {
+      // Un-park the device so a thrown deploy doesn't wedge the wallet; best-effort
+      // (don't mask the original error if the abort itself fails).
+      await this.device.abortAuthwit().catch(() => {});
+      throw e;
+    }
   }
 
   /** Hand the inner entrypoint the device witness — only if its recomputed hash

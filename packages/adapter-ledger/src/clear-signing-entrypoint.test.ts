@@ -97,4 +97,45 @@ describe('LedgerClearSigningEntrypoint — assertClearSignPolicy (AHW-003/004)',
       ep().createTxExecutionRequest(emptyExec(), gas, chain, txOpts({ cancellable: false })),
     ).rejects.toThrow(/cancellable=true/);
   });
+
+  test('AHW-057: a deploy that throws after begin un-parks the device (abort-on-throw)', async () => {
+    // A device error AFTER begin_deploy leaves the deploy-session armed → the next op
+    // would 0x6F11 and the wallet wedges. The entrypoint must ABORT to un-park it.
+    const seen: string[] = [];
+    const dev2 = {
+      abortAuthwit: async () => {
+        seen.push('abort');
+      },
+      beginDeployAccount: async () => {
+        seen.push('begin');
+      },
+      finalizeDeployAndSign: async () => {
+        seen.push('finalize');
+        throw new Error('device boom');
+      },
+    } as unknown as LedgerProvider;
+    const epd = new LedgerClearSigningEntrypoint(addr, dev2, { bip32Path: [0] });
+    const chainInfo = { chainId: new Fr(1n), version: new Fr(1n) } as unknown as ChainInfo;
+    const ctx = {
+      profileId: 0,
+      bip32Path: [0],
+      chainId: new Uint8Array(new Fr(1n).toBuffer()),
+      protocolVersion: new Uint8Array(new Fr(1n).toBuffer()),
+      txNonce: new Uint8Array(Fr.ZERO.toBuffer()),
+      salt: new Uint8Array(32),
+      publicKeysHash: new Uint8Array(32),
+      expectedAddress: new Uint8Array(addr.toBuffer()),
+    } as unknown as DeployContext;
+    const opts = {
+      txNonce: Fr.ZERO,
+      cancellable: false,
+      feePaymentMethodOptions: AccountFeePaymentMethodOptions.EXTERNAL,
+      ledgerDeployContext: ctx,
+    } as unknown as DefaultAccountEntrypointOptions;
+    await expect(epd.wrapExecutionPayload(emptyExec(), chainInfo, opts)).rejects.toThrow(
+      'device boom',
+    );
+    // proactive abort (before begin) + on-throw abort (after finalize threw)
+    expect(seen).toEqual(['abort', 'begin', 'finalize', 'abort']);
+  });
 });

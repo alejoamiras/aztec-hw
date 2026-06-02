@@ -52,15 +52,16 @@ their CATALOG status; this section is the WORK disposition.
 **PARKED — test-depth (the fixes are code-verified; these add heavy/low-value coverage):**
 - `AHW-024` (MED) on-device malformed-frame-mid-stream test · `AHW-025` (MED) glitch-sim for the fault-injection arms · `AHW-027` (LOW) cs_format_amount adversarial fuzz.
 
-**OPEN — candidate should-do (NOT done, NOT parked — owner's call):**
-- `AHW-057` (MED) deploy `#deploySignOnDevice` lacks abort-on-throw → device deploy-session parks, wallet wedges (recoverable by reconnect). Genuine robustness fix.
-- `AHW-062` (MED) unsigned fee CONTROLS residual: AHW-003 pins fee MODE=EXTERNAL, but the amount/gas-limit aren't in the signed hash (defense-in-depth).
-- `AHW-034` (MED) firmware provenance (no submodule) + `AHW-066` (MED) placeholder coin-type `1666` — production/release-provenance; resolve before mainnet/external-audit submission.
-- `AHW-063` (LOW) manual deploy reports PROPOSED not CHECKPOINTED (false-finality UX window).
+**PARKED — owner-reviewed (release-gates + accepted residuals); revisit before mainnet:**
+- `AHW-034` (MED) firmware provenance (no submodule) + `AHW-066` (MED) placeholder coin-type `1666` — RELEASE-GATES: resolve before mainnet / external-audit submission (not PoC bugs; far off).
+- `AHW-062` (MED) unsigned fee CONTROLS — the device CANNOT bind fee/gas (not in Aztec's signed outer_hash = protocol). A host-side cap is the only lever, but a malicious host bypasses it and the blast radius is SponsoredFPC-griefing, not user funds → accepted residual.
+- `AHW-063` (LOW) manual deploy reports PROPOSED not CHECKPOINTED (false-finality UX) — recognized; UX polish.
+
+**OPEN — none.** (AHW-057, the deploy-wedge, is now FIXED — see below.)
 
 **DISSOLVED — code deleted in P0 (adapter-trezor + apps/demo):** `AHW-028/036/073/074/075/076/077/078`.
 
-**FIXED — see the per-phase remediation entries above:** `AHW-001/002/003/004/006/007/008/014/017/018/020/022/026/040/041/046/047/048/049/050/051/052/053/054/055/059/064/068/079`.
+**FIXED — see the per-phase remediation entries above:** `AHW-001/002/003/004/006/007/008/014/017/018/020/022/026/040/041/046/047/048/049/050/051/052/053/054/055/057/059/064/068/079`.
 
 | ID | Sev | Cat | Owned | Status | Title |
 |----|-----|-----|-------|--------|-------|
