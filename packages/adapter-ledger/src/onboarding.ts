@@ -65,6 +65,14 @@ export async function revealMasterSecret(
  * the cache was previously global → cross-device/index reuse). `getPublicKey`
  * needs no on-device approval, so this is cheap to call before deciding whether
  * to reveal.
+ *
+ * AHW-079: this key is the approval-free signing pubkey, a stable (seed, path)
+ * pseudonym. Its PERSISTENT-pseudonym half is dissolved by AHW-048 (the secret cache
+ * is now memory-only — the key is never written to storage). We keep the pubkey as the
+ * key because it is what gives the cross-device/index cache-MISS property (a random
+ * per-tab handle could not distinguish devices). The residual — that an origin can
+ * harvest the pubkey by calling `getPublicKey` at all — is inherent to Ledger's
+ * approval-free pubkey export (platform; see AHW-080), not to this cache.
  */
 export async function deviceCacheKey(
   transport: LedgerTransport,

@@ -1,66 +1,50 @@
 /**
- * M8 P7.2 — in-session cache for the revealed device master secret.
+ * In-session cache for the revealed device PRIVACY ROOT (master secret).
  *
- * The viewing root is RE-DERIVED from the Ledger each session (reconnect →
- * reveal → identical keys). This cache exists ONLY so repeated page actions
- * within one session don't re-prompt the device — it is NOT a backup.
+ * The privacy root is RE-DERIVED from the Ledger each session (reconnect → reveal →
+ * identical keys). This cache exists ONLY so repeated page actions within ONE page
+ * lifetime don't re-prompt the device — it is NOT a backup.
  *
- * Storage is in-memory + `sessionStorage` (wiped when the tab closes).
- * DELIBERATELY no `localStorage` / IndexedDB / disk: persisting the viewing root
- * at rest would be a mnemonic-grade disclosure, against the "never written to
- * disk" security model (impl-audit `bb56tmdxj` + the owner's reframe).
- * `sessionStorage` survives a reload within the same tab; it does not survive
- * closing it. Treat the browser as untrusted — XSS/extension access to the live
- * value is equivalent to reading the viewing root, hence the minimal lifetime.
+ * MEMORY-ONLY (AHW-048). The secret lives solely on the JS heap for the page's
+ * lifetime — NO sessionStorage / localStorage / IndexedDB / disk. Rationale:
+ *   - sessionStorage survived in-tab reloads AND is readable by ANY same-origin
+ *     script (XSS / injected extension) with zero new Ledger prompt — a
+ *     privacy-root-grade exfiltration. Dropping it means a reload re-reveals (one
+ *     extra device tap), which is the correct trade for the most sensitive material:
+ *     the shortest possible lifetime, nothing persisted at rest.
+ *   - the LIVE in-memory value is still readable by same-origin script while present
+ *     (unavoidable — the secret must be in RAM to derive viewing keys), but it does
+ *     not OUTLIVE the page and is never written anywhere persistent.
+ *
+ * The cache key is scheme-blind ON PURPOSE: the revealed secret is the account's ONE
+ * privacy root — identical for ECDSA-K and Schnorr at the same path (it is the seed
+ * for all four viewing keys, scheme-independent; see the reveal UI / AHW-047). Reusing
+ * it across schemes at one path is exactly what the single reveal approval authorized,
+ * not a silent second grant.
  */
 import { Fr } from '@aztec/foundation/curves/bn254';
 
-const STORAGE_PREFIX = 'aztec-vk-secret:';
-/** Mirror so the cache also works where sessionStorage is absent (tests, SSR). */
+/** Heap-only store, gone when the page unloads. Keyed by the caller's device-scoped
+ * id (see onboarding.deviceCacheKey) so a different device/account index is a MISS. */
 const mem = new Map<string, string>();
 
-/** sessionStorage if present + usable; undefined otherwise (never throws). */
-function sessionStore(): Storage | undefined {
-  try {
-    return typeof globalThis !== 'undefined' && 'sessionStorage' in globalThis
-      ? (globalThis as { sessionStorage: Storage }).sessionStorage
-      : undefined;
-  } catch {
-    // Sandboxed iframes throw on access — fall back to in-memory only.
-    return undefined;
-  }
-}
-
-/**
- * Cache the revealed secret for this session. `key` lets callers scope by device
- * path (default: a single account). Stores hex; no 0x prefix.
- */
+/** Cache the revealed secret for this page lifetime. Stores hex; no 0x prefix. */
 export function cacheSecret(secret: Fr, key: string): void {
-  const hex = secret.toBuffer().toString('hex');
-  mem.set(key, hex);
-  sessionStore()?.setItem(STORAGE_PREFIX + key, hex);
+  mem.set(key, secret.toBuffer().toString('hex'));
 }
 
-/** The cached secret for `key`, or undefined if none (fresh session / wiped). */
+/** The cached secret for `key`, or undefined if none (fresh page / cleared). */
 export function loadCachedSecret(key: string): Fr | undefined {
-  const hex = mem.get(key) ?? sessionStore()?.getItem(STORAGE_PREFIX + key) ?? undefined;
-  if (!hex) return undefined;
-  return Fr.fromBuffer(Buffer.from(hex, 'hex'));
+  const hex = mem.get(key);
+  return hex ? Fr.fromBuffer(Buffer.from(hex, 'hex')) : undefined;
 }
 
 /** Forget the secret for `key` (e.g. on disconnect). */
 export function clearCachedSecret(key: string): void {
   mem.delete(key);
-  sessionStore()?.removeItem(STORAGE_PREFIX + key);
 }
 
 /** Forget ALL cached secrets — the "Forget secret" / full-disconnect control. */
 export function clearAllCachedSecrets(): void {
   mem.clear();
-  const s = sessionStore();
-  if (!s) return;
-  for (let i = s.length - 1; i >= 0; i--) {
-    const k = s.key(i);
-    if (k?.startsWith(STORAGE_PREFIX)) s.removeItem(k);
-  }
 }
