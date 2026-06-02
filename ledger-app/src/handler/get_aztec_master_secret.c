@@ -72,6 +72,14 @@ static void disarm(void) {
     s_armed = false;
 }
 
+/* AHW-059: public entry so l4_session_reset() (a different TU) can fold this
+ * module's secret into the device-wide reset invariant. Disarming on a reset path
+ * is fail-safe: if it ever raced a shown reveal, the approve would emit a wiped
+ * (zero) secret rather than leak. */
+void master_secret_disarm(void) {
+    disarm();
+}
+
 /* Derive the master secret for the path in G_context. Thin wrapper over the
  * shared `az_derive_master_secret` (l4/aztec_secret.c) so the reveal INS and
  * the Phase 6 deploy verification derive `sk` identically. */

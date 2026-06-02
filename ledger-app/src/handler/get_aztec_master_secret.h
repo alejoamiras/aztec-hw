@@ -28,3 +28,9 @@ int master_secret_reveal_rejected(void);
  * Not secret — it is a SHA-256 prefix the host can independently recompute so
  * the user can cross-check the device against the host-displayed value. */
 const char *master_secret_checksum_str(void);
+
+/** Wipe any armed reveal secret + checksum (idempotent; safe when nothing is armed).
+ * Called from l4_session_reset() so the device-wide reset invariant explicitly
+ * covers this module's file-static secret, instead of relying on the blocking-IO
+ * model alone (AHW-059). */
+void master_secret_disarm(void);

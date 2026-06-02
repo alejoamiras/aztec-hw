@@ -17,6 +17,7 @@
 #include "sw.h"
 #include "ui/menu.h"
 #include "apdu/dispatcher.h"
+#include "l4/session.h"
 
 global_ctx_t G_context;
 
@@ -39,8 +40,12 @@ void app_main(void) {
         if (!apdu_parser(&cmd, G_io_apdu_buffer, input_len)) {
             PRINTF("=> /!\\ BAD LENGTH: %.*H\n", input_len, G_io_apdu_buffer);
             io_send_sw(SWO_WRONG_DATA_LENGTH);
-            // Zeroize any partial session state (final critique §9).
+            // Zeroize any partial session state (final critique §9). AHW-017: a parse
+            // failure short-circuits BEFORE the dispatcher, so also reset the L4
+            // sessions here to honor the "any non-0x9000 path zeroes the L4 session"
+            // invariant (l4_session_reset also disarms the reveal secret — AHW-059).
             explicit_bzero(&G_context, sizeof(G_context));
+            l4_session_reset();
             continue;
         }
 
