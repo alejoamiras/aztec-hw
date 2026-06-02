@@ -21,16 +21,16 @@
  * mismatch. This provider now exposes only:
  *   - `getPublicKeyXY()` — the signing pubkey for the account ctor;
  *   - `createClearSigningEntrypoint(addr)` — the proper clear-signing seam;
- *   - `createAuthWit(outerHash)` — a hash-only (blind) sign, KEPT for app-level
- *     authwits (e.g. token approvals) the demo may need; it is NOT on the main
- *     tx/deploy path (those go through the entrypoint).
+ *   - `createAuthWit()` — FAIL-CLOSED (AHW-001): blind hash-only signing is disabled;
+ *     app-level authwits must use the clear-signing entrypoint. The device
+ *     `blind_signing` setting (default OFF) is the separate device-level backstop.
  * The retired `createAuthWitFromIntent` (TX-driving) + `createAuthWitForDeploy`
  * (spy/freeze deploy) are gone — their job is the entrypoint's now.
  */
 
 import type { AuthWitnessProvider } from '@aztec/aztec.js/account';
 import type { AztecAddress } from '@aztec/stdlib/aztec-address';
-import { AuthWitness, Fr, packEcdsaSignature } from '@aztec-hwwallet-poc/core';
+import type { AuthWitness, Fr } from '@aztec-hwwallet-poc/core';
 import { CURVE_ID, type CurveId } from './apdu.ts';
 import { LedgerClearSigningEntrypoint } from './clear-signing-entrypoint.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
@@ -79,21 +79,20 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
     return this.cachedXY;
   }
 
-  async createAuthWit(messageHash: Fr | Buffer): Promise<AuthWitness> {
-    /* HASH-ONLY (blind) sign via the K1-only `signOuterHash` APDU — kept for K1
-     * app-level authwits. It is NOT scheme-generic: there is no raw hash-only Schnorr
-     * sign APDU (Schnorr signs only via the clear-signing authwit/deploy device flows).
-     * FAIL-CLOSED for Grumpkin rather than emit a wrong ECDSA witness for a Schnorr
-     * account (codex P1 Major). Schnorr authwits must go through the clear-signing
-     * entrypoint (`createClearSigningEntrypoint`). */
-    if (this.options.curveId === CURVE_ID.GRUMPKIN) {
-      throw new Error(
-        'createAuthWit: hash-only blind sign is ECDSA-K only; a Schnorr account must use the ' +
-          'clear-signing entrypoint (createClearSigningEntrypoint), not a raw outer_hash sign',
-      );
-    }
-    const outerHash = messageHash instanceof Fr ? messageHash : Fr.fromBuffer(messageHash);
-    return this.signAndWrap(outerHash);
+  async createAuthWit(_messageHash: Fr | Buffer): Promise<AuthWitness> {
+    /* AHW-001 (host fail-close): blind, hash-only authwit signing is DISABLED.
+     * `EmbeddedWallet.sendTx` auto-derives app-level authwits from a tx's offchain
+     * effects and would route them here for a blind (no-decode) device sign —
+     * OUTSIDE the clear-sign review the user actually sees. We refuse outright:
+     * app-level authorizations must go through the clear-signing entrypoint
+     * (`createClearSigningEntrypoint`), which the device decodes + renders. The
+     * device's `blind_signing` setting (default OFF) is the separate, user-sovereign
+     * DEVICE-level backstop for any explicit raw sign; the host never blind-signs on
+     * the auto path. (Schnorr never had a raw hash-only sign at all.) */
+    throw new Error(
+      'createAuthWit: blind (hash-only) authwit signing is disabled on the host. Route ' +
+        'app-level authorizations through the clear-signing entrypoint (createClearSigningEntrypoint).',
+    );
   }
 
   /**
@@ -110,16 +109,5 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
       curveId: this.options.curveId,
       signOptions: this.options.signOptions,
     });
-  }
-
-  private async signAndWrap(outerHash: Fr): Promise<AuthWitness> {
-    const outerBytes = new Uint8Array(outerHash.toBuffer());
-    const sig = await this.inner.signOuterHash(
-      this.options.bip32Path,
-      outerBytes,
-      this.options.signOptions ?? {},
-    );
-    const sigBytes = packEcdsaSignature(sig.r, sig.s);
-    return new AuthWitness(outerHash, Array.from(sigBytes));
   }
 }

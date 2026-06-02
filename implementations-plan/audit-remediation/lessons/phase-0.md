@@ -18,11 +18,14 @@
 ```
 
 ## P0 sub-steps
-- [▶] P0.1 — delete `apps/demo` + `packages/adapter-trezor` + the dead core Intent path (`computeOuterHashForIntent`, `IntentAuthWitnessProvider`); update `ci.yml`, workspaces, the "mirrors adapter-trezor" comments. Dissolves AHW-028/036/073/074/075/076/077/078.
-- [ ] P0.2 — fix the remaining `tsc -b` errors (AHW-030); split `apps/demo-browser` app/test tsconfigs (AHW-031/032); make typecheck a blocking CI gate.
-- [ ] P0.3 — `internalDeps` stops exposing `session`/`ledgerProvider`; cache the clear-signing account (AHW-002).
-- [ ] P0.4 — `bun.lock` override `systeminformation ^5.31.6`; surface `bun audit` in CI summary (AHW-033).
-- [ ] P0.5 — comment-truth + dead-SW + dedup path-check (AHW-006/013/014/019*/020*/041/058/070). *019/020 gated on re-confirming dudect/aztec_secret.c before rewriting (don't overstate CT resistance).
+- [x] P0.1 — DONE (commit 7ef2e7c): deleted `apps/demo` + `packages/adapter-trezor` + the dead core Intent path; removed the re-exports from `core/index.ts` + the dead refs from `ci.yml`. `bun test packages/` green (117 pass/0 fail). Dissolves AHW-028/036/073/074/075/076/077/078.
+- [—] P0.2 — DEFERRED (CI): `tsc -b` test-file errors / tsconfig split / blocking gate (AHW-030/031/032). **Owner deprioritized CI** — skipped; the pre-existing test-file `noUncheckedIndexedAccess` errors remain (don't affect `bun test`).
+- [→] P0.3 — `internalDeps` (AHW-002) → folded into P1 (host security).
+- [—] P0.4 — DEFERRED (CI): dep override + `bun audit` summary (AHW-033). Owner deprioritized CI.
+- [→] P0.5 — comment-truth + dead-SW + dedup (AHW-006/013/014/041/058/070) → end-of-run sweep; CT-comment rewrites (019/020) gated on dudect re-verify.
+
+## Stale doc-comments to sweep later (deletion residue, cosmetic)
+`adapter-ledger/package.json:5`, `auth-witness-provider.ts:4`, `index.ts:8,10`, `provider.ts:9` still say "mirrors adapter-trezor" — clean up in the end-of-run comment sweep.
 
 ## Recon (verified before deleting)
 - `adapter-ledger` has ZERO live (non-comment, non-test) refs to the core Intent path → safe to delete `computeOuterHashForIntent`/`IntentAuthWitnessProvider` from `core`.
