@@ -80,9 +80,18 @@ void master_secret_disarm(void) {
     disarm();
 }
 
-/* Derive the master secret for the path in G_context. Thin wrapper over the
- * shared `az_derive_master_secret` (l4/aztec_secret.c) so the reveal INS and
- * the Phase 6 deploy verification derive `sk` identically. */
+/* AHW-016 (accepted residual, v0/PoC): the secret derivation (SHA-512 + Montgomery
+ * reduce + [k]G) has NO NVM attempt-counter / cooldown / rate ceiling. The ROOT
+ * issue is the non-constant-time portable C (AHW-029, PLATFORM — deferred to the
+ * Donjon/cx_ hardening pass); a rate-limit would only be a side-channel-amplification
+ * MITIGATION. We deliberately do not add one in v0:
+ *   - the reveal INS is HUMAN-GATED (every reveal needs a physical approval), so it
+ *     cannot be spammed for fast re-derivation in the first place;
+ *   - a derivation-rate cap on the un-gated surfaces (GET_PUBLIC_KEY / FINALIZE)
+ *     would throttle legitimate host setup + every signature for marginal gain.
+ * PRODUCTION mitigation if the constant-time deficiency is not first closed:
+ * NVM-backed throttle on the reveal INS + a global derivation-rate ceiling. Tracked
+ * in audit/index.md. */
 static int derive_master_secret(uint8_t out32[32]) {
     return az_derive_master_secret(G_context.bip32_path, G_context.bip32_path_len, out32);
 }
