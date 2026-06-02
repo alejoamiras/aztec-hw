@@ -101,6 +101,7 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     chainInfo: ChainInfo,
     options: DefaultAccountEntrypointOptions,
   ): Promise<TxExecutionRequest> {
+    this.#assertClearSignPolicy(exec, options, 'tx');
     await this.#clearSignOnDevice(exec, chainInfo, options.txNonce);
     // Delegate: the inner re-derives the same messageHash and calls our
     // createAuthWit, which returns the device witness iff the hash matches.
@@ -120,22 +121,10 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     // re-derive + deploy-review) over the SAME canonical outer_hash; else normal clear-sign.
     const deployContext = (options as ClearSignDeployOptions).ledgerDeployContext;
     if (deployContext) {
-      // The signed outer_hash covers ONLY calls+txNonce — NOT the fee MODE or
-      // `cancellable` (account_entrypoint.js:94-106; codex High). They are therefore
-      // NOT clear-signed, so constrain them to the safe constants here — otherwise a
-      // host could alter the unsigned fee semantics after the device review.
-      if (options.feePaymentMethodOptions !== AccountFeePaymentMethodOptions.EXTERNAL) {
-        throw new Error(
-          'LedgerClearSigningEntrypoint: deploy requires feePaymentMethodOptions=EXTERNAL (fee mode is NOT clear-signed)',
-        );
-      }
-      if (options.cancellable !== false) {
-        throw new Error(
-          'LedgerClearSigningEntrypoint: deploy requires cancellable=false (cancellability is NOT clear-signed)',
-        );
-      }
+      this.#assertClearSignPolicy(exec, options, 'deploy');
       await this.#deploySignOnDevice(exec, chainInfo, options.txNonce, deployContext);
     } else {
+      this.#assertClearSignPolicy(exec, options, 'tx');
       await this.#clearSignOnDevice(exec, chainInfo, options.txNonce);
     }
     return this.#inner.wrapExecutionPayload(exec, chainInfo, options);
@@ -152,16 +141,11 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     preflightIntent(intent); // keep the host-side allowlist (clear TS errors, not opaque device SW)
 
     // Canonical hash (what the inner entrypoint + the chain compute).
-    const nonce = txNonce ?? Fr.ZERO;
-    const encoded = await EncodedAppEntrypointCalls.create(exec.calls, nonce);
-    const payloadHash = await encoded.hash();
-    const messageHash = await computeOuterAuthWitHash(
-      this.address,
-      chainInfo.chainId,
-      chainInfo.version,
-      payloadHash,
-    );
-    const messageHashBytes = new Uint8Array(messageHash.toBuffer());
+    const {
+      hash: messageHash,
+      bytes: messageHashBytes,
+      nonce,
+    } = await this.#canonicalOuterHash(exec, chainInfo, txNonce);
 
     // Device WIRE stream. We sign the CANONICAL messageHash (below, via
     // @aztec/entrypoints/encoding); the device independently recomputes the outer_hash
@@ -201,16 +185,11 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     txNonce: Fr | undefined,
     deployContext: DeployContext,
   ): Promise<void> {
-    const nonce = txNonce ?? Fr.ZERO;
-    const encoded = await EncodedAppEntrypointCalls.create(exec.calls, nonce);
-    const payloadHash = await encoded.hash();
-    const messageHash = await computeOuterAuthWitHash(
-      this.address,
-      chainInfo.chainId,
-      chainInfo.version,
-      payloadHash,
-    );
-    const messageHashBytes = new Uint8Array(messageHash.toBuffer());
+    const {
+      hash: messageHash,
+      bytes: messageHashBytes,
+      nonce,
+    } = await this.#canonicalOuterHash(exec, chainInfo, txNonce);
 
     // Host pre-validation (codex Medium): fail fast on a ctx that can't match runtime,
     // instead of sending the user into a doomed device review + opaque SW_HASH_MISMATCH.
@@ -252,5 +231,63 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
       );
     }
     return pending.wit;
+  }
+
+  /** Canonical outer_hash over (calls, txNonce) + (address, chainId, version) — what
+   * the inner entrypoint + the chain compute. Single source so the tx and deploy sign
+   * paths can never attest different bytes (AHW-008). */
+  async #canonicalOuterHash(
+    exec: ExecutionPayload,
+    chainInfo: ChainInfo,
+    txNonce?: Fr,
+  ): Promise<{ hash: Fr; bytes: Uint8Array; nonce: Fr }> {
+    const nonce = txNonce ?? Fr.ZERO;
+    const encoded = await EncodedAppEntrypointCalls.create(exec.calls, nonce);
+    const payloadHash = await encoded.hash();
+    const hash = await computeOuterAuthWitHash(
+      this.address,
+      chainInfo.chainId,
+      chainInfo.version,
+      payloadHash,
+    );
+    return { hash, bytes: new Uint8Array(hash.toBuffer()), nonce };
+  }
+
+  /** AHW-003: the device-signed outer_hash covers ONLY calls+txNonce+(addr,chain,version).
+   * authWitnesses, capsules, extraHashedArgs, fee mode, and cancellable are OUTSIDE it —
+   * a host could attach/alter them after the device review. Refuse anything the device
+   * didn't (and couldn't) show: reject smuggled payload fields + pin the fee mode +
+   * pin deploy non-cancellability. (The tx cancellable=true replay-nullifier policy for
+   * AHW-049 is set host-side; see aztec-ledger-session.) */
+  #assertClearSignPolicy(
+    exec: ExecutionPayload,
+    options: DefaultAccountEntrypointOptions,
+    kind: 'tx' | 'deploy',
+  ): void {
+    if (exec.authWitnesses.length > 0) {
+      throw new Error(
+        'LedgerClearSigningEntrypoint: refusing to clear-sign a payload carrying extra authWitnesses (not reviewed)',
+      );
+    }
+    if (exec.capsules.length > 0) {
+      throw new Error(
+        'LedgerClearSigningEntrypoint: refusing to clear-sign a payload carrying capsules (not reviewed)',
+      );
+    }
+    if (exec.extraHashedArgs.length > 0) {
+      throw new Error(
+        'LedgerClearSigningEntrypoint: refusing to clear-sign a payload carrying extraHashedArgs (not reviewed)',
+      );
+    }
+    if (options.feePaymentMethodOptions !== AccountFeePaymentMethodOptions.EXTERNAL) {
+      throw new Error(
+        'LedgerClearSigningEntrypoint: fee mode is NOT clear-signed; only EXTERNAL is allowed',
+      );
+    }
+    if (kind === 'deploy' && options.cancellable !== false) {
+      throw new Error(
+        'LedgerClearSigningEntrypoint: deploy requires cancellable=false (cancellability is NOT clear-signed)',
+      );
+    }
   }
 }

@@ -10,11 +10,17 @@ Commits unsigned (1Password down — backfill later).
       AHW-002 ledgerProvider.createAuthWit / default-account sendTx bypass (both route
       through createAuthWit → now throws).
   [ ] AHW-002 — internalDeps stops exposing session/ledgerProvider; cache the clear-signing account.
-  [ ] AHW-003/062 — assertClearSignPolicy: reject authWitnesses/capsules/extraHashedArgs;
-      pin fee mode; cancellable=true for tx / false for deploy (closes AHW-049).
-  [ ] AHW-008 — extract #canonicalOuterHash (tx/deploy hash-block dedup).
-  [ ] AHW-005 — typed ledgerDeployContext sideband (shared type, rename = compile error).
-  [ ] AHW-004 — clear-signing-entrypoint.test.ts (the 4 guards + #consume).
+  [x] AHW-003 — #assertClearSignPolicy(exec, options, kind): rejects non-empty
+      authWitnesses/capsules/extraHashedArgs + pins fee mode=EXTERNAL + deploy cancellable=false.
+      Applied to createTxExecutionRequest (tx) + wrapExecutionPayload (deploy + non-deploy fee).
+      The deploy path's old inline EXTERNAL/cancellable checks refactored into the shared helper.
+  [~] AHW-062/049 — tx cancellable=true (sponsor-replay): set host-side (next, with AHW-002);
+      the guard's tx-cancellable assert is deferred until the host sets it (no flow breakage now).
+  [x] AHW-008 — #canonicalOuterHash extracted; both sign methods use it (no drift).
+  [ ] AHW-005 — typed ledgerDeployContext sideband (next host-pass).
+  [x] AHW-004 — clear-signing-entrypoint.test.ts: 5 guard-reject tests (authWitnesses, capsules,
+      extraHashedArgs, non-EXTERNAL fee, cancellable-deploy), device-free. 5 pass. #consume +
+      device flow stay Speculos-covered (b3/provider.m8).
 ```
 
 ## Log
