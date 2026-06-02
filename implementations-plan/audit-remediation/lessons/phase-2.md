@@ -21,7 +21,9 @@ Proven: clean rebuild → fresh elf; Speculos runs it; `getPublicKeyXY` + `b3-co
   [x] AHW-040 — DRIP render: format_action "Drip" (symbol omitted — faucet name ≠ token) +
       render_call_pairs shows Amount (token decimals/symbol via args[0] cross-slot lookup) + "To: you (drip)".
       Built clean + B3 no-regression on the new elf. GOLD proof = AHW-046 DRIP review-content test (next).
-  [ ] AHW-051 — raw integer amount alongside the scaled one (skewed host `decimals` can't hide magnitude).
+  [x] AHW-051 — format_amount_with_raw: "<scaled> <SYM> (raw <int>)" on transfer/mint/drip; buffer 2×.
+      Built + B3 no-regression. A wrong host `decimals` can mis-scale the human amount but never hide
+      the true integer magnitude.
   [ ] AHW-046 — per-verb review-content tests (ragger/Speculos screen assertions) — the gap that hid AHW-040.
   [ ] AHW-055 — mint WARNING as a salient banner; AHW-054 — scope "(verified)"; AHW-053 — full outer_hash.
   [ ] AHW-047/022 — reveal "privacy root" wording.

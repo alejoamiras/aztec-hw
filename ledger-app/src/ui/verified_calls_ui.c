@@ -62,7 +62,7 @@ static char g_call_label[L4_MAX_CALLS][24];           /* "Call 1/3" */
 static char g_call_action[L4_MAX_CALLS][48];          /* "Transfer USDC pub→pub" */
 static char g_call_from[L4_MAX_CALLS][40];            /* 8+8 truncated address (37) or "you" */
 static char g_call_to[L4_MAX_CALLS][40];              /* 8+8 truncated address (37) */
-static char g_call_amount[L4_MAX_CALLS][CS_FORMAT_MAX_LEN + 16]; /* "1.500000 USDC" */
+static char g_call_amount[L4_MAX_CALLS][2 * CS_FORMAT_MAX_LEN + 32]; /* "1.5 USDC (raw 1500000)" AHW-051 */
 static char g_call_mode[L4_MAX_CALLS][32];
 static char g_call_via[L4_MAX_CALLS][48];
 
@@ -186,6 +186,23 @@ static uint32_t selector_u32_from_be(const uint8_t bytes[L4_FR_BYTES]) {
          | (uint32_t)bytes[31];
 }
 
+/* AHW-051: render "<scaled> <SYMBOL> (raw <integer>)". `decimals` is host/codegen-
+ * supplied (no device ground-truth), so a wrong value mis-scales the human amount —
+ * but the raw integer (decimals=0) is always shown, so it can never HIDE the true
+ * magnitude. cs_format_amount itself is faithful; only its decimals SOURCE is trusted. */
+static void format_amount_with_raw(char *out, size_t out_len, const uint8_t amount[32],
+                                   uint8_t decimals, const char *symbol) {
+    char scaled[CS_FORMAT_MAX_LEN];
+    char raw[CS_FORMAT_MAX_LEN];
+    if (!cs_format_amount(amount, decimals, scaled, sizeof(scaled))) {
+        snprintf(scaled, sizeof(scaled), "?");
+    }
+    if (!cs_format_amount(amount, 0, raw, sizeof(raw))) {
+        snprintf(raw, sizeof(raw), "?");
+    }
+    snprintf(out, out_len, "%s %s (raw %s)", scaled, symbol, raw);
+}
+
 /* Render one call into its slot of the per-call buffers and return how many
  * tag-value pairs were added. */
 static size_t render_call_pairs(uint8_t i, size_t out_idx) {
@@ -216,12 +233,8 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
             /* args = [from, to, amount, nonce] */
             format_from(g_call_from[i], sizeof(g_call_from[i]), c->args[0]);
             short_hex_field(g_call_to[i], sizeof(g_call_to[i]), c->args[1]);
-            char amt[CS_FORMAT_MAX_LEN];
-            if (!cs_format_amount(c->args[2], reg->decimals, amt, sizeof(amt))) {
-                snprintf(amt, sizeof(amt), "?");
-            }
-            snprintf(g_call_amount[i], sizeof(g_call_amount[i]),
-                     "%s %s", amt, reg->symbol);
+            format_amount_with_raw(g_call_amount[i], sizeof(g_call_amount[i]),
+                                   c->args[2], reg->decimals, reg->symbol);
             format_mode(g_call_mode[i], sizeof(g_call_mode[i]), c->flags);
 
             g_pairs[out_idx + pairs_added].item = "From"; g_pairs[out_idx + pairs_added].value = g_call_from[i]; pairs_added++;
@@ -240,12 +253,8 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
         case CS_VERB_MINT_PRIV: {
             /* args = [to, amount] */
             short_hex_field(g_call_to[i], sizeof(g_call_to[i]), c->args[0]);
-            char amt[CS_FORMAT_MAX_LEN];
-            if (!cs_format_amount(c->args[1], reg->decimals, amt, sizeof(amt))) {
-                snprintf(amt, sizeof(amt), "?");
-            }
-            snprintf(g_call_amount[i], sizeof(g_call_amount[i]),
-                     "%s %s", amt, reg->symbol);
+            format_amount_with_raw(g_call_amount[i], sizeof(g_call_amount[i]),
+                                   c->args[1], reg->decimals, reg->symbol);
 
             /* Mint-action warning pair (codex M5 plan §5 + opus suggestion). */
             g_pairs[out_idx + pairs_added].item = "WARNING";
@@ -272,11 +281,8 @@ static size_t render_call_pairs(uint8_t i, size_t out_idx) {
             const cs_registry_entry_t *tok = cs_registry_lookup(c->args[0]);
             const char *tsym = (tok != NULL && tok->symbol[0] != '\0') ? tok->symbol : "token";
             uint8_t tdec = (tok != NULL) ? tok->decimals : 0;
-            char amt[CS_FORMAT_MAX_LEN];
-            if (!cs_format_amount(c->args[1], tdec, amt, sizeof(amt))) {
-                snprintf(amt, sizeof(amt), "?");
-            }
-            snprintf(g_call_amount[i], sizeof(g_call_amount[i]), "%s %s", amt, tsym);
+            format_amount_with_raw(g_call_amount[i], sizeof(g_call_amount[i]),
+                                   c->args[1], tdec, tsym);
             g_pairs[out_idx + pairs_added].item = "Amount";
             g_pairs[out_idx + pairs_added].value = g_call_amount[i];
             pairs_added++;
