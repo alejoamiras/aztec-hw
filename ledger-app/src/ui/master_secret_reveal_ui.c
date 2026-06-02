@@ -1,10 +1,12 @@
 /**
  * Master-secret reveal UI (M8 P4) -- NBGL flow for INS_GET_AZTEC_MASTER_SECRET.
  *
- * This is a HIGH-FRICTION reveal: approving discloses permanent note-viewing
- * capability for this account (the host re-derives the 4 viewing keys from the
- * returned secret). It does NOT grant spend authority. The screen wording
- * makes that explicit so a phishing dApp can't pass it off as a routine sign.
+ * This is a HIGH-FRICTION reveal: approving exports this account's PRIVACY ROOT —
+ * the one secret from which the host derives ALL four viewing keys (NHK/IVSK/OVSK/
+ * TSK). It is chainId-independent and shared across both signing schemes at this
+ * path, so it lets the host see this account's notes on EVERY network (AHW-047). It
+ * does NOT grant spend authority (the spend key never leaves the device). The
+ * wording is blunt so a phishing dApp can't pass it off as a routine sign.
  *
  * Two pairs shown:
  *   - Path:    full BIP-32 path (the user confirms WHICH account is exposed)
@@ -79,9 +81,9 @@ int ui_display_master_secret_reveal(void) {
     nbgl_useCaseReview(TYPE_TRANSACTION,
                        &g_pair_list,
                        &MS_REVEAL_ICON,
-                       "Reveal Aztec viewing key",
-                       "Lets this computer see your notes. Not spending.",
-                       "Reveal viewing key to this computer?",
+                       "Reveal privacy root",
+                       "Lets this computer see ALL this account's notes, on every network. Not spending.",
+                       "Reveal this account's privacy root?",
                        on_reveal_choice);
     return 0;
 }

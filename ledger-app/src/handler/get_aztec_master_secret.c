@@ -173,12 +173,10 @@ int master_secret_reveal_approved(void) {
     int rc = io_send_response_pointer(response, sizeof(response), SWO_SUCCESS);
     explicit_bzero(response, sizeof(response));
     /* M6.11 regression guard -- dismiss the NBGL page after the reveal.
-     * Codex Phase-4 review MAJOR: use the PROVEN STATUS_TYPE_TRANSACTION_*
-     * enums (used throughout the app) rather than the unverified OPERATION_*
-     * variants, which would be a hard compile failure if absent in this SDK.
-     * The "Transaction signed" wording is mildly off for a reveal; a custom
-     * status string is a polish item for the Speculos pass. */
-    nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_menu_main);
+     * AHW-022: a reveal is NOT a transaction — use a custom status string via
+     * nbgl_useCaseStatus instead of STATUS_TYPE_TRANSACTION_SIGNED, so the user
+     * can't misremember a privacy-root export as a routine signed tx. */
+    nbgl_useCaseStatus("Privacy root revealed", true, ui_menu_main);
     return rc;
 }
 
