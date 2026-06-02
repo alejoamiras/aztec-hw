@@ -89,9 +89,21 @@ async function onboardSchnorr(page: Page, index: number): Promise<string> {
   await page.locator('#account-index').selectOption(String(index));
   await page.getByRole('button', { name: /Derive .* viewing keys/ }).click();
   await new Promise((r) => setTimeout(r, 1500));
-  for (let i = 0; i < 4; i++) {
+  /* Reveal approve page is "Reveal this account's privacy root?" (AHW-047 wording).
+   * Its longer subtitle shifted the page count, so scroll to the prompt rather than
+   * a hardcoded right-count. Match "root?" (the approve question) — NOT "privacy root"
+   * alone, which also appears in the intro TITLE "Reveal privacy root". */
+  for (let i = 0; i < 10; i++) {
+    let screen = '';
+    try {
+      const r = await fetch(`${SPECULOS_URL}/events?currentscreenonly=true`);
+      screen = ((await r.json()) as { events: { text: string }[] }).events
+        .map((e) => e.text)
+        .join(' ');
+    } catch {}
+    if (/root\?/i.test(screen)) break;
     await pressSpeculos('right');
-    await new Promise((r) => setTimeout(r, 450));
+    await new Promise((r) => setTimeout(r, 400));
   }
   await pressSpeculos('both');
   await page.waitForFunction(

@@ -6,6 +6,10 @@
  */
 import { defineConfig, devices } from '@playwright/test';
 
+/* DEMO_PORT lets the e2e run on a free port when the default 5173 is taken by an
+ * unrelated dev server (e.g. a stale Vite from another project) — without killing it. */
+const PORT = Number(process.env.DEMO_PORT ?? 5173);
+
 export default defineConfig({
   testDir: './e2e',
   /* `.e2e.ts` (not `.spec.ts`) so bun:test's discovery doesn't pick
@@ -20,13 +24,13 @@ export default defineConfig({
    * deploy + drip submitted. */
   timeout: 15 * 60_000,
   webServer: {
-    command: 'bun run dev',
-    port: 5173,
+    command: `bun run dev -- --port ${PORT} --strictPort`,
+    port: PORT,
     reuseExistingServer: true,
     timeout: 60_000,
   },
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${PORT}`,
     headless: true,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
