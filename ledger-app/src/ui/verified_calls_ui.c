@@ -60,8 +60,8 @@ static char g_outer_str[80];
 /* Per-call buffers — 5 max calls × per-pair strings. */
 static char g_call_label[L4_MAX_CALLS][24];           /* "Call 1/3" */
 static char g_call_action[L4_MAX_CALLS][48];          /* "Transfer USDC pub→pub" */
-static char g_call_from[L4_MAX_CALLS][24];            /* truncated address or "you" */
-static char g_call_to[L4_MAX_CALLS][24];
+static char g_call_from[L4_MAX_CALLS][40];            /* 8+8 truncated address (37) or "you" */
+static char g_call_to[L4_MAX_CALLS][40];              /* 8+8 truncated address (37) */
 static char g_call_amount[L4_MAX_CALLS][CS_FORMAT_MAX_LEN + 16]; /* "1.500000 USDC" */
 static char g_call_mode[L4_MAX_CALLS][32];
 static char g_call_via[L4_MAX_CALLS][48];
@@ -80,17 +80,21 @@ static void hex_n(char *out, const uint8_t *bytes, size_t n) {
 }
 
 static void short_hex_field(char *out, size_t out_len, const uint8_t bytes[32]) {
-    if (out_len < 24) {
+    /* AHW-050: show 8+8 of the 32 bytes (was 4+4 ~ 2^32 to eyeball-spoof). AHW-052:
+     * ASCII ".." marker — the Nano NBGL font lacks the U+2026 glyph (rendered blank,
+     * which could merge the two halves). Layout: 0x + 16 hex + ".." + 16 hex + NUL =
+     * 37 bytes. The full address stays cryptographically bound (B3 verify); the wider
+     * window just makes a look-alike far harder for the human eye. */
+    if (out_len < 37) {
         out[0] = '\0';
         return;
     }
     out[0] = '0';
     out[1] = 'x';
-    hex_n(out + 2, bytes, 4);
-    out[10] = '\xE2'; /* … = U+2026 */
-    out[11] = '\x80';
-    out[12] = '\xA6';
-    hex_n(out + 13, bytes + 28, 4);
+    hex_n(out + 2, bytes, 8);        /* [2..17]  = first 8 bytes */
+    out[18] = '.';
+    out[19] = '.';
+    hex_n(out + 20, bytes + 24, 8);  /* [20..35] = last 8 bytes, NUL at [36] */
 }
 
 /* Small Fr (chain id / version) → "0x.. (N)"; large → short hex. */
