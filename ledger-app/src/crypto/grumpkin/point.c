@@ -69,6 +69,12 @@ bool grumpkin_point_is_infinity(const grumpkin_point_t *p) {
 void grumpkin_point_cmov(grumpkin_point_t *p, const grumpkin_point_t *src, uint8_t flag) {
   /* flag ∈ {0,1}. mask = 0x000...0 (keep p) or 0xfff...f (take src). */
   uint64_t mask = (uint64_t)0 - (uint64_t)(flag & 1);
+  /* AHW-068: value barrier. Without it, an aggressive optimizer (notably -Oz) can
+   * recover that `mask` is derived from a 1-bit flag and lower the masked select
+   * back into a data-dependent branch — reintroducing a timing/EM side-channel on
+   * the scalar-mul inner loop. The empty asm makes `mask` opaque to the optimizer,
+   * forcing the branchless form to survive codegen. */
+  __asm__ volatile("" : "+r"(mask));
   for (int i = 0; i < 4; i++) {
     p->x.limbs[i] = (p->x.limbs[i] & ~mask) | (src->x.limbs[i] & mask);
     p->y.limbs[i] = (p->y.limbs[i] & ~mask) | (src->y.limbs[i] & mask);
