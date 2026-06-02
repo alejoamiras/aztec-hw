@@ -19,6 +19,49 @@
 > - **TEST-ISOLATION NOTE:** each Speculos test file assumes its OWN fresh emulator (NVM/UI state). Running many together against ONE shared device interleaves state (e.g. provider.test.ts's blind-signing beforeAll vs blind-signing-toggle's "starts OFF"). All files pass in isolation; a combined run needs per-file device isolation (matches the parallel-safe-E2E principle).
 > - **PENDING — CI/provenance:** intentionally deprioritized by the owner this run.
 
+## Triage disposition (2026-06-02) — re-audit map (all 83 findings accounted for)
+
+So a re-audit re-discovers NOTHING: every finding is FIXED, DISSOLVED, PARKED, WON'T-FIX, or OPEN.
+**Nothing CRITICAL or HIGH is open.** PARKED + WON'T-FIX are known + intentionally not actioned this
+arc (revisit PARKED on re-audit / before mainnet). The per-finding rows below keep `VALIDATED` as
+their CATALOG status; this section is the WORK disposition.
+
+**WON'T-FIX — by-design / platform-inherent / honest (not ours to change):**
+- `AHW-029` (INFO) portable-C field/EC layer not certified-CT — cert path is cx_/Donjon, a separate platform arc (M13), not a code fix.
+- `AHW-044` (LOW) "Speculos screen authoritative" is a dev-EMULATOR artifact; on real HW the device screen IS the trust anchor.
+- `AHW-056` (LOW) SPONSOR shows no fee/cap because the verb is arg_count=0 — honest omission, nothing to render.
+- `AHW-065` (LOW) the unused SLIP-0013 `13'` prefix is a DELIBERATE forward-grant (codex-endorsed).
+- `AHW-080` (LOW) WebHID "Ledger + Aztec app present" fingerprint is inherent to WebHID + a custom CLA; origin-scoped.
+- `AHW-082` (INFO) the `/aztec` proxy lets the RPC operator see IP/sims/tx (no secret leak) — inherent to a testnet-proxy demo.
+- `AHW-083` (INFO) console.error stack dumps carry tx metadata; PRINTF is debug-only — informational/demo-only.
+- `AHW-015` (INFO) "keep the deviceOuterHashForIntent parity mirror" — a note, not a defect; the mirror is intact.
+
+**PARKED — owner deprioritized CI/build hygiene ("don't care about CI"); revisit on the CI/release pass:**
+- `AHW-030` (HIGH*) CI typecheck RED on main (tsc errors) — *severity is for the CI gate, NOT a runtime hole; explicitly deprioritized.
+- `AHW-031/032/033/035/039/042/067/069/071/072/021` (MED/LOW/INFO) CI coverage inversion · tsc-on-non-composite · bun-audit swallow · codegen provenance+coverage · no -Werror · unpinned clang · empty root toml · Apex matrix gap · spike `#error` guard.
+
+**PARKED — documented residual / deferred (decision recorded in lessons):**
+- `AHW-016` (MED) no NVM reveal rate-limit — reveal is human-gated + root is platform (AHW-029); production mitigation documented at the derivation site.
+- `AHW-019` (LOW) side-channel comment rewrite gated on a dudect timing run (out-of-env); left conservative ("NOT side-channel-resistant").
+
+**PARKED — low-value polish / naming / refactor (valid, no security impact):**
+- `AHW-005` (MED) typed deploy-context sideband · `AHW-009` (MED) session.ts monolith split · `AHW-070` (LOW) dedup the DEPLOY-handler canonical-path copies (the riskier blind-sign/pubkey surfaces already share via AHW-064).
+- `AHW-010/011` tighten `as`-casts / Speculos-JSON shape guards · `AHW-012/013` misleading type/comment names · `AHW-023` deploy/authwit claim-check shape · `AHW-037` @noble version fan-out · `AHW-043` live getCaps negotiation · `AHW-045` cached-onboard shows "cached" not a checksum · `AHW-058` dead SW constants · `AHW-060/061` test-vector label / scrub-comment clarity · `AHW-081` quiet logger (all LOW).
+- `AHW-038` (LOW) JS can't reliably zeroize heap secrets; AHW-048 (memory-only) bounds exposure to the page lifetime; a recovery/custody DOC is the residual.
+
+**PARKED — test-depth (the fixes are code-verified; these add heavy/low-value coverage):**
+- `AHW-024` (MED) on-device malformed-frame-mid-stream test · `AHW-025` (MED) glitch-sim for the fault-injection arms · `AHW-027` (LOW) cs_format_amount adversarial fuzz.
+
+**OPEN — candidate should-do (NOT done, NOT parked — owner's call):**
+- `AHW-057` (MED) deploy `#deploySignOnDevice` lacks abort-on-throw → device deploy-session parks, wallet wedges (recoverable by reconnect). Genuine robustness fix.
+- `AHW-062` (MED) unsigned fee CONTROLS residual: AHW-003 pins fee MODE=EXTERNAL, but the amount/gas-limit aren't in the signed hash (defense-in-depth).
+- `AHW-034` (MED) firmware provenance (no submodule) + `AHW-066` (MED) placeholder coin-type `1666` — production/release-provenance; resolve before mainnet/external-audit submission.
+- `AHW-063` (LOW) manual deploy reports PROPOSED not CHECKPOINTED (false-finality UX window).
+
+**DISSOLVED — code deleted in P0 (adapter-trezor + apps/demo):** `AHW-028/036/073/074/075/076/077/078`.
+
+**FIXED — see the per-phase remediation entries above:** `AHW-001/002/003/004/006/007/008/014/017/018/020/022/026/040/041/046/047/048/049/050/051/052/053/054/055/059/064/068/079`.
+
 | ID | Sev | Cat | Owned | Status | Title |
 |----|-----|-----|-------|--------|-------|
 | AHW-001 | CRITICAL | HOST | OURS | VALIDATED | Auto-created app-authwits are blind-signed by `sendTx` |
