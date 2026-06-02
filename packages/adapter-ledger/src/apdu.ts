@@ -156,6 +156,12 @@ export interface AzManifestHeader {
   /** Bumps when the manifest wire layout changes. Device rejects unknown versions. */
   readonly manifestVersion: number;
   readonly key: AzKeyPath;
+  /** AHW-018 (wire v3): the account template (allowlisted, paired with curveId) the
+   * device re-derives the address for. */
+  readonly profileId: number;
+  /** AHW-018 (wire v3): the account-deploy salt (32 B). The device binds `consumer`
+   * to the address derived from (path, profile, salt) + its own keys. */
+  readonly salt: Uint8Array; // 32 B
   readonly consumer: Uint8Array; // 32 B
   readonly chainId: Uint8Array; // 32 B
   /** Aztec `chainInfo.version` — renamed from `authVersion` per L4 deep-plan §2. */
@@ -186,7 +192,9 @@ export const APP_MAX_CALLS = 5;
 /** Manifest format version. Bumped to 2 for the clear-signing v0 wire extension
  * (raw args streamed alongside args_hash). v1 firmware rejects v2 manifests and
  * vice versa — no compatibility path (codex M5 final-review MAJOR #2). */
-export const MANIFEST_VERSION = 2;
+/** v3 (AHW-018): BEGIN_AUTHWIT carries profile_id + salt. Shared with deploy (a hard
+ * cut — device rejects older versions, host emits v3 only; no fallback). */
+export const MANIFEST_VERSION = 3;
 export const FR_BYTES = 32;
 /** Max number of raw Fr args per APPEND_CALL — fits all aztec-standards FT
  * verbs (4-arg transfer, 2-arg mint, 0-arg sponsor) inside one 255 B APDU. */

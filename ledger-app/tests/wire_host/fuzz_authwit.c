@@ -36,6 +36,7 @@ static int is_known_authwit_sw(uint16_t sw) {
         case 0x6F03: /* SW_INVALID_PATH_SCHEME     */
         case 0x6F04: /* SW_INVALID_CURVE_ID        */
         case 0x6F05: /* SW_BIP32_TOO_LONG          */
+        case 0x6F0D: /* SW_UNKNOWN_PROFILE_ID (AHW-018 v3: profile not in the authwit allowlist) */
             return 1;
         default:
             return 0;

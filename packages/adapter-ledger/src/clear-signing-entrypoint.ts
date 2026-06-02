@@ -52,6 +52,11 @@ import type { LedgerProvider, SignOuterHashOptions } from './provider.ts';
 export interface ClearSigningEntrypointOptions {
   readonly bip32Path: readonly number[];
   readonly curveId?: CurveId;
+  /** AHW-018 (wire v3): the account's deploy salt + allowlisted template id, sent on
+   * BEGIN_AUTHWIT so the device re-derives the right account. Default salt Fr.ZERO,
+   * profileId 0 (the K1 demo account); the Schnorr contract threads profileId 1. */
+  readonly salt?: Uint8Array | bigint;
+  readonly profileId?: number;
   readonly signOptions?: SignOuterHashOptions;
 }
 
@@ -157,6 +162,8 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
       bip32Path: this.options.bip32Path,
       txNonce: new Uint8Array(nonce.toBuffer()),
       curveId: this.options.curveId,
+      salt: this.options.salt,
+      profileId: this.options.profileId,
     });
 
     await this.device.abortAuthwit();

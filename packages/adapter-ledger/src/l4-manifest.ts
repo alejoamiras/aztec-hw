@@ -122,6 +122,14 @@ export interface L4ManifestInputs {
    * CURVE_ID.GRUMPKIN (Schnorr). Sets the BEGIN_AUTHWIT header.key.curveId the
    * device dispatches its signing primitive on. */
   readonly curveId?: CurveId;
+  /** AHW-018 (wire v3): the account-deploy salt the device re-derives the address for.
+   * Defaults to Fr.ZERO (the demo's DEFAULT_ACCOUNT_SALT); thread the ACTUAL account
+   * salt for non-default accounts. */
+  readonly salt?: Uint8Array | bigint;
+  /** AHW-018 (wire v3): the allowlisted account-template id (0 = EcdsaKAccount/K1,
+   * 1 = SchnorrAccount/GRUMPKIN). An explicit account property — deliberately NOT
+   * inferred from curveId in this builder (codex). Defaults to 0. */
+  readonly profileId?: number;
 }
 
 export interface L4Manifest {
@@ -215,6 +223,8 @@ export async function buildL4Manifest(inputs: L4ManifestInputs): Promise<L4Manif
   const header: AzManifestHeader = {
     manifestVersion: MANIFEST_VERSION,
     key,
+    profileId: inputs.profileId ?? 0,
+    salt: normalizeTxNonce(inputs.salt), // same shape: Uint8Array|bigint|undefined → 32 B, default 0
     consumer: addressToFrBytes(intent.consumer),
     chainId: frToBytes(intent.chainInfo.chainId),
     protocolVersion: frToBytes(intent.chainInfo.version),
@@ -232,7 +242,10 @@ export function encodeBeginAuthwitBody(header: AzManifestHeader): Uint8Array {
    * exact canonical path; match it host-side so a bad path fails fast here
    * rather than as an opaque 0x6F03 from the device. */
   assertCanonicalAztecPath(key.path);
-  const out = new Uint8Array(1 + 1 + 1 + 1 + key.path.length * 4 + FR_BYTES * 4 + 1);
+  /* v3 layout: version|curve|scheme|len|path | profile_id|salt | consumer|chain_id|
+   * protocol_version|tx_nonce | call_count. profile_id+salt are inserted after the
+   * path, matching begin_authwit.c's parse order (AHW-018). */
+  const out = new Uint8Array(1 + 1 + 1 + 1 + key.path.length * 4 + 1 + FR_BYTES + FR_BYTES * 4 + 1);
   let off = 0;
   out[off++] = header.manifestVersion;
   out[off++] = key.curveId;
@@ -247,6 +260,14 @@ export function encodeBeginAuthwitBody(header: AzManifestHeader): Uint8Array {
     out[off++] = (p >>> 8) & 0xff;
     out[off++] = p & 0xff;
   }
+  if (!Number.isInteger(header.profileId) || header.profileId < 0 || header.profileId > 0xff) {
+    throw new Error(`profileId out of u8 range: ${header.profileId}`);
+  }
+  out[off++] = header.profileId;
+  if (header.salt.length !== FR_BYTES)
+    throw new Error(`salt must be 32 bytes, got ${header.salt.length}`);
+  out.set(header.salt, off);
+  off += FR_BYTES;
   for (const f of [header.consumer, header.chainId, header.protocolVersion, header.txNonce]) {
     if (f.length !== FR_BYTES) throw new Error(`field must be 32 bytes, got ${f.length}`);
     out.set(f, off);

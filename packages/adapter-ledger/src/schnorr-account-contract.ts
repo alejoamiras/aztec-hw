@@ -26,9 +26,16 @@ export interface LedgerSchnorrAccountContractOptions extends LedgerProviderOptio
 export class LedgerSchnorrAccountContract extends LedgerAccountContractBase {
   constructor(transport: LedgerTransport, options: LedgerSchnorrAccountContractOptions) {
     /* The provider is scheme-generic; curveId=GRUMPKIN selects the device Schnorr
-     * path (GET_SCHNORR_PUBKEY + Schnorr authwit/deploy sign). */
+     * path (GET_SCHNORR_PUBKEY + Schnorr authwit/deploy sign). AHW-018: this account's
+     * template is profile 1 (SchnorrAccount) — declared explicitly here (the account
+     * knows its own template) so BEGIN_AUTHWIT v3 sends profileId 1; the device
+     * allowlist pairs GRUMPKIN↔1 (a default 0 would be rejected). */
     super(
-      new LedgerEcdsaKAuthWitnessProvider(transport, { ...options, curveId: CURVE_ID.GRUMPKIN }),
+      new LedgerEcdsaKAuthWitnessProvider(transport, {
+        ...options,
+        curveId: CURVE_ID.GRUMPKIN,
+        profileId: 1,
+      }),
     );
   }
 

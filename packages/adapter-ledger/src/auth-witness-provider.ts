@@ -50,6 +50,14 @@ export interface LedgerProviderOptions {
    * (device dispatch) AND which pubkey APDU getPublicKeyXY calls.
    */
   readonly curveId?: CurveId;
+  /**
+   * AHW-018 (wire v3): the account's deploy salt + allowlisted template id, threaded
+   * to BEGIN_AUTHWIT so the device re-derives the right account address. Explicit
+   * account properties (the Schnorr contract sets profileId 1; salt comes from the
+   * account's deploy salt). Default: salt = Fr.ZERO, profileId = 0 (the K1 demo account).
+   */
+  readonly salt?: Uint8Array | bigint;
+  readonly profileId?: number;
 }
 
 export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
@@ -107,6 +115,8 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
     return new LedgerClearSigningEntrypoint(address, this.inner, {
       bip32Path: this.options.bip32Path,
       curveId: this.options.curveId,
+      salt: this.options.salt,
+      profileId: this.options.profileId,
       signOptions: this.options.signOptions,
     });
   }

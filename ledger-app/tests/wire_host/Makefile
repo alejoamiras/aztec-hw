@@ -25,9 +25,14 @@ INC     := -I$(SHIM) -I$(SRC) -I$(L4) -I$(HANDLER)
 
 # Vendored lib_standard_app cluster — the buffer reader IS the thing under test.
 VENDOR := $(SHIM)/buffer.c $(SHIM)/read.c $(SHIM)/varint.c $(SHIM)/write.c $(SHIM)/bip32.c
+# Non-vendored shim: no-op stubs for firmware symbols linked transitively but not
+# exercised by the parser oracle (AHW-059 master_secret_disarm via session.c). Kept
+# OUT of $(VENDOR) so the vendored-drift check stays exact.
+STUBS  := $(SHIM)/handler_stubs.c
 
 # --- P2a: begin_authwit (pure wire parser: version/curve/path/Fr-canonical gates) ---
-AUTHWIT_SRCS := $(HANDLER)/begin_authwit.c $(L4)/session.c $(L4)/fr_canonical.c $(VENDOR) reservoir.c fuzz_authwit.c
+# AHW-018/064: begin_authwit.c now calls az_bip32_path_is_canonical (path_canonical.c).
+AUTHWIT_SRCS := $(HANDLER)/begin_authwit.c $(SRC)/path_canonical.c $(L4)/session.c $(L4)/fr_canonical.c $(VENDOR) $(STUBS) reservoir.c fuzz_authwit.c
 
 fuzz_authwit: $(AUTHWIT_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -o $@ $(AUTHWIT_SRCS)
@@ -41,7 +46,7 @@ CS        := $(SRC)/clear_signing_v0
 APPEND_SRCS := $(HANDLER)/append_call.c $(L4)/session.c $(L4)/fr_canonical.c \
   $(CS)/args_hash.c $(CS)/registry.gen.c $(CS)/selectors.gen.c \
   $(POSEIDON2)/poseidon2.c $(POSEIDON2)/fr.c $(POSEIDON2)/fr_params.c $(POSEIDON2)/constants.c \
-  $(VENDOR) reservoir.c fuzz_append_call.c
+  $(VENDOR) $(STUBS) reservoir.c fuzz_append_call.c
 
 fuzz_append_call: $(APPEND_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -I$(CS) -I$(POSEIDON2) -o $@ $(APPEND_SRCS)
@@ -60,7 +65,7 @@ replay_append_call: $(APPEND_SRCS) replay_main.c
 # — so "crypto is off the fuzz path" is self-enforcing, not just asserted.
 # deploy_profiles.gen.c is dependency-free (no poseidon2 drag).
 DEPLOY_SRCS := $(HANDLER)/begin_deploy_account.c $(L4)/session.c $(L4)/fr_canonical.c \
-  $(CS)/deploy_profiles.gen.c $(VENDOR) reservoir.c fuzz_deploy_parse.c
+  $(CS)/deploy_profiles.gen.c $(VENDOR) $(STUBS) reservoir.c fuzz_deploy_parse.c
 
 fuzz_deploy_parse: $(DEPLOY_SRCS)
 	$(CLANG) $(FUZZ) $(INC) -I$(CS) -o $@ $(DEPLOY_SRCS)

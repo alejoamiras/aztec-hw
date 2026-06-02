@@ -92,8 +92,8 @@ function canonicalFr(fill: number): number[] {
 const CONSUMER_0C = canonicalFr(0x0c);
 
 /** Minimal VALID BEGIN_AUTHWIT body: m/44'/AZTEC'/0'/0/0, given consumer + call_count.
- * Field order mirrors begin_authwit.c: version|curve|scheme|len|path|consumer|
- * chain_id|protocol_version|tx_nonce|call_count. */
+ * Field order mirrors begin_authwit.c (wire v3, AHW-018): version|curve|scheme|len|
+ * path|profile_id|salt|consumer|chain_id|protocol_version|tx_nonce|call_count. */
 function validAuthwitBody(consumer: number[], callCount: number): Uint8Array {
   const path = [0x8000002c, AZTEC_COIN_TYPE_HARDENED >>> 0, 0x80000000, 0x00000000, 0x00000000];
   return Uint8Array.from([
@@ -102,11 +102,36 @@ function validAuthwitBody(consumer: number[], callCount: number): Uint8Array {
     PATH_SCHEME.DEFAULT,
     path.length,
     ...path.flatMap(u32be),
+    0x00, // profile_id 0 (EcdsaKAccount) — paired with K1 in the authwit allowlist
+    ...canonicalFr(0x00), // salt = Fr.ZERO
     ...consumer,
     ...canonicalFr(0x01), // chain_id
     ...canonicalFr(0x01), // protocol_version
     ...canonicalFr(0x01), // tx_nonce
     callCount,
+  ]);
+}
+
+/** Minimal VALID BEGIN_DEPLOY_ACCOUNT body (wire v3), profile 0 / K1, canonical fields.
+ * PARSE-accepts (deploy_parse_and_validate → 0x9000), so the device then exercises its
+ * pkh-sovereignty gate and rejects the random public_keys_hash with 0x6F0F. Field order
+ * mirrors begin_deploy_account.c: version|profile_id|curve|scheme|len|path|chain_id|
+ * protocol_version|tx_nonce|salt|public_keys_hash|expected_address. */
+function validDeployBody(): Uint8Array {
+  const path = [0x8000002c, AZTEC_COIN_TYPE_HARDENED >>> 0, 0x80000000, 0x00000000, 0x00000000];
+  return Uint8Array.from([
+    MANIFEST_VERSION,
+    0x00, // profile_id 0 (EcdsaKAccount) — paired with K1
+    CURVE_ID.SECP256K1,
+    PATH_SCHEME.DEFAULT,
+    path.length,
+    ...path.flatMap(u32be),
+    ...canonicalFr(0x01), // chain_id
+    ...canonicalFr(0x01), // protocol_version
+    ...canonicalFr(0x01), // tx_nonce
+    ...canonicalFr(0x00), // salt = Fr.ZERO
+    ...canonicalFr(0x02), // public_keys_hash (canonical; random → device pkh gate 0x6F0F)
+    ...canonicalFr(0x03), // expected_address (canonical; random)
   ]);
 }
 
@@ -192,7 +217,12 @@ describe.skipIf(!SPECULOS_URL)(
 
     test('begin_deploy parse-seam — parse-reject exact; random parse-accept → device pkh gate (0x6F0F)', async () => {
       requireReservoir('deploy');
-      const files = listInputs('deploy');
+      /* The committed deploy corpus is v2-era (version byte 2) and now rejects at the
+       * v3 version gate, so craft a valid v3 parse-accept seed to exercise the seam. */
+      const tmp = mkdtempSync(join(tmpdir(), 'wdr-dep-'));
+      const seed = join(tmp, 'seed_valid_deploy.bin');
+      writeFileSync(seed, validDeployBody());
+      const files = [...listInputs('deploy'), seed];
       const oracle = oracleSWs('replay_deploy_parse', files);
       const divergences: string[] = [];
       let parseAccepts = 0;
