@@ -63,6 +63,21 @@ int handler_begin_authwit(buffer_t *cdata) {
         return reject(SW_INVALID_PATH_SCHEME);
     }
 
+    /* AHW-018 (wire v3): host-selected account template + salt. The allowlist pins
+     * authwit to the audited (curve, profile) pairs (codex High); B3 at FINALIZE
+     * re-derives the address for (path, profile, salt) + THIS device's keys and binds
+     * `consumer` to it (derive-don't-trust). */
+    uint8_t profile_id;
+    if (!buffer_read_u8(cdata, &profile_id)) return reject(SWO_WRONG_DATA_LENGTH);
+    if (!l4_authwit_curve_profile_allowed(curve_id, profile_id)) {
+        return reject(SW_UNKNOWN_PROFILE_ID);
+    }
+
+    if (!buffer_read_bytes(cdata, G_l4_session.salt, L4_FR_BYTES)) {
+        return reject(SWO_WRONG_DATA_LENGTH);
+    }
+    if (!l4_fr_is_canonical(G_l4_session.salt)) return reject(SW_HASH_MISMATCH);
+
     if (!buffer_read_bytes(cdata, G_l4_session.consumer, L4_FR_BYTES)) {
         return reject(SWO_WRONG_DATA_LENGTH);
     }
@@ -92,6 +107,7 @@ int handler_begin_authwit(buffer_t *cdata) {
 
     G_l4_session.manifest_version = manifest_version;
     G_l4_session.curve_id = curve_id;
+    G_l4_session.profile_id = profile_id;
     G_l4_session.path_scheme = path_scheme;
     G_l4_session.bip32_path_len = path_len;
     G_l4_session.call_count = call_count;

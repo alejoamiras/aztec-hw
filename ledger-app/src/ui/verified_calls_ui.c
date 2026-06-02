@@ -350,6 +350,13 @@ int ui_display_verified_calls(void) {
 
     size_t n_pairs = 0;
     g_pairs[n_pairs].item = "From (verified)"; g_pairs[n_pairs].value = g_account_str;     n_pairs++;
+    /* AHW-018 (codex Med): name the account scheme so a "right key, wrong template"
+     * mix-up (ECDSA-K vs Schnorr) can't pass unnoticed. curve_id↔profile are 1:1 in
+     * the authwit allowlist, so the scheme names the template the device bound to. */
+    g_pairs[n_pairs].item = "Scheme";
+    g_pairs[n_pairs].value =
+        (G_l4_session.curve_id == L4_CURVE_ID_GRUMPKIN) ? "Schnorr" : "ECDSA-K";
+    n_pairs++;
     g_pairs[n_pairs].item = "Chain";           g_pairs[n_pairs].value = g_chain_str;       n_pairs++;
     g_pairs[n_pairs].item = "Calls";           g_pairs[n_pairs].value = g_calls_count_str; n_pairs++;
 

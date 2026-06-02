@@ -11,21 +11,40 @@
  */
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "../constants.h"
 
 /* --- Constants ----------------------------------------------------------- */
 
-/* Wire-format version bump per codex M5 final-review MAJOR #2: v1 → v2 is a
- * hard cut; the device rejects v1, the host emits v2 only. */
-#define L4_MANIFEST_VERSION 2u
+/* Wire-format version. Hard cut on every bump: the device rejects older versions,
+ * the host emits the current one only (no fallback — a fallback would be a downgrade
+ * bug). This constant is SHARED by BEGIN_AUTHWIT and BEGIN_DEPLOY_ACCOUNT, so a bump
+ * applies to both even when only one layout changes.
+ *   v1 → v2: M5 (clear-signing).
+ *   v2 → v3: AHW-018 — BEGIN_AUTHWIT gains profile_id + salt so B3 re-derives the
+ *            account for the host-selected (profile, salt) instead of assuming
+ *            profile-0 / zero-salt. Deploy layout is unchanged (it already carried
+ *            both); only its version byte advances. */
+#define L4_MANIFEST_VERSION 3u
 
 #define L4_CURVE_ID_K1 1u
 #define L4_CURVE_ID_R1 2u        /* reserved for L4.next */
 #define L4_CURVE_ID_GRUMPKIN 3u  /* reserved for L5 */
 
 #define L4_PATH_SCHEME_DEFAULT 0u
+
+/* AHW-018: the EXACT (curve_id, profile_id) pairs that may be clear-sign-authwit'd.
+ * Salt is generalized on the v3 wire (any canonical Fr); the account TEMPLATE is NOT
+ * — only these audited pairs, so adding a deploy profile does not become authwit-
+ * signable for free (codex High). Checked at BEGIN_AUTHWIT and re-checked at FINALIZE
+ * (codex Med — guards against a session field corrupted after BEGIN). K1↔profile 0
+ * (EcdsaKAccount), GRUMPKIN↔profile 1 (SchnorrAccount). */
+static inline bool l4_authwit_curve_profile_allowed(uint8_t curve_id, uint8_t profile_id) {
+    return (curve_id == L4_CURVE_ID_K1 && profile_id == 0u) ||
+           (curve_id == L4_CURVE_ID_GRUMPKIN && profile_id == 1u);
+}
 
 #define L4_MAX_CALLS 5u
 #define L4_MIN_BIP32_PATH 5u

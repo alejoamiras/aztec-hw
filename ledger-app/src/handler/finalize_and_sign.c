@@ -84,87 +84,54 @@ static void low_s_normalize(uint8_t *s) {
     }
 }
 
-/* M9 B3: secp256k1 signing pubkey (X,Y) from the AUTHWIT session path. Mirror
- * of begin_deploy_account.c's derive_signing_pubkey_xy, but reads
- * G_l4_session.bip32_path. (This is the 3rd copy of the same 6-line derivation;
- * a follow-up should unify deploy + authwit into one shared l4 helper. Kept
- * local here to avoid destabilizing the proven deploy path in the B3 change.) */
-static int derive_signing_pubkey_xy_session(uint8_t out_x[32], uint8_t out_y[32]) {
-    /* M11 P4: delegate to the shared single source (was a local copy). */
-    return account_binding_secp256k1_pubkey_xy(G_l4_session.bip32_path, G_l4_session.bip32_path_len,
-                                               out_x, out_y);
-}
 
-/* M9 B3: recompute THIS account's address from the signing path (partial) +
- * viewing keys (pkh) and cross-check it against the signed `consumer`. Returns
- * the SW to reject with, or 0 on a verified match. `consumer` is the first
- * field of outer_hash (parity.c) and is re-verified before signing (pass 3), so
- * it cannot drift after this check — proving the account we authorize for is
- * the one this key controls. This is the ONLY consumer gate for non-transfer
- * verbs (drip); for transfers APPEND_CALL already pins from == consumer, so
- * together they give from == consumer == account (self-spend only; delegated
- * spend is rejected at APPEND_CALL with SW_DELEGATED_SPEND_UNSUPPORTED).
+/* M9 B3 + AHW-018 (wire v3): recompute THIS account's address from the signing path
+ * + the host-selected (profile, salt) using THIS device's keys, and cross-check it
+ * against the signed `consumer`. Returns the SW to reject with, or 0 on a verified
+ * match. `consumer` is the first field of outer_hash (parity.c) and is re-verified
+ * before signing (pass 3), so it cannot drift after this check — proving the account
+ * we authorize for is the one this key controls. This is the ONLY consumer gate for
+ * non-transfer verbs (drip); for transfers APPEND_CALL already pins from == consumer,
+ * so together they give from == consumer == account (self-spend only; delegated spend
+ * is rejected at APPEND_CALL with SW_DELEGATED_SPEND_UNSUPPORTED).
  *
- * salt = Fr.ZERO (the demo's deterministic DEFAULT_ACCOUNT_SALT), profile 0
- * (the sole EcdsaKAccount template). An account deployed with a different
- * salt/profile recomputes to a different address and fails closed; a glitched
- * recompute also fails closed (reject, never a false accept). */
+ * DERIVE-DON'T-TRUST: the host never supplies the address. It selects WHICH account
+ * via (profile_id, salt) on the v3 wire; the device derives the address for that
+ * (profile, salt) from its OWN keys and binds consumer to it. The host can therefore
+ * only bind to an account this key actually controls; the user verifies WHICH via the
+ * on-screen From address + scheme. profile is allowlisted to the audited templates
+ * (re-checked here); salt is any canonical Fr. A wrong salt/profile recomputes to a
+ * different address and fails closed (0x6F12); a glitched recompute also fails closed.
+ *
+ * This shares the deploy path's account_binding_* derivation (single source — was a
+ * separate hard-coded copy that assumed profile-0 / zero-salt). */
 static int b3_verify_consumer_is_this_account(void) {
-    static const uint8_t B3_ZERO[32] = {0}; /* salt + deployer (universal, Fr.ZERO) */
-    uint8_t partial[32];
+    /* codex Med: re-check the (curve, profile) allowlist at FINALIZE, not just at
+     * BEGIN — defends against a session field corrupted in between. */
+    if (!l4_authwit_curve_profile_allowed(G_l4_session.curve_id, G_l4_session.profile_id)) {
+        return SW_UNKNOWN_PROFILE_ID;
+    }
+    const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(G_l4_session.profile_id);
+    if (profile == NULL) return SW_UNKNOWN_PROFILE_ID;
 
-    if (G_l4_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
-        /* Schnorr account: partial from the Grumpkin pubkey (2-Fr ctor) + the
-         * SchnorrAccount class_id/selector. Viewing-key half (below) is
-         * scheme-independent. */
-        uint8_t priv[32];
-        if (az_derive_schnorr_signing_scalar(G_l4_session.bip32_path, G_l4_session.bip32_path_len,
-                                             priv) != 0) {
-            explicit_bzero(priv, 32);
-            return SWO_UNKNOWN;
-        }
-        uint8_t pk_x[32], pk_y[32];
-        bool pk_ok = schnorr_grumpkin_pubkey(pk_x, pk_y, priv);
-        explicit_bzero(priv, 32);
-        if (!pk_ok) {
-            explicit_bzero(pk_x, 32);
-            explicit_bzero(pk_y, 32);
-            return SWO_UNKNOWN;
-        }
-        uint8_t s_args_hash[32], s_init_hash[32];
-        int prc = az_schnorr_compute_partial_address(pk_x, pk_y, SCHNORR_ACCOUNT_CTOR_SELECTOR_U32,
-                                                     B3_ZERO, B3_ZERO, SCHNORR_ACCOUNT_CLASS_ID_BE,
-                                                     s_args_hash, s_init_hash, partial);
+    uint8_t pk_x[32], pk_y[32];
+    if (account_binding_deploy_pubkey_xy(G_l4_session.curve_id, G_l4_session.bip32_path,
+                                         G_l4_session.bip32_path_len, pk_x, pk_y) != 0) {
         explicit_bzero(pk_x, 32);
         explicit_bzero(pk_y, 32);
-        explicit_bzero(s_args_hash, 32);
-        explicit_bzero(s_init_hash, 32);
-        if (prc != 0) {
-            explicit_bzero(partial, 32);
-            return SWO_UNKNOWN;
-        }
-    } else {
-        /* ECDSA-K account (profile 0). */
-        const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(0);
-        if (profile == NULL) return SW_UNKNOWN_PROFILE_ID;
-        uint8_t pk_x[32], pk_y[32];
-        if (derive_signing_pubkey_xy_session(pk_x, pk_y) != 0) {
-            explicit_bzero(pk_x, 32);
-            explicit_bzero(pk_y, 32);
-            return SWO_UNKNOWN;
-        }
-        uint8_t args_hash[32], init_hash[32];
-        int prc = az_deploy_compute_partial_address(pk_x, pk_y, profile->ctor_selector_u32, B3_ZERO,
-                                                    profile->deployer, profile->account_class_id,
-                                                    args_hash, init_hash, partial);
-        explicit_bzero(pk_x, 32);
-        explicit_bzero(pk_y, 32);
-        explicit_bzero(args_hash, 32);
-        explicit_bzero(init_hash, 32);
-        if (prc != 0) {
-            explicit_bzero(partial, 32);
-            return SWO_UNKNOWN;
-        }
+        return SWO_UNKNOWN;
+    }
+
+    uint8_t args_hash[32], init_hash[32], partial[32];
+    int prc = account_binding_deploy_partial(profile, pk_x, pk_y, G_l4_session.salt, args_hash,
+                                             init_hash, partial);
+    explicit_bzero(pk_x, 32);
+    explicit_bzero(pk_y, 32);
+    explicit_bzero(args_hash, 32);
+    explicit_bzero(init_hash, 32);
+    if (prc != 0) {
+        explicit_bzero(partial, 32);
+        return SWO_UNKNOWN;
     }
 
     uint8_t pkh[32], addr[32];

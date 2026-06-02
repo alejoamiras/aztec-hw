@@ -56,6 +56,13 @@ typedef struct {
     uint8_t bip32_path_len;
     uint32_t bip32_path[MAX_BIP32_PATH_LEN];
 
+    /* M-audit P4 / AHW-018 (wire v3): the host-selected account template + salt that
+     * B3 re-derives the address for. profile_id is allowlisted + paired with curve_id;
+     * salt is any canonical Fr. The device still binds `consumer` to the address it
+     * derives from (path, profile, salt, its OWN keys) — derive-don't-trust. */
+    uint8_t profile_id;
+    uint8_t salt[L4_FR_BYTES];
+
     uint8_t consumer[L4_FR_BYTES];
     uint8_t chain_id[L4_FR_BYTES];
     uint8_t protocol_version[L4_FR_BYTES];
