@@ -2,6 +2,14 @@
 
 **Count: 83 — LOOP STOPPED (diminishing returns; material surface exhausted).** Ceiling was 125, but the honest "repeating ourselves" condition was met: rounds 4–5 (depth + every remaining unrun angle) produced **0 surviving new HIGH/CRIT**; yield collapsed to MED/LOW/INFO/hardening/dead-code/enrichments. 9 red-team subagents (5 opus + 4 codex xhigh) + 8 validators, all diverse. Severity: **1 CRIT · 7 HIGH · ~24 MED · ~44 LOW · ~7 INFO** + recorded confirmed-clean negatives. Legend in `README.md`. Next: deep-plan the fixes.
 
+> ## Remediation status — branch `audit-remediation` (P0 + P1 = host phase DONE)
+> Plan: `../implementations-plan/audit-remediation/`. Commits unsigned (1Password down — backfill-sign pending). `bun run lint:all` + `bun test packages/` both exit 0.
+> - **FIXED + tested + committed:** AHW-001 (createAuthWit fail-close), AHW-002 (internalDeps hides raw bypasses), AHW-003 (assertClearSignPolicy guard), AHW-004 (seam guard tests), AHW-007 (secret-strip now type-enforced), AHW-008 (canonical-hash dedup), AHW-049 (cancellable txs → public-replay nullifier).
+> - **DISSOLVED** by deleting `adapter-trezor` + `apps/demo`: AHW-028, AHW-036, AHW-073, AHW-074, AHW-075, AHW-076, AHW-077, AHW-078.
+> - **DEFERRED:** AHW-005 (typed sideband — compile-time nicety; CI-red deprioritized).
+> - **PENDING — firmware (P2–P4), blocked on device tooling** (no Speculos/ragger/BOLOS toolchain in the build env; on-device + testnet proof required by the plan): AHW-040, AHW-050, AHW-051, AHW-016, AHW-018 (B3 wire-v3), AHW-047, AHW-064, AHW-068 + the device-UI nits. Must be done where Speculos + testnet are available.
+> - **PENDING — CI/provenance (P5):** intentionally deprioritized by the owner this run.
+
 | ID | Sev | Cat | Owned | Status | Title |
 |----|-----|-----|-------|--------|-------|
 | AHW-001 | CRITICAL | HOST | OURS | VALIDATED | Auto-created app-authwits are blind-signed by `sendTx` |
