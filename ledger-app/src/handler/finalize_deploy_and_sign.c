@@ -228,10 +228,11 @@ int finalize_deploy_after_approval(void) {
      * Signs the just-built local (== recomputed_outer, proven equal at the outer-
      * hash compare above). The ECDSA-K sha256+ECDSA block below is byte-untouched
      * (curve_id != GRUMPKIN). Fault model is the authwit one: the sign helper dual-
-     * runs the construction; the scalar/nonce derivation is single-pass but fail-
-     * safe (a glitch yields an on-chain-invalid sig, never a spend break) and
-     * cross-checked by the pre-sign Phase-6 recompute (this scalar→address ==
-     * the reviewed address_local). */
+     * runs the construction; the scalar/nonce derivation is DUAL-derived too (AHW-020:
+     * az_derive_schnorr_signing_scalar + the nonce, each computed twice + a fault-hard
+     * compare in aztec_secret.c M11 P1). A surviving glitch would still be fail-safe (an
+     * on-chain-invalid sig, never a spend break) and is cross-checked by the pre-sign
+     * Phase-6 recompute (this scalar→address == the reviewed address_local). */
     if (G_l4_deploy_session.curve_id == L4_CURVE_ID_GRUMPKIN) {
         uint8_t sch_priv[32], sch_px[32], sch_py[32], sch_k[32];
         if (az_derive_schnorr_signing_scalar(G_l4_deploy_session.bip32_path,
