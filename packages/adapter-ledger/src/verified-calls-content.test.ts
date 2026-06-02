@@ -212,4 +212,34 @@ describe.skipIf(!SPECULOS_URL)('AHW-046 — verified-calls review content (real 
     const outerHex = Buffer.from(claimedOuterHash).toString('hex');
     expect(tight.replace(/outer_hash\(\d\/\d\)/g, '')).toContain(outerHex);
   });
+
+  test('AHW-041: DRIP with a non-TOKEN args[0] is rejected at APPEND_CALL (device-side)', async () => {
+    /* post-impl codex MED: the device now enforces args[0]=TOKEN for DRIP (was host
+     * preflight only). args[0] = the SPONSOR/FPC slot (kind != TOKEN) → SW_REGISTRY_MISS
+     * (0x6F08) at APPEND_CALL, before any review. consumer is irrelevant (reject is
+     * pre-FINALIZE/B3), so a dummy keeps this reveal-free. */
+    const fpc = await AztecAddress.fromString(FPC);
+    const intent: CallIntent = {
+      consumer: AztecAddress.fromField(new Fr(1n)),
+      chainInfo: { chainId: new Fr(1n), version: new Fr(1n) },
+      calls: [
+        {
+          contractAddress: await AztecAddress.fromString(DRIP),
+          selector: new Fr(SEL_DRIP_PUB),
+          args: [fpc.toField(), new Fr(1000n)],
+          isPadding: false,
+          isPublic: true,
+        },
+      ],
+    };
+    const manifest = await buildL4Manifest({
+      intent,
+      bip32Path: PATH,
+      curveId: CURVE_ID.SECP256K1,
+    });
+    const [dripCall] = manifest.calls;
+    await provider.abortAuthwit();
+    await provider.beginAuthwit(manifest.header);
+    await expect(provider.appendCall(dripCall)).rejects.toThrow('SW=0x6f08');
+  });
 });

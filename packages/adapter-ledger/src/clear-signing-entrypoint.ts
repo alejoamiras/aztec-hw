@@ -263,9 +263,12 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
   /** AHW-003: the device-signed outer_hash covers ONLY calls+txNonce+(addr,chain,version).
    * authWitnesses, capsules, extraHashedArgs, fee mode, and cancellable are OUTSIDE it —
    * a host could attach/alter them after the device review. Refuse anything the device
-   * didn't (and couldn't) show: reject smuggled payload fields + pin the fee mode +
-   * pin deploy non-cancellability. (The tx cancellable=true replay-nullifier policy for
-   * AHW-049 is set host-side; see aztec-ledger-session.) */
+   * didn't (and couldn't) show: reject smuggled payload fields + pin the fee mode + pin
+   * cancellability BOTH ways — deploy MUST be cancellable=false, and a public tx MUST be
+   * cancellable=true so the tx-nonce replay nullifier is emitted (AHW-049). Enforced HERE,
+   * not only via the wallet default (session-embedded-wallet), so a host that drives the
+   * entrypoint directly — or flips the wallet default — cannot strip the nullifier
+   * (post-impl codex HIGH). */
   #assertClearSignPolicy(
     exec: ExecutionPayload,
     options: DefaultAccountEntrypointOptions,
@@ -294,6 +297,12 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     if (kind === 'deploy' && options.cancellable !== false) {
       throw new Error(
         'LedgerClearSigningEntrypoint: deploy requires cancellable=false (cancellability is NOT clear-signed)',
+      );
+    }
+    if (kind === 'tx' && options.cancellable !== true) {
+      throw new Error(
+        'LedgerClearSigningEntrypoint: clear-signed public tx requires cancellable=true so the ' +
+          'tx-nonce replay nullifier is emitted (AHW-049); cancellability is NOT clear-signed',
       );
     }
   }

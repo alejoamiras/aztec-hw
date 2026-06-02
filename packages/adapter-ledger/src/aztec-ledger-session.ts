@@ -237,17 +237,19 @@ export class AztecLedgerSession {
     // copy means a later caller mutation can't reintroduce path drift.
     const bip32Path: readonly number[] = [...(opts.bip32Path ?? defaultAztecPath())];
     const scheme: AccountScheme = opts.scheme ?? 'ecdsa';
+    /* M8 P7.2: deterministic salt by default so the SAME device reproduces the SAME
+     * account on every connect (reconnect == recovery). Random salt was the plan-audit
+     * BLOCKER. Onboarding passes the device secret as `opts.secret`; tests may pin
+     * `opts.salt`. Computed BEFORE the account contract so it threads into the BEGIN_AUTHWIT
+     * v3 header (post-impl codex MED: a non-zero-salt account must emit its REAL salt, else
+     * B3 recomputes the zero-salt address and rejects 0x6F12). */
+    const salt = opts.salt ?? DEFAULT_ACCOUNT_SALT;
     const accountContract =
       scheme === 'schnorr'
-        ? new LedgerSchnorrAccountContract(opts.transport, { bip32Path })
-        : new LedgerEcdsaKAccountContract(opts.transport, { bip32Path });
+        ? new LedgerSchnorrAccountContract(opts.transport, { bip32Path, salt: toBE32(salt) })
+        : new LedgerEcdsaKAccountContract(opts.transport, { bip32Path, salt: toBE32(salt) });
     const ledgerProvider = accountContract.getProvider();
     const secret = opts.secret ?? Fr.random();
-    /* M8 P7.2: deterministic salt by default so the SAME device reproduces the
-     * SAME account on every connect (reconnect == recovery). Random salt was the
-     * plan-audit BLOCKER. Onboarding passes the device secret as `opts.secret`;
-     * tests may pin their own `opts.salt`. */
-    const salt = opts.salt ?? DEFAULT_ACCOUNT_SALT;
 
     const accountManager = await AccountManager.create(session, secret, accountContract, salt);
     const accountAddress = accountManager.address;

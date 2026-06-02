@@ -145,6 +145,16 @@ int handler_append_call(buffer_t *cdata) {
         }
     }
 
+    /* DRIP_PUB (AHW-041 / post-impl codex MED): args[0] is the TOKEN being dripped — it
+     * MUST resolve to a TOKEN-kind registry slot. Enforce ON-DEVICE (was host-preflight
+     * only): without this a patched host / direct APDU caller could get the device to
+     * sign a generic "Drip <amt> token" (decimals=0 fallback) for an unregistered or
+     * wrong asset. The amount's decimals/symbol are read from this slot at render time. */
+    if (verb->verb == CS_VERB_DRIP_PUB) {
+        const cs_registry_entry_t *tok = cs_registry_lookup(slot->args[0]);
+        if (tok == NULL || tok->kind != CS_KIND_TOKEN) return reject(SW_REGISTRY_MISS);
+    }
+
     /* --- args_hash recompute (double + cross-check, fault hardening) ------ */
 
     uint8_t device_args_hash_a[L4_FR_BYTES];

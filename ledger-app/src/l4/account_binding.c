@@ -46,7 +46,12 @@ int account_binding_deploy_pubkey_xy(uint8_t curve_id, const uint32_t *bip32_pat
         explicit_bzero(priv, 32);
         return ok ? 0 : -1;
     }
-    return account_binding_secp256k1_pubkey_xy(bip32_path, bip32_path_len, out_x, out_y);
+    if (curve_id == L4_CURVE_ID_K1) {
+        return account_binding_secp256k1_pubkey_xy(bip32_path, bip32_path_len, out_x, out_y);
+    }
+    /* post-impl codex LOW: fail-closed on any unknown curve in shared security code —
+     * callers already validate curve_id, but don't silently default to K1 here. */
+    return -1;
 }
 
 int account_binding_deploy_partial(const cs_deploy_profile_t *profile, const uint8_t pubkey_x[32],

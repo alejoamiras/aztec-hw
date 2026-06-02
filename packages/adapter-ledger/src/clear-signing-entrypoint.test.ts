@@ -88,4 +88,13 @@ describe('LedgerClearSigningEntrypoint — assertClearSignPolicy (AHW-003/004)',
       /deploy requires cancellable=false/,
     );
   });
+
+  test('rejects a non-cancellable tx — public-replay nullifier must not be strippable (AHW-049)', async () => {
+    // Clean payload + EXTERNAL fee but cancellable=false: a host driving the entrypoint
+    // directly must NOT get a device-approved public tx without the tx-nonce nullifier.
+    // (post-impl codex HIGH: this was only enforced by the wallet default before.)
+    await expect(
+      ep().createTxExecutionRequest(emptyExec(), gas, chain, txOpts({ cancellable: false })),
+    ).rejects.toThrow(/cancellable=true/);
+  });
 });
