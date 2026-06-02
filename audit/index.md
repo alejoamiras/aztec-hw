@@ -2,13 +2,17 @@
 
 **Count: 83 — LOOP STOPPED (diminishing returns; material surface exhausted).** Ceiling was 125, but the honest "repeating ourselves" condition was met: rounds 4–5 (depth + every remaining unrun angle) produced **0 surviving new HIGH/CRIT**; yield collapsed to MED/LOW/INFO/hardening/dead-code/enrichments. 9 red-team subagents (5 opus + 4 codex xhigh) + 8 validators, all diverse. Severity: **1 CRIT · 7 HIGH · ~24 MED · ~44 LOW · ~7 INFO** + recorded confirmed-clean negatives. Legend in `README.md`. Next: deep-plan the fixes.
 
-> ## Remediation status — branch `audit-remediation` (P0 + P1 = host phase DONE)
+> ## Remediation status — branch `audit-remediation` (P0 + P1 host + P2 device-UI = DONE)
 > Plan: `../implementations-plan/audit-remediation/`. Commits unsigned (1Password down — backfill-sign pending). `bun run lint:all` + `bun test packages/` both exit 0.
-> - **FIXED + tested + committed:** AHW-001 (createAuthWit fail-close), AHW-002 (internalDeps hides raw bypasses), AHW-003 (assertClearSignPolicy guard), AHW-004 (seam guard tests), AHW-007 (secret-strip now type-enforced), AHW-008 (canonical-hash dedup), AHW-049 (cancellable txs → public-replay nullifier).
+> **Device tooling is NOT blocked** (earlier note was wrong): the docker `ledger-app-builder-lite` build + `ghcr.io/ledgerhq/speculos` loop works in-env — build → run on a CLEAN port (5005/9995, NOT the orphaned playwright 5001) → `SPECULOS_URL=… bun test`. Only the TESTNET matrix needs network + a funded account (out of env).
+> - **FIXED + tested + committed (host, P1):** AHW-001 (createAuthWit fail-close), AHW-002 (internalDeps hides raw bypasses), AHW-003 (assertClearSignPolicy guard), AHW-004 (seam guard tests), AHW-007 (secret-strip type-enforced), AHW-008 (canonical-hash dedup), AHW-049 (cancellable txs → public-replay nullifier).
+> - **FIXED + Speculos-proven (firmware, P2)** — all asserted on the fresh app.elf by AHW-046's 15-assertion review-content test: AHW-040 (DRIP render), AHW-046 (per-verb content tests), AHW-050 (8+8 recipient), AHW-051 (raw-alongside-scaled), AHW-052 (ASCII ".."), AHW-053 (full outer_hash), AHW-054 (scoped "verified"), AHW-055 (salient mint warning), AHW-047 (reveal = "privacy root" wording), AHW-022 (reveal status = "Privacy root revealed", not "Transaction signed"). NOTE: the nbgl value-alias "show-full" was tried + dropped — counterproductive on Nano (truncates the 8+8); show-full is delivered via the full outer_hash. See lessons/phase-2.md.
 > - **DISSOLVED** by deleting `adapter-trezor` + `apps/demo`: AHW-028, AHW-036, AHW-073, AHW-074, AHW-075, AHW-076, AHW-077, AHW-078.
 > - **DEFERRED:** AHW-005 (typed sideband — compile-time nicety; CI-red deprioritized).
-> - **PENDING — firmware (P2–P4), blocked on device tooling** (no Speculos/ragger/BOLOS toolchain in the build env; on-device + testnet proof required by the plan): AHW-040, AHW-050, AHW-051, AHW-016, AHW-018 (B3 wire-v3), AHW-047, AHW-064, AHW-068 + the device-UI nits. Must be done where Speculos + testnet are available.
-> - **PENDING — CI/provenance (P5):** intentionally deprioritized by the owner this run.
+> - **PENDING — firmware P3 (HARD ITEM a):** blind_signing NVM toggle (default-OFF) + Settings UI, AHW-064 (canonical path on blind-sign/pubkey), AHW-016 (NVM rate-limit on reveal), AHW-068 (cmov barrier), AHW-017/059 (session reset).
+> - **PENDING — firmware P4:** AHW-018 (B3 wire-v3 salt+profile_id, derive-don't-trust) — codex consult first.
+> - **PENDING — host P5:** AHW-048/079 (reveal sessionStorage / approval-free cache), AHW-006/019/020/041 + comment-truth sweep.
+> - **PENDING — CI/provenance:** intentionally deprioritized by the owner this run.
 
 | ID | Sev | Cat | Owned | Status | Title |
 |----|-----|-----|-------|--------|-------|
