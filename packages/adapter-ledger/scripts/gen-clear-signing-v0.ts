@@ -528,6 +528,47 @@ async function crossCheckDeployProfile(profile: DeployProfileEntry): Promise<voi
       `[fail-closed] Deploy profile ${profile.id}: ctor_arg_byte_len must be ${spec.byteLen} for schema '${spec.schema}'; got ${profile.ctor_arg_byte_len}`,
     );
   }
+
+  /* AHW-096 (W2): the sponsor + deployer were emitted from the manifest but never
+   * cross-verified — a poisoned profile could bake a hidden sponsor/deployer the
+   * device signs while the review showed only "Sponsored". There is no CANONICAL
+   * sponsored-FPC address to anchor against (it is instance/network-specific), so
+   * we SINGLE-SOURCE within the manifest and fail closed:
+   *   - deployer MUST be ZERO (universal deploy); a non-zero deployer is a hidden
+   *     party the review must not omit.
+   *   - sponsor_fpc_address MUST equal the one SPONSOR-kind registry slot, so there
+   *     is exactly one sponsor source — not an independent literal per profile.
+   *   - sponsor_selector_u32 MUST equal the artifact-verified SPONSOR verb selector
+   *     (crossCheckVerb already tied that to the SponsoredFPC artifact).
+   * The device ALSO renders the sponsor 8+6 (deploy_review_ui.c) so a user/auditor
+   * can compare it to the known FPC — the irreducible last line. (The residual that
+   * a poisoned checked-in *.gen.c bypasses codegen is the deferred CI build-gate,
+   * AHW-102 — documented, not closed here.) */
+  if (BigInt(profile.deployer) !== 0n) {
+    throw new Error(
+      `[fail-closed] Deploy profile ${profile.id}: deployer must be ZERO (universal); got ${profile.deployer}`,
+    );
+  }
+  const sponsorSlots = manifest.registry.filter((r) => r.kind === 'SPONSOR');
+  if (sponsorSlots.length !== 1) {
+    throw new Error(
+      `[fail-closed] Expected exactly ONE SPONSOR registry slot (single sponsor source); found ${sponsorSlots.length}`,
+    );
+  }
+  if (BigInt(profile.sponsor_fpc_address) !== BigInt(sponsorSlots[0]!.address)) {
+    throw new Error(
+      `[fail-closed] Deploy profile ${profile.id}: sponsor_fpc_address ${profile.sponsor_fpc_address} != the SPONSOR registry slot ${sponsorSlots[0]!.address} (single-source the sponsor)`,
+    );
+  }
+  const sponsorVerb = manifest.verbs.find((v) => v.kind === 'SPONSOR');
+  if (!sponsorVerb) {
+    throw new Error('[fail-closed] No SPONSOR verb to anchor sponsor_selector_u32 against');
+  }
+  if (BigInt(profile.sponsor_selector_u32) !== BigInt(sponsorVerb.expected_selector_u32)) {
+    throw new Error(
+      `[fail-closed] Deploy profile ${profile.id}: sponsor_selector_u32 ${profile.sponsor_selector_u32} != SPONSOR verb selector ${sponsorVerb.expected_selector_u32}`,
+    );
+  }
 }
 
 function emitDeployProfilesC(): { header: string; impl: string } {

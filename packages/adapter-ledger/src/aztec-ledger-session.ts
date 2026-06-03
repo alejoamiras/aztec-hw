@@ -344,6 +344,18 @@ export class AztecLedgerSession {
       if (!deployProfile) {
         throw new Error(`deployAccountViaEntrypoint: no deploy profile for '${this.deps.scheme}'`);
       }
+      /* AHW-096 (W2): fail closed if the runtime-supplied sponsor disagrees with the
+       * single manifest source (the generated deploy profile). The device ALSO rejects
+       * a mismatched sponsor at its 6d outer-hash recompute (→ 0x6F01, proven in
+       * provider.m8), so this is defense-in-depth: it surfaces a clear config-time
+       * error instead of a cryptic device rejection, and removes the runtime value as
+       * an independent trust input (there is exactly one sponsor source). */
+      const manifestSponsor = await AztecAddress.fromString(deployProfile.sponsor_fpc_address);
+      if (!this.deps.sponsoredFpcAddress.equals(manifestSponsor)) {
+        throw new Error(
+          `deployAccountViaEntrypoint: sponsoredFpcAddress ${this.deps.sponsoredFpcAddress.toString()} != manifest sponsor ${deployProfile.sponsor_fpc_address} (single-source the sponsor; AHW-096)`,
+        );
+      }
       const isSchnorr = this.deps.scheme === 'schnorr';
       const deployCurveId = isSchnorr ? CURVE_ID.GRUMPKIN : CURVE_ID.SECP256K1;
 

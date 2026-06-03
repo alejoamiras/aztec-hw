@@ -39,8 +39,21 @@ export function approveByMarker(
   const { approve, accept, maxPages = 16, settleMs = 250 } = opts;
   return async (ctx: AutoConfirmContext): Promise<void> => {
     await ctx.sleep(400);
+    // Discard events buffered by a PRIOR operation. Without this, a second
+    // review in the same test reads the previous review's last-page text (e.g.
+    // "Reveal this account's privacy root?") still in the buffer, matches the
+    // marker on page 0, and presses `both` on the home screen — the new review
+    // never advances and the APDU hangs. The current page re-renders on the
+    // first `right`, so clearing here loses nothing.
+    await ctx.clearEvents();
     for (let page = 0; page < maxPages; page++) {
-      const text = (await ctx.getEvents()).map((e) => e.text).join(' ');
+      // NBGL wraps a long finishYStr across several text events ("Reveal this" /
+      // "account's privacy" / "root?"), so the naive join has multiple spaces.
+      // Collapse runs of whitespace so markers can be written with single spaces.
+      const text = (await ctx.getEvents())
+        .map((e) => e.text)
+        .join(' ')
+        .replace(/\s+/g, ' ');
       if (approve.test(text)) {
         await ctx.press('both');
         return;
@@ -65,12 +78,16 @@ export const APPROVE_MARKERS = {
     approve: /sign[^?]*outer_hash\?|^sign\b|\bsign\?/i,
     accept: /blind signing|accept risk/i,
   },
-  /** Deploy account review. */
-  deployReview: {
-    approve: /deploy your aztec account|hold to (sign|approve)|\bapprove\b|deploy\?/i,
-  },
-  /** Master-secret reveal = privacy root. */
-  revealRoot: { approve: /reveal this account|privacy root|root\?/i },
+  /** Deploy account review. Finish-page text ONLY — "Deploy your Aztec account?"
+   * (the `nbgl_useCaseReview` finishYStr). Deliberately tight: the intro title is
+   * "Deploy Aztec account" (no "your") and the subtitle is "Review and approve",
+   * so a looser `\bapprove\b` would fire `both` on the subtitle page. */
+  deployReview: { approve: /deploy your aztec account/i },
+  /** Master-secret reveal = privacy root. Finish-page text ONLY — "Reveal this
+   * account's privacy root?". The intro title "Reveal privacy root" lacks "this
+   * account", and the subtitle lacks "reveal this account", so this matches only
+   * the final approve page (a bare /privacy root/ would fire on the intro). */
+  revealRoot: { approve: /reveal this account/i },
   /** W4 GET_AZTEC_ADDRESS receive-address attestation review. */
   attestAddress: { approve: /receive address|confirm address|use this address|address\?/i },
 } as const satisfies Record<string, MarkerApproveOpts>;

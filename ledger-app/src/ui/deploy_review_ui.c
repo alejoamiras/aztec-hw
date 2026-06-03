@@ -28,6 +28,8 @@
 #include "display.h"
 #include "../l4/session.h"
 #include "../handler/finalize_deploy_and_sign.h"
+#include "../review_snapshot.h"
+#include "../clear_signing_v0/deploy_profiles.gen.h"
 
 #if defined(TARGET_NANOX) || defined(TARGET_NANOS2)
 #define DEPLOY_REVIEW_ICON  C_app_aztec_14px
@@ -46,6 +48,7 @@
 static char g_addr_str[40];
 static char g_account_str[16];  /* M9 B1: "#N" — the human account index, not the BIP-32 path. */
 static char g_fee_str[40];
+static char g_sponsor_str[64];  /* AHW-096: sponsor FPC 8+6 + " fn 0x<selector>" */
 
 static nbgl_layoutTagValueList_t g_pair_list;
 static nbgl_layoutTagValue_t g_pairs[4];
@@ -106,10 +109,41 @@ int ui_display_deploy_review(void) {
     /* Profile-pinned fee semantics; v0 only supports sponsored deploys. */
     snprintf(g_fee_str, sizeof(g_fee_str), "Sponsored (testnet)");
 
+    /* AHW-096 (W2): render the ACTUAL sponsor FPC the device authorizes (8+6) plus
+     * its entrypoint selector — not a bare "Sponsored". The sponsor is profile-pinned
+     * (compiled from manifest.json) and finalize recomputes the deploy authwit against
+     * exactly these bytes, so this shows the user/auditor WHICH FPC the signature pays.
+     * (Single-sourcing that value is the primary control and lives host-side.)
+     * Manual hex for the selector — BOLOS's reduced snprintf has no reliable %x. */
+    const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(G_l4_deploy_session.profile_id);
+    if (profile != NULL) {
+        address_8_6(g_sponsor_str, sizeof(g_sponsor_str), profile->sponsor_fpc_address);
+        size_t sp = strlen(g_sponsor_str);
+        static const char SUFFIX[] = " fn 0x";
+        for (size_t i = 0; i < sizeof(SUFFIX) - 1 && sp < sizeof(g_sponsor_str) - 1; i++) {
+            g_sponsor_str[sp++] = SUFFIX[i];
+        }
+        for (int i = 0; i < 4 && sp + 1 < sizeof(g_sponsor_str) - 1; i++) {
+            uint8_t b = (uint8_t)(profile->sponsor_selector_u32 >> (24 - 8 * i));
+            g_sponsor_str[sp++] = HEX[(b >> 4) & 0x0f];
+            g_sponsor_str[sp++] = HEX[b & 0x0f];
+        }
+        g_sponsor_str[sp] = '\0';
+    } else {
+        snprintf(g_sponsor_str, sizeof(g_sponsor_str), "(unknown profile)");
+    }
+
+    /* AHW-099 (W1 sibling): snapshot the displayed identity (#N + the device-derived
+     * address) out-of-band; finalize_deploy_after_approval verifies the live values
+     * against it and rejects (SW_REVIEW_STATE_MISMATCH) on any render→approval skew.
+     * The signature is already over a fresh recompute — this is the display half. */
+    review_snapshot_capture_identity(deploy_account_index(), G_l4_deploy_session.address_local);
+
     size_t n = 0;
-    g_pairs[n].item = "Address"; g_pairs[n].value = g_addr_str;    n++;
-    g_pairs[n].item = "Account"; g_pairs[n].value = g_account_str; n++;
-    g_pairs[n].item = "Fee";     g_pairs[n].value = g_fee_str;     n++;
+    g_pairs[n].item = "Address"; g_pairs[n].value = g_addr_str;     n++;
+    g_pairs[n].item = "Account"; g_pairs[n].value = g_account_str;  n++;
+    g_pairs[n].item = "Sponsor"; g_pairs[n].value = g_sponsor_str;  n++;
+    g_pairs[n].item = "Fee";     g_pairs[n].value = g_fee_str;      n++;
 
     memset(&g_pair_list, 0, sizeof(g_pair_list));
     g_pair_list.pairs = g_pairs;

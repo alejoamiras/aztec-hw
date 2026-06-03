@@ -29,6 +29,7 @@
 
 #include "display.h"
 #include "../globals.h"
+#include "../review_snapshot.h"
 #include "../handler/get_aztec_master_secret.h"
 
 #if defined(TARGET_NANOX) || defined(TARGET_NANOS2)
@@ -75,6 +76,12 @@ int ui_display_master_secret_reveal(void) {
     g_pair_list.nbPairs = (uint8_t)n;
     g_pair_list.smallCaseForValue = false;
     g_pair_list.wrapping = true;
+
+    /* AHW-112 (W1 sibling): snapshot the displayed account index out-of-band; the
+     * approval handler verifies the live #N matches before exporting the privacy
+     * root, so a render→approval path glitch can't reveal a different account's
+     * secret than the one shown. Reveal has no address pair → NULL address. */
+    review_snapshot_capture_identity(reveal_account_index(), NULL);
 
     /* Codex Phase-4 review MAJOR: TYPE_TRANSACTION is the proven review type
      * used elsewhere in the app; TYPE_OPERATION was unverified for this SDK. */

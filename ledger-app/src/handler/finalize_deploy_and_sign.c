@@ -33,6 +33,7 @@
 #include "../crypto/schnorr.h"
 #include "../l4/deploy_outer_hash.h"
 #include "../clear_signing_v0/deploy_profiles.gen.h"
+#include "../review_snapshot.h"
 #include "../ui/display.h"
 #include "nbgl_use_case.h"
 
@@ -119,6 +120,25 @@ int finalize_deploy_after_approval(void) {
     if (!G_l4_deploy_session.claimed_outer_hash_received) {
         return reject(SW_HASH_MISMATCH);
     }
+
+    /* AHW-099 (W1 sibling): bind the approval to exactly the identity the deploy
+     * review showed. ui_display_deploy_review snapshotted (#N + the device-derived
+     * address); verify the live session values match it BEFORE signing, so a
+     * render→approval glitch to the shown account/address is a clean reject, not a
+     * silent sign of a different identity. (The signature itself is also over a
+     * fresh recompute below — this is the display-integrity half.) Dismiss the NBGL
+     * page on mismatch, mirroring the W1 blind-sign handler. */
+    uint32_t live_idx = (G_l4_deploy_session.bip32_path_len > 2)
+                            ? (G_l4_deploy_session.bip32_path[2] & 0x7FFFFFFFu)
+                            : 0;
+    if (review_snapshot_verify_identity(live_idx, G_l4_deploy_session.address_local) == NULL) {
+        review_snapshot_disarm_identity();
+        l4_session_reset();
+        int rc = io_send_sw(SW_REVIEW_STATE_MISMATCH);
+        nbgl_useCaseStatus("Review state changed", false, ui_menu_main);
+        return rc;
+    }
+    review_snapshot_disarm_identity();
 
     /* --- Parity pass 3 ----------------------------------------------- */
     const cs_deploy_profile_t *profile = cs_deploy_profile_lookup(G_l4_deploy_session.profile_id);
@@ -341,6 +361,7 @@ int finalize_deploy_after_approval(void) {
 }
 
 int finalize_deploy_rejected(void) {
+    review_snapshot_disarm_identity();
     l4_session_reset();
     int rc = io_send_sw(SW_USER_REJECTED);
     nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_menu_main);

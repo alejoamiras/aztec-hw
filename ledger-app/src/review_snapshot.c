@@ -46,3 +46,45 @@ const blind_sign_snapshot_t *review_snapshot_verify_blind_sign(
 void review_snapshot_disarm(void) {
     memset(&g_blind_snapshot, 0, sizeof(g_blind_snapshot));
 }
+
+/* Out-of-band identity snapshot for the deploy + reveal review screens. The
+ * signature/secret is already a fresh device recompute; this binds the display. */
+static review_identity_snapshot_t g_identity_snapshot;
+
+void review_snapshot_capture_identity(uint32_t account_index, const uint8_t *address_or_null) {
+    memset(&g_identity_snapshot, 0, sizeof(g_identity_snapshot));
+    g_identity_snapshot.account_index = account_index;
+    if (address_or_null != NULL) {
+        memcpy(g_identity_snapshot.address, address_or_null, REVIEW_IDENTITY_ADDR_LEN);
+        g_identity_snapshot.has_address = true;
+    }
+    g_identity_snapshot.armed = true;
+}
+
+const review_identity_snapshot_t *review_snapshot_verify_identity(
+    uint32_t live_account_index, const uint8_t *live_address_or_null) {
+    if (!g_identity_snapshot.armed) {
+        return NULL;
+    }
+    bool live_has_address = (live_address_or_null != NULL);
+    if (live_has_address != g_identity_snapshot.has_address) {
+        return NULL;
+    }
+    if (live_account_index != g_identity_snapshot.account_index) {
+        return NULL;
+    }
+    if (g_identity_snapshot.has_address) {
+        uint8_t adiff = 0;
+        for (uint8_t i = 0; i < REVIEW_IDENTITY_ADDR_LEN; i++) {
+            adiff |= (uint8_t)(live_address_or_null[i] ^ g_identity_snapshot.address[i]);
+        }
+        if (adiff != 0) {
+            return NULL;
+        }
+    }
+    return &g_identity_snapshot;
+}
+
+void review_snapshot_disarm_identity(void) {
+    memset(&g_identity_snapshot, 0, sizeof(g_identity_snapshot));
+}

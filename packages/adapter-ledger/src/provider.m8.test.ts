@@ -33,7 +33,7 @@ import { defaultDeployPath } from './deploy-context.ts';
 import { masterSecretChecksum } from './master-secret.ts';
 import { deriveAztecKeysFromMasterSecret } from './oracle/index.ts';
 import { LedgerProvider } from './provider.ts';
-import type { AutoConfirmContext } from './speculos-transport.ts';
+import { APPROVE_MARKERS, approveByMarker } from './speculos-approver.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
 
 const toBE32 = (f: { toBuffer(): Buffer }): Uint8Array => new Uint8Array(f.toBuffer());
@@ -68,20 +68,11 @@ async function referenceDeployOuterHash(
   return new Uint8Array(captured.toBuffer());
 }
 
-/** Hardcoded NBGL approver: press right `rights` times to reach the approve
- * page, then both. Counts discovered empirically on nanosp (the screen-aware
- * variant raced the renderer). Reveal = 4 (intro, subtitle, Path, Confirm);
- * deploy review = 5 (intro, subtitle, Address, Path, Fee). */
-function makeApprover(rights: number): (ctx: AutoConfirmContext) => Promise<void> {
-  return async (ctx: AutoConfirmContext) => {
-    await ctx.sleep(500);
-    for (let i = 0; i < rights; i++) {
-      await ctx.press('right');
-      await ctx.sleep(300);
-    }
-    await ctx.press('both');
-  };
-}
+/* P0 (audit-c2-remediation): the brittle fixed-count approvers were replaced with
+ * marker-based screen-walking (approveByMarker). W2 added a Sponsor pair to the
+ * deploy review and W4 adds a whole new review — both shift page counts, which a
+ * hardcoded `rights` silently walks past. The marker walker reads the screen and
+ * stops at the approve page, so it is page-count-agnostic. */
 
 /** Compute the EXACT deploy context the device will accept: derive publicKeys
  * from the DEVICE's revealed master secret + the deploy address from the
@@ -118,11 +109,9 @@ async function deviceValidDeployContext(provider: LedgerProvider, approve: typeo
 const SPECULOS_URL = process.env.SPECULOS_URL;
 const DEPLOY_PATH = defaultDeployPath(0);
 
-/** Reveal: intro, subtitle, Path, Confirm → 4 rights to the approve page. */
-const approveReveal = makeApprover(4);
-
-/** Deploy review: intro, subtitle, Address, Path, Fee → 5 rights. */
-const approveDeploy = makeApprover(5);
+/** Marker-based approvers (P0) — page-count-agnostic; see the note above. */
+const approveReveal = approveByMarker(APPROVE_MARKERS.revealRoot);
+const approveDeploy = approveByMarker(APPROVE_MARKERS.deployReview);
 
 describe.skipIf(!SPECULOS_URL)('M8 device — Speculos', () => {
   const transport = new SpeculosTransport({ baseUrl: SPECULOS_URL ?? 'http://localhost:5000' });
@@ -203,9 +192,46 @@ describe.skipIf(!SPECULOS_URL)('M8 device — Speculos', () => {
       new Fr(1n),
       new Fr(1n),
     );
-    const sig = await provider.finalizeDeployAndSign(outerHash, { autoConfirm: approveDeploy });
+    /* AHW-096 (W2): walk the deploy review with a marker walker that ALSO collects
+     * the on-screen text, so we can prove the device RENDERS the actual sponsor FPC
+     * (8+6) — not a bare "Sponsored". This is the device half of the single-source
+     * sponsor fix; the host single-sourcing is asserted in deploy-profile tests. */
+    let reviewText = '';
+    const approveAndCollect = async (ctx: {
+      sleep: (ms: number) => Promise<void>;
+      press: (b: 'right' | 'both') => Promise<void>;
+      getEvents: () => Promise<readonly { text: string }[]>;
+      clearEvents: () => Promise<void>;
+    }): Promise<void> => {
+      await ctx.sleep(400);
+      await ctx.clearEvents(); // discard a prior op's buffered events (see approveByMarker)
+      for (let page = 0; page < 16; page++) {
+        const t = (await ctx.getEvents()).map((e) => e.text).join(' ');
+        reviewText += ` ${t}`;
+        // Collapse wrapping whitespace before matching — NBGL splits the finishYStr
+        // ("Deploy your Aztec  account?") across events (same as approveByMarker).
+        if (APPROVE_MARKERS.deployReview.approve.test(t.replace(/\s+/g, ' '))) {
+          await ctx.press('both');
+          return;
+        }
+        await ctx.clearEvents();
+        await ctx.press('right');
+        await ctx.sleep(250);
+      }
+      throw new Error('deploy approve marker not seen while collecting review text');
+    };
+    const sig = await provider.finalizeDeployAndSign(outerHash, { autoConfirm: approveAndCollect });
     expect(sig.r.length).toBe(32);
     expect(sig.s.length).toBe(32);
+
+    /* The sponsor FPC must be on-screen: 8-byte prefix + 6-byte suffix of the pinned
+     * SPONSOR_FPC (the 8+6 render), and the "Sponsor" label. Whitespace-flattened so
+     * NBGL wrapping/the ellipsis between prefix and suffix doesn't break the match. */
+    const sponsorHex = SPONSOR_FPC.slice(2).toLowerCase();
+    const flat = reviewText.toLowerCase().replace(/\s+/g, '');
+    expect(reviewText.toLowerCase()).toContain('sponsor');
+    expect(flat).toContain(sponsorHex.slice(0, 16)); // first 8 bytes
+    expect(flat).toContain(sponsorHex.slice(-12)); // last 6 bytes
 
     /* Verify: the device signed sha256(outer_hash) with its BIP-32 signing key.
      * (EcdsaKAccount's in-circuit verify checks exactly this.) */

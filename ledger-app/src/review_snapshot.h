@@ -42,3 +42,38 @@ const blind_sign_snapshot_t *review_snapshot_verify_blind_sign(
 
 /** Clear + disarm (after sign, on reject, or on any new APDU dispatch). */
 void review_snapshot_disarm(void);
+
+#define REVIEW_IDENTITY_ADDR_LEN 32 /* an Aztec address is one 32-byte Fr */
+
+/**
+ * AHW-099 (W1 sibling) + AHW-112 — display-identity snapshot for the deploy
+ * review (Account #N + the device-derived address) and the reveal review
+ * (#N only). The deploy signature / revealed secret are ALREADY over a fresh
+ * device recompute (sovereign), so this is the display-integrity half: capture
+ * the shown identity at review-draw time, verify-or-reject in the approval
+ * callback, so a render→approval glitch to the displayed #N / address becomes a
+ * clean `SW_REVIEW_STATE_MISMATCH` instead of a silent approve-of-a-different-id.
+ * A SEPARATE static from the blind-sign snapshot — different review flow, only
+ * one review is on screen at a time so they are used sequentially.
+ */
+typedef struct {
+    bool armed;
+    bool has_address;
+    uint32_t account_index;
+    uint8_t address[REVIEW_IDENTITY_ADDR_LEN];
+} review_identity_snapshot_t;
+
+/** Capture the reviewed identity + arm. `address_or_null` NULL → reveal (no address). */
+void review_snapshot_capture_identity(uint32_t account_index, const uint8_t *address_or_null);
+
+/**
+ * Returns the armed identity snapshot iff armed AND the live values match: the
+ * account index, the address-presence flag, and (when present) all 32 address
+ * bytes via difference-OR. NULL otherwise — on NULL the caller MUST reject and
+ * disarm. `live_address_or_null`'s NULL-ness must match what was captured.
+ */
+const review_identity_snapshot_t *review_snapshot_verify_identity(
+    uint32_t live_account_index, const uint8_t *live_address_or_null);
+
+/** Clear + disarm the identity snapshot (after approval consumes it, or on reject). */
+void review_snapshot_disarm_identity(void);

@@ -42,6 +42,7 @@
 #include "../constants.h"
 #include "../globals.h"
 #include "../sw.h"
+#include "../review_snapshot.h"
 #include "../ui/display.h"
 #include "../l4/wire.h"
 #include "../l4/aztec_secret.h"
@@ -184,6 +185,21 @@ int master_secret_reveal_approved(void) {
     if (!s_armed) {
         return io_send_sw(SWO_UNKNOWN);
     }
+    /* AHW-112 (W1 sibling): verify the live account index matches what the reveal
+     * screen showed before exporting the privacy root. A render→approval glitch to
+     * bip32_path[2] becomes a clean reject, not a silent reveal of a DIFFERENT
+     * account's root. (Reveal showed no address → NULL.) */
+    uint32_t live_idx = (G_context.bip32_path_len > 2)
+                            ? (G_context.bip32_path[2] & 0x7FFFFFFFu)
+                            : 0;
+    if (review_snapshot_verify_identity(live_idx, NULL) == NULL) {
+        review_snapshot_disarm_identity();
+        disarm();
+        int mrc = io_send_sw(SW_REVIEW_STATE_MISMATCH);
+        nbgl_useCaseStatus("Review state changed", false, ui_menu_main);
+        return mrc;
+    }
+    review_snapshot_disarm_identity();
     uint8_t response[32];
     memcpy(response, s_secret, 32);
     disarm();
@@ -198,6 +214,7 @@ int master_secret_reveal_approved(void) {
 }
 
 int master_secret_reveal_rejected(void) {
+    review_snapshot_disarm_identity();
     disarm();
     int rc = io_send_sw(SW_USER_REJECTED);
     nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_menu_main);
