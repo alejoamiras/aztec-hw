@@ -85,6 +85,51 @@ async function speculosScreen(): Promise<string> {
   }
 }
 
+/**
+ * W4 (AHW-098): connect() now attests the receive address ON-DEVICE by default, so a
+ * SECOND review ("Confirm receive address" → … → "Use this Aztec address?") appears
+ * after the reveal + the (slow) PXE/session build inside onDerive. This walks ONLY
+ * that review: advance while an address-review screen is showing, press Both on the
+ * finish page. Deliberately does NOT press on the home screen (blind right-presses
+ * there navigate the app menu and can land on Quit) — it just waits until the review
+ * renders. Screen texts mirror the device review proven in provider.m8's attestAddress
+ * marker. Returns once approved (or the deadline lapses, so it never wedges the test).
+ */
+async function confirmAddressReview(timeoutMs = 180_000, screenLog?: string[]): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let prev = '';
+  /* Latch: only start pressing once a DISTINCTIVE address-review screen is seen — the
+   * intro title, the subtitle, or the Scheme pair. Before that the device is on home
+   * or the browser is still in PXE/connect init, and a blind `right` there would walk
+   * the app menu (Quit). Once latched, advance on EVERY screen (the "Address 0x…" /
+   * "Account #N" pairs don't carry a unique keyword) until the finish page. */
+  let inReview = false;
+  while (Date.now() < deadline) {
+    const screen = await speculosScreen();
+    if (screen !== prev) {
+      screenLog?.push(screen);
+      prev = screen;
+    }
+    if (/Use this Aztec/i.test(screen)) {
+      await pressSpeculos('both'); // finish page → approve, done
+      return;
+    }
+    /* Match LOOSELY — NBGL wraps the title across events ("Confirm receive  | address"),
+     * so the full phrase never appears on one screen. "Confirm receive" (the intro) is
+     * the reliable first latch; "Scheme" is a backup on the pair page. */
+    if (/Confirm receive|Scheme/i.test(screen)) {
+      inReview = true;
+    }
+    if (inReview) {
+      await pressSpeculos('right'); // walk through intro/subtitle/Address/Account/Scheme → finish
+      await new Promise((r) => setTimeout(r, 400));
+      continue;
+    }
+    /* Not in the review yet (home / connect still building) → WAIT, never press. */
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 test('demo browser smoke', async ({ page }) => {
   const consoleErrors: string[] = [];
   const consoleAll: string[] = [];
@@ -196,18 +241,35 @@ test('demo browser smoke', async ({ page }) => {
       return;
     }
     await page.getByRole('button', { name: /Derive .* viewing keys/ }).click();
-    /* Reveal review screen: blind 4×right then both (mirrors provider.m8.test.ts
-     * makeApprover(4); the screen-walking approver races the renderer → 0x6985). */
+    /* Reveal review = 6 screens (intro, subtitle ×2, Account, Confirm, finish) → 5
+     * rights to reach "Reveal this account's privacy root?" then Both. (A fixed count,
+     * not a marker walk: an event-polling approver races this particular review's
+     * renderer → an accidental Reject 0x6985. The count was 4 and silently stuck on the
+     * "Confirm" page — the reveal then timed out before connect() ever ran.) */
     await new Promise((r) => setTimeout(r, 1500));
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       await pressSpeculos('right');
       await new Promise((r) => setTimeout(r, 450));
     }
     await pressSpeculos('both');
+    /* W4 (AHW-098): after the reveal, connect() attests the receive address ON-DEVICE
+     * by default, so a 2nd review appears once the (slow) PXE/session build reaches
+     * connect(). Walk it concurrently while the address renders. */
+    const attestScreens: string[] = [];
+    const attestPromise = confirmAddressReview(200_000, attestScreens);
     await page.waitForFunction(
       () => !!document.querySelector('.address') || !!document.querySelector('.status.err'),
-      { timeout: 120_000 },
+      { timeout: 200_000 },
     );
+    await attestPromise.catch(() => {});
+    if (attestScreens.length > 0) {
+      console.log(
+        '\n=== ATTEST-ADDRESS SCREEN LOG (' +
+          attestScreens.length +
+          ') ===\n  ' +
+          attestScreens.map((s, i) => `${i}: ${s}`).join('\n  '),
+      );
+    }
     if ((await errBanner.count()) > 0) {
       console.log('\n=== DERIVE ERROR ===\n' + (await errBanner.innerText()) + '\n=== END ===\n');
     } else {

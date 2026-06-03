@@ -2,8 +2,9 @@
  * Onboard panel (M8 P7.3) — the sovereignty moment.
  *
  * After Connect opens + verifies the transport, this explicit step reveals the
- * device's Aztec viewing keys (one on-device approval) and uses them as the
- * session secret. That makes the account the browser derives the SAME one the
+ * device's Aztec viewing keys (one approval) and confirms the device-attested
+ * receive address (a second approval — AHW-098, so the browser can't show an
+ * address the device didn't author), using the keys as the session secret. That makes the account the browser derives the SAME one the
  * device verifies at deploy time (a random secret would be rejected with
  * 0x6F0F). The signing key never leaves the device; reconnecting later
  * re-derives the identical keys — the Ledger IS the wallet, and is its own
@@ -180,10 +181,11 @@ export function OnboardPanel({ state, setState }: Props) {
           </div>
           <div className="row">
             <button type="button" onClick={onDerive} disabled={busy !== null}>
-              {busy ? 'Working…' : `Derive Account #${accountIndex} viewing keys (1 approval)`}
+              {busy ? 'Working…' : `Derive Account #${accountIndex} viewing keys (2 approvals)`}
             </button>
             <span className="status muted">
-              {busy ?? 'One on-device approval. Discloses viewing, not spending.'}
+              {busy ??
+                'Two device approvals: reveal viewing keys (discloses viewing, not spending), then confirm your receive address (AHW-098).'}
             </span>
           </div>
         </>
