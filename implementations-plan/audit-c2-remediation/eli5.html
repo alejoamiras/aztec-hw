@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>audit-c2-remediation — ELI5</title>
+<style>
+  :root { --ink:#1a1a1a; --soft:#5b5b5b; --line:#e6e6e6; --hi:#b4002a; --med:#9a6a00; --ok:#0a7d3c; --bg:#fcfcfb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 1.7rem; margin: 0 0 .2em; letter-spacing:-.01em; }
+  h2 { font-size: 1.2rem; margin: 2.4em 0 .5em; padding-top:.6em; border-top:1px solid var(--line); }
+  h3 { font-size: 1.02rem; margin: 1.5em 0 .2em; }
+  p, li { color: var(--ink); }
+  .sub { color: var(--soft); margin-top:0; }
+  .tag { display:inline-block; font-size:.72rem; font-weight:700; letter-spacing:.03em;
+    padding:.1em .5em; border-radius:4px; vertical-align:middle; margin-left:.4em; }
+  .t-hi { background:#fde8ec; color:var(--hi); } .t-med{ background:#fcf2dc; color:var(--med); }
+  .t-fw { background:#eef1f6; color:#3a4a66; } .t-host{ background:#eef6f0; color:#2c6a45; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin:14px 0; background:#fff; }
+  .card h3 { margin-top:0; }
+  .what { color:var(--ink); } .fix { color:var(--soft); }
+  .fix b { color:var(--ink); }
+  code { background:#f1f1ef; padding:.05em .35em; border-radius:4px; font-size:.86em; }
+  .lead { font-size:1.05rem; }
+  ul { padding-left:1.2em; } li { margin:.25em 0; }
+  .pill { font-size:.8rem; color:var(--soft); }
+  a { color:#2257c0; }
+  .foot { margin-top:3em; color:var(--soft); font-size:.9rem; }
+  .ok{color:var(--ok);font-weight:700} .hi{color:var(--hi);font-weight:700} .med{color:var(--med);font-weight:700}
+</style>
+</head>
+<body>
+<main>
+  <h1>Hardening the Ledger Aztec wallet — in plain words</h1>
+  <p class="sub">Fixing the real problems an outside auditor will look for, before we hand it to them. Companion to <a href="plan.md">plan.md</a> · scope in <a href="scope.md">scope.md</a>.</p>
+
+  <p class="lead">A second deep review of the wallet turned up a pile of issues. We sorted them by how serious they are and walked through each one: <b>fix it</b>, or <b>accept it and write down why</b>. This page explains, with no jargon, what we're fixing and how.</p>
+
+  <h2>The big picture</h2>
+  <p>The wallet has two halves: the <b>device app</b> (code that runs on the Ledger and is the thing you actually trust — it shows you what you're approving and signs it) and the <b>host library</b> (TypeScript that runs in the browser and talks to the device). The golden rule: <b>the screen on the device must match what the device signs</b>, and the device — not the browser — must be the source of truth.</p>
+  <p>Most findings are variations on "the device signs or trusts something the user never really verified." We're fixing the ones that matter and documenting the rest.</p>
+
+  <h2>What we're fixing</h2>
+
+  <div class="card">
+    <h3>1. The "show one thing, sign another" gap <span class="tag t-hi">HIGH</span> <span class="tag t-fw">device</span></h3>
+    <p class="what">When "blind signing" is on, the device shows you a value, you approve, and it signs — but it re-reads that value from a scratchpad <em>after</em> you've looked. A well-timed glitch could make it sign something different from what you saw. (The normal flows already avoid this; blind-sign was the exception. The deploy screen has a smaller version of the same issue.)</p>
+    <p class="fix"><b>Fix:</b> take a frozen photocopy of what you reviewed, sign <em>that exact copy</em>, and refuse if the live values changed. Build it once as a shared helper and reuse it. <span class="pill">AHW-095 + AHW-099 (+ the reveal screen, AHW-112)</span></p>
+  </div>
+
+  <div class="card">
+    <h3>2. Your receive address was never proven by the device <span class="tag t-hi">HIGH</span> <span class="tag t-fw">device + host</span></h3>
+    <p class="what">When you set up the wallet, the device proves it holds your secret — but the <em>address you receive money to</em> is worked out by the browser, and the device never shows or confirms it. A malicious browser could show you an attacker's address that still "checks out". (Spending is safe — that's already device-proven. This is the receiving side.)</p>
+    <p class="fix"><b>Fix:</b> add a new device command that makes the <em>device itself</em> compute and display your receive address for you to confirm — and have the browser refuse to continue unless its address exactly matches the device's. New command, gated behind a capability flag, no "skip it" fallback. This is the heaviest item. <span class="pill">AHW-098</span></p>
+  </div>
+
+  <div class="card">
+    <h3>3. The public library handed out a "sign anything" tool <span class="tag t-hi">HIGH</span> <span class="tag t-host">host</span></h3>
+    <p class="what">Our published package exposed a function that signs <em>any</em> raw value, skipping the whole review screen. Any app using our library could call it.</p>
+    <p class="fix"><b>Fix:</b> take it off the front door — move it behind an explicit <code>/unsafe</code> path normal apps won't import. Also stop the package from letting other code silently re-read the revealed privacy key. <span class="pill">AHW-097 + AHW-103</span></p>
+  </div>
+
+  <div class="card">
+    <h3>4. The deploy screen hid who pays the fee <span class="tag t-med">MED</span> <span class="tag t-fw">device</span></h3>
+    <p class="what">Deploying your account authorizes a "fee sponsor" contract to pay gas — but the screen just said "Sponsored (testnet)" and never showed <em>which</em> contract. <span class="pill">(You correctly pointed out there's no single "official" sponsor to check against — so the fix isn't a check, it's showing it.)</span></p>
+    <p class="fix"><b>Fix:</b> show the sponsor's address + function on the deploy screen so <em>you</em> verify it, and make sure the browser and the device read that address from one single config so they can't disagree. <span class="pill">AHW-096</span></p>
+  </div>
+
+  <div class="card">
+    <h3>5. A signing leftover could expose a key <span class="tag t-med">MED</span> <span class="tag t-fw">device</span></h3>
+    <p class="what">After a Schnorr signature the device wipes the private key — but leaves one intermediate value lying in memory that, combined with public data, reconstructs the key. Not readable today, but a future memory bug could harvest it.</p>
+    <p class="fix"><b>Fix:</b> wipe all the secret leftovers, not just the obvious ones. <span class="pill">AHW-100</span></p>
+  </div>
+
+  <div class="card">
+    <h3>6. Two missing safety nets in the test suite <span class="tag t-med">MED</span></h3>
+    <p class="what">The device <em>does</em> reject bad inputs and <em>does</em> make non-malleable signatures — but no test checks it. A future change could quietly break either and every test would still pass green.</p>
+    <p class="fix"><b>Fix:</b> add tests that prove each rejection happens with the right error, and that signatures are the safe "low-S" form (this also closes a separate gap where the host never double-checks the device's signature). <span class="pill">AHW-108 + AHW-109 (+ AHW-087)</span></p>
+  </div>
+
+  <div class="card">
+    <h3>7. The recovery docs described a wallet we didn't build <span class="tag t-med">MED</span> <span class="tag t-host">docs</span></h3>
+    <p class="what">The design docs promised a "two independent secrets" backup model, but the code actually derives everything from the one Ledger seed. The docs would mislead an auditor about what happens if the seed is compromised.</p>
+    <p class="fix"><b>Fix:</b> rewrite the docs + UI to tell the truth — it's a single-seed model; the seed is everything; losing it strands the account. (We're not building the two-secret scheme.) <span class="pill">AHW-106</span></p>
+  </div>
+
+  <h2>Two decisions worth knowing</h2>
+  <p><b>The new address command uses a "capability flag," not a version number.</b> Both independent reviewers said: don't bolt this onto the existing wire-version; give it its own on/off capability the browser checks, and never let the browser quietly skip it. That makes "is the device proving the address?" a clear yes/no we can test.</p>
+  <p><b>"Sign the photocopy."</b> The subtle but crucial part of fix #1: the device must sign the frozen copy of what you reviewed — comparing afterward is only a backup alarm, not the fix.</p>
+
+  <h2>What we're <em>not</em> doing (and why)</h2>
+  <ul>
+    <li><b>Override seams</b> (AHW-104) — <span class="ok">dropped.</span> Their danger came from the "sign anything" tool in fix #3; once that's gone, they can only drive the normal reviewed flow.</li>
+    <li><b>Double-read pubkey check</b> (AHW-105) — <span class="ok">dropped.</span> Fix #2 (device proves the address) makes it unnecessary.</li>
+    <li><b>CI / build-pipeline hardening</b> (AHW-101/102) — <span class="med">deferred</span> to a separate release-gate pass (you've consistently parked CI).</li>
+    <li><b>Onboarding limited to 5 accounts</b> (AHW-107) — <span class="med">deferred</span>; the fix is in the front-end app, which is out of this round's scope.</li>
+  </ul>
+
+  <h2>Open questions / honest caveats</h2>
+  <ul>
+    <li><b>Fix #1's "refuse if changed" branch</b> can't be honestly tested through the screen-scraping emulator — we'll budget a small device-level test harness to prove it.</li>
+    <li><b>Does fix #2 truly close the hole, or just move the trust?</b> It closes it <em>if</em> setup is forced through the new command and the browser refuses on mismatch — the device becomes the source of truth. The one thing we can't fix: the user still has to actually read the device screen (true of every hardware wallet).</li>
+    <li><b>Poisoned builds</b> are a bigger, separate problem (parked) — these fixes assume the firmware you flashed is the firmware we built.</li>
+  </ul>
+
+  <p class="foot">Plan tier: A (cross-cutting, three independent plans triangulated + codex final review). Full detail: <a href="plan.md">plan.md</a> · drafts: plan-main / plan-opus / plan-codex · seeds: <a href="goal-loop-seeds.md">goal-loop-seeds.md</a>. Quality bar: pre-external-audit.</p>
+</main>
+</body>
+</html>

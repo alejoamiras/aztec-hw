@@ -2,6 +2,10 @@
 
 **Count: 83 — LOOP STOPPED (diminishing returns; material surface exhausted).** Ceiling was 125, but the honest "repeating ourselves" condition was met: rounds 4–5 (depth + every remaining unrun angle) produced **0 surviving new HIGH/CRIT**; yield collapsed to MED/LOW/INFO/hardening/dead-code/enrichments. 9 red-team subagents (5 opus + 4 codex xhigh) + 8 validators, all diverse. Severity: **1 CRIT · 7 HIGH · ~24 MED · ~44 LOW · ~7 INFO** + recorded confirmed-clean negatives. Legend in `README.md`. Next: deep-plan the fixes.
 
+**UPDATE — Catalog Campaign C2 (2026-06-02):** re-audit of the just-merged audit-remediation (P0–P6) firmware + wire (branch `main` @ `ce82734`). **Wave 1: +11 (AHW-084..094) — 0 CRIT · 0 HIGH · 3 MED · 7 LOW · 1 INFO** + 2 folds (→AHW-070, →AHW-010). **Running total: 94.** NEW Crit+HIGH this campaign: **0 / 50** (stop at 50 Crit+HIGH, diminishing returns, or 4h backstop). 3 diverse red-teamers (1 codex xhigh + 2 opus) + 1 opus validator. Detail in the **Catalog Campaign C2** section below; raw in `audit/_raw/c2/`.
+
+**UPDATE 2 — C2 Wave 2 + 10-codex Burst (2026-06-02, LOOP STOPPED per owner):** +35 (AHW-095..129): **4 HIGH · 11 MED · 18 LOW · 2 INFO**. **Running total: 129.** The 4 HIGH (all NEW, post-consolidation from ~15 raw candidates via 3 theme-split validators): **AHW-095** blind-sign signs unsnapshotted `G_context`; **AHW-096** unverified codegen→signed deploy-profile sponsor/deployer; **AHW-097** root-exported `signOuterHash` blind-sign oracle; **AHW-098** onboard/receive address never device-attested. 3 clean negatives confirmed (crypto-correctness, dual-scheme confusion, firmware memory-safe). Finders: 12 codex xhigh + 4 opus; validators: 4 opus. Loop cron `e3e7b737` deleted. Detail: **C2 Wave 2 + Burst** section below; full per-finding evidence + fix-sketches in `audit/_raw/c2/validated-V{1,2,3}.md`.
+
 > ## Remediation status — branch `audit-remediation` — P0–P6 COMPLETE (post-impl codex review CLOSED + testnet matrix GREEN on beast-5)
 > Plan: `../implementations-plan/audit-remediation/`. Commits unsigned (1Password down — backfill-sign pending). `bun run lint:all` + `bun test packages/` both exit 0.
 > **Device tooling is NOT blocked** (earlier note was wrong): the docker `ledger-app-builder-lite` build + `ghcr.io/ledgerhq/speculos` loop works in-env — build → run on a CLEAN port (5005/9995, NOT the orphaned playwright 5001) → `SPECULOS_URL=… bun test`. Only the TESTNET matrix needs network + a funded account (out of env).
@@ -45,7 +49,7 @@ their CATALOG status; this section is the WORK disposition.
 - `AHW-019` (LOW) side-channel comment rewrite gated on a dudect timing run (out-of-env); left conservative ("NOT side-channel-resistant").
 
 **PARKED — low-value polish / naming / refactor (valid, no security impact):**
-- `AHW-005` (MED) typed deploy-context sideband · `AHW-009` (MED) session.ts monolith split · `AHW-070` (LOW) dedup the DEPLOY-handler canonical-path copies (the riskier blind-sign/pubkey surfaces already share via AHW-064).
+- `AHW-005` (MED) typed deploy-context sideband · `AHW-009` (MED) session.ts monolith split · `AHW-070` (LOW) dedup the DEPLOY + REVEAL handler canonical-path copies (the riskier blind-sign/pubkey surfaces already share via AHW-064; C2/F-B-2 folded in the reveal-handler copy).
 - `AHW-010/011` tighten `as`-casts / Speculos-JSON shape guards · `AHW-012/013` misleading type/comment names · `AHW-023` deploy/authwit claim-check shape · `AHW-037` @noble version fan-out · `AHW-043` live getCaps negotiation · `AHW-045` cached-onboard shows "cached" not a checksum · `AHW-058` dead SW constants · `AHW-060/061` test-vector label / scrub-comment clarity · `AHW-081` quiet logger (all LOW).
 - `AHW-038` (LOW) JS can't reliably zeroize heap secrets; AHW-048 (memory-only) bounds exposure to the page lifetime; a recovery/custody DOC is the residual.
 
@@ -74,7 +78,7 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-007 | MED | HOST | OURS | VALIDATED | `internalDeps` secret-strip is comment-asserted, untested |
 | AHW-008 | LOW | HOST | OURS | VALIDATED | Duplicated canonical-hash block (tx vs deploy) — drift risk |
 | AHW-009 | MED | HOST | OURS | VALIDATED | `aztec-ledger-session.ts` (649 LOC) monolith-risk + duplicated mutex guard |
-| AHW-010 | LOW | HOST | OURS | VALIDATED | `bytesEqual` `as number` silences `noUncheckedIndexedAccess` |
+| AHW-010 | LOW | HOST | OURS | VALIDATED | `bytesEqual` `as number` silences `noUncheckedIndexedAccess` (C2/F-C-7: relocated to `clear-signing-entrypoint.ts:82` by the rewrite) |
 | AHW-011 | LOW | HOST | OURS | VALIDATED | Transport `as` casts on untrusted Speculos JSON / wire bytes, no shape guard |
 | AHW-012 | LOW | DESIGN | OURS | VALIDATED | Type name `LedgerEcdsaKAuthWitnessProvider` used for Schnorr — name lies |
 | AHW-013 | LOW | HOST | OURS | VALIDATED | `deploy-context.ts:8` wire comment `curve_id = K1` stale post-Schnorr |
@@ -134,7 +138,7 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-067 | LOW | BUILD | OURS | VALIDATED | No `-Werror`/`ENABLE_SDK_WERROR`; CI only checks exit code |
 | AHW-068 | LOW | APP | MIXED | VALIDATED | Barrier-less cmov (`point.c:69-77`) under `-Oz` — optimizer-de-CT risk (distinct from AHW-029) |
 | AHW-069 | LOW | BUILD | OURS | VALIDATED | clang version unpinned/unasserted → constant-time evidence drifts on builder bump |
-| AHW-070 | LOW | APP | OURS | VALIDATED | Canonical-path check copy-pasted across 3 C handlers + host mirror (C-side gate dup) |
+| AHW-070 | LOW | APP | OURS | VALIDATED | Canonical-path check inlined in C handlers (C2/F-B-2: now DEPLOY + REVEAL — `begin_deploy_account.c` + `get_aztec_master_secret.c` still inline vs shared predicate) |
 | AHW-071 | LOW | BUILD | OURS | VALIDATED | Root `ledger_app.toml` is 0 bytes despite the nested copy declaring it authoritative |
 | AHW-072 | INFO | BUILD | OURS | VALIDATED | Apex-P icon in Makefile but absent from both toml device lists + CI matrix |
 | AHW-073 | MED | DESIGN | OURS | VALIDATED | Trezor `createAuthWitFromIntent` signs a NON-canonical digest (root: core `computeOuterHashForIntent`) |
@@ -148,6 +152,52 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-081 | LOW | HOST | OURS | VALIDATED | No quiet logger → default `info` browser logger emits account/contract/tx metadata to console |
 | AHW-082 | INFO | DESIGN | OURS | VALIDATED | Vite proxies `/aztec` → beast-5 RPC (operator sees IP/sims/tx hashes; no master-secret leak) |
 | AHW-083 | INFO | TEST | OURS | VALIDATED | Panel `console.error` stack dumps carry tx metadata (`SimulationError`); PRINTF debug-only |
+| AHW-084 | MED | HOST | OURS | VALIDATED | Poseidon2 domain-separator literals hardcoded in `l4-manifest.ts`, no `===` guard vs `@aztec/constants` (silent drift) |
+| AHW-085 | MED | APP | OURS | VALIDATED | Authwit FINALIZE re-hashes cached `args_hash`, never re-derives from raw args — contradicts session.h "three-pass" claim |
+| AHW-086 | MED | APP | OURS | VALIDATED | Flags STATIC/HIDE_MSG_SENDER signed for every call but rendered only in TRANSFER arm (MINT/DRIP/SPONSOR blind) |
+| AHW-087 | LOW | HOST | OURS | VALIDATED | Live Ledger adapter never `secp.verify`s device sig vs cached pubkey (AHW-075 was trezor-only, dissolved) |
+| AHW-088 | LOW | HOST | OURS | VALIDATED | `overrideAccount` mutates shared wallet map on transfer/drip, never reverted (deploy path uses try/finally) |
+| AHW-089 | LOW | HOST | MIXED | VALIDATED | `createAuthWit` fail-close throw swallowed by upstream `embedded_wallet` catch → no user signal |
+| AHW-090 | LOW | TEST | OURS | VALIDATED | No host test threads `(salt,profileId)` through provider→entrypoint→`buildL4Manifest` header |
+| AHW-091 | LOW | TEST | OURS | VALIDATED | B3 binding / finalize tail trapped out of the fuzz/replay oracle (parse-seam + happy-path only) |
+| AHW-092 | LOW | APP | OURS | VALIDATED | `account_binding_deploy_partial` defaults unknown `arg_schema`→ECDSA; FINALIZE never re-checks schema |
+| AHW-093 | LOW | HOST | OURS | VALIDATED | No assert that `kind==='deploy'` ⇔ `ledgerDeployContext` present (mode-select is an unpinned sideband) |
+| AHW-094 | INFO | APP | OURS | VALIDATED | Reveal UI header docstring claims "full BIP-32 path"; code shows "Account #N" (comment-truth, sensitive screen) |
+| AHW-095 | HIGH | APP | OURS | VALIDATED | Blind-sign approval signs UNSNAPSHOTTED `G_context` (path/outer_hash re-read at approval) — post-review fault signs ≠ reviewed (absorbs F-G-1/F-K1-2/F-K3-1) |
+| AHW-096 | HIGH | BUILD | OURS | VALIDATED | Deploy-profile `sponsor_*`/`deployer` + emitted `*.gen.*` never canonical-verified → poisoned build signs a hidden sponsor/deployer (UI shows only "Sponsored") |
+| AHW-097 | HIGH | HOST | OURS | VALIDATED | Root-exported `LedgerProvider.signOuterHash` = published blind-sign oracle outside the entrypoint (distinct from closed AHW-002) |
+| AHW-098 | HIGH | DESIGN | OURS | VALIDATED | Onboard/receive address host-derived, NEVER device-attested; reveal checksum binds the SECRET not the address; deploy attest skipped on host `alreadyDeployed` |
+| AHW-099 | MED | APP | OURS | VALIDATED | Deploy FINALIZE display-identity TOCTOU — approval re-reads mutable session `#N`/address (signs a fresh local, so bounded; sibling of AHW-095) |
+| AHW-100 | MED | APP | OURS | VALIDATED | Schnorr sign leaves key-equivalent `pe = priv·e` (+ derive/serialize temporaries) un-scrubbed on the stack |
+| AHW-101 | MED | BUILD | OURS | VALIDATED | Mutable GitHub Action refs (`@v6`/`@v4`…) in the firmware build + CI gates (images digest-pinned; release-gate class) |
+| AHW-102 | MED | BUILD | MIXED | VALIDATED | CI blesses the same ELF it built — no independent reproducible rebuild / digest gate / recorded BOLOS-SDK identity (folds F-K6-4) |
+| AHW-103 | MED | DESIGN | OURS | VALIDATED | Root barrel exports the reveal + `loadCachedSecret` reread → in-process same-origin reread of the privacy root w/o a 2nd prompt |
+| AHW-104 | MED | DESIGN | OURS | VALIDATED | Public `setEntrypointOverride`/`overrideAccount` policy-escape seams (full clear-sign bypass when paired with AHW-097) |
+| AHW-105 | MED | HOST | OURS | VALIDATED | Signing pubkey fetched approval-free from 2 provider instances, no byte-equal/verify cross-check → selective-MITM identity split |
+| AHW-106 | MED | DESIGN | OURS | VALIDATED | Impl derives master secret from HW seed (single-seed custody) while the recovery spec mandates 2-of-2 split-brain (doc↔impl; runtime = AHW-047) |
+| AHW-107 | MED | APP | OURS | VALIDATED | Onboarding UI hard-limits recovery to account indices 0–4 while the path accepts any uint31 (recovery footgun) |
+| AHW-108 | MED | TEST | OURS | VALIDATED | APPEND_CALL strict-allowlist reject arms (0x6F09/0A/0B/0C incl. delegated-spend gate) have NO input→SW test; fuzzer is membership-only |
+| AHW-109 | MED | TEST | OURS | VALIDATED | Device low-S anti-malleability + 0x6F06 dup-sig asserted by NO test (host low-S test exercises a different impl) |
+| AHW-110 | LOW | APP | OURS | VALIDATED | Blind-sign NVM toggle checked pre-UI but NOT re-checked in the approval callback (single-glitch policy bypass) |
+| AHW-111 | LOW | APP | OURS | VALIDATED | Authwit clear-sign review shows no path/account fingerprint (B3 re-binds at sign, so display-scope only) |
+| AHW-112 | LOW | APP | MIXED | VALIDATED | Reveal review `#N` can skew under a post-validation path glitch (emitted secret is frozen/safe; display-only) |
+| AHW-113 | LOW | DESIGN | OURS | VALIDATED | Duplicate-compute defenses use a single mismatch-compare site (collapse to one pass if the lone branch is skipped) |
+| AHW-114 | LOW | DESIGN | OURS | VALIDATED | SW conflation: 0x6F01/0x6F06 cover internal recompute-fault AND host-mismatch — weak alerting (fail-closed) |
+| AHW-115 | LOW | APP | OURS | VALIDATED | `GET_PUBLIC_KEY` forwards raw `cx_err_t` via `io_send_sw` — leaks SDK codes outside the app SW taxonomy |
+| AHW-116 | LOW | APP | OURS | VALIDATED | `verified_calls_ui` fails OPEN on an unrenderable call (reg/verb NULL → 0 pairs, approval still signs) |
+| AHW-117 | LOW | APP | OURS | VALIDATED | Deploy `fee_mode` is dead metadata; "Sponsored (testnet)" hardcoded, not enforced (won't fail-closed on a new mode) |
+| AHW-118 | LOW | APP | OURS | VALIDATED | Host-rendered "Device verified"/"✓ on-device" copy w/o a device-attested anchor (anti-phishing; substrate for AHW-098) |
+| AHW-119 | LOW | APP | OURS | VALIDATED | Branchy low-S dispatch + `low_s_normalize` leak the (public) ECDSA `s` magnitude via timing/EM |
+| AHW-120 | LOW | APP | OURS | VALIDATED | ECDSA dup-sig fault check uses short-circuit `memcmp` (not CT) — prefix oracle on the public `s`/`r` under an active fault |
+| AHW-121 | LOW | HOST | MIXED | VALIDATED | APPEND_CALL sends verb/recipient/token/amount raw on the local wire → passive USB/WebHID observer learns tx semantics pre-approval |
+| AHW-122 | LOW | DESIGN | OURS | VALIDATED | "Forget" clears the reveal-cache but leaves the account `secretKey` in the embedded-wallet DB (page-lifetime; ephemeral) |
+| AHW-123 | LOW | HOST | OURS | VALIDATED | BEGIN frames send device-derivable account identity in clear (consumer/publicKeysHash/expectedAddress), incl. rejected flows |
+| AHW-124 | LOW | APP | MIXED | VALIDATED | `make_buf` trusts `cmd->lc` as body size, no in-app reconcile vs `input_len` (over-read defense fully delegated to BOLOS `apdu_parser`) |
+| AHW-125 | LOW | APP | OURS | VALIDATED | `render_call_pairs` is a 95-line per-verb switch (the display==signed boundary) untestable off-device |
+| AHW-126 | LOW | APP | OURS | VALIDATED | Security primitives copy-pasted: `ct_memcmp32`×5 + `low_s_normalize`/`s_is_high`/`HALF_N`×3 (drift risk, distinct from AHW-070/008) |
+| AHW-127 | LOW | TEST | OURS | VALIDATED | `wire-negative.test.ts` hand-copies SW constants instead of importing `apdu.ts` (oracle desyncs on an `sw.h` renumber) |
+| AHW-128 | INFO | PLATFORM | LEDGER | VALIDATED | Highest-value approve callbacks are a single `if(confirm)` branch — universal BOLOS/nbgl pattern; single-glitch resistance is the SE's job |
+| AHW-129 | INFO | APP | OURS | VALIDATED | `fr_as_u32_or_hex` uses `unsigned`-typed shifts instead of `uint32_t` (portability nit; correct on the 32-bit target) |
 
 ---
 
@@ -381,7 +431,7 @@ their CATALOG status; this section is the WORK disposition.
 **Toolchain unpinned for CT reproducibility.** clang version inside the (digest-pinned) builder image is unpinned/unasserted → constant-time codegen evidence can drift silently on a bump. Distinct from AHW-034/035. **Fix dir:** pin + assert clang; re-run the dudect gate on toolchain changes. **Src:** build-hardening R5-06.
 
 ### AHW-070 · LOW · APP · OURS · VALIDATED
-**Canonical-path check duplicated ×3 (C-side).** The full-path validation is copy-pasted across 3 C handlers + the host mirror — a security gate that can drift independently. Distinct from AHW-008/009 (TS). **Fix dir:** extract a single `assert_canonical_aztec_path()`. **Src:** build-hardening R5-07.
+**Canonical-path check inlined (C-side) — DEPLOY + REVEAL.** The full-path validation is inlined instead of calling the shared predicate, a security gate that can drift independently. **C2 update (F-B-2 folded here):** after AHW-064 landed the shared `az_bip32_path_is_canonical`, exactly 4 handlers call it (`begin_authwit`/`sign_outer_hash`/`get_public_key`/`get_schnorr_pubkey`); the 2 remaining inline copies are `begin_deploy_account.c:104-120` (deploy) and `get_aztec_master_secret.c:122-135` (reveal). Distinct from AHW-008/009 (TS). **Fix dir:** route both remaining sites through `az_bip32_path_is_canonical()`. **Src:** build-hardening R5-07 + C2/F-B-2.
 
 ### AHW-071 · LOW · BUILD · OURS · VALIDATED
 **Empty top-level app manifest.** Root `ledger_app.toml` is 0 bytes despite the nested copy declaring itself authoritative — ambiguity about which governs. **Fix dir:** remove or populate the root toml; single source of truth. **Src:** build-hardening R5-08.
@@ -430,11 +480,81 @@ their CATALOG status; this section is the WORK disposition.
 
 ---
 
+## Catalog Campaign C2 (2026-06-02) — detailed findings (wave 1)
+
+Re-audit of the merged audit-remediation (P0–P6). Target: the 31 commits the round-1 campaign predates (settings/NVM blind-sign, `path_canonical`, wire-v3 binding, the `clear-signing-entrypoint` rewrite, `secret-cache`). 3 diverse red-teamers (codex 5.5 xhigh — FW state-machine/binding; opus — FW crypto/UI/NVM; opus — TS wire host) + 1 opus validator (source-verified every claim, deduped vs AHW-001..083). **Yield: 0 CRIT · 0 HIGH · 3 MED · 7 LOW · 1 INFO + 2 folds.** Device guarantees independently re-confirmed intact (see Confirmed-clean additions below).
+
+### AHW-084 · MED · WIRE · OURS · VALIDATED
+**Poseidon2 domain-separator constants hardcoded in the host wire with no equality guard.** `l4-manifest.ts:37-40` hardcodes the four Aztec separators as literals (under a comment "must equal `l4/wire.h`"), consumed on the live signing wire at `:58`/`:72`/`:77` (the `argsHash` the device recomputes against). Verified they match `@aztec/constants@4.2.1` and `wire.h:78-80` today — but there is NO `===` assert binding them to `DomainSeparator` (upstream `@aztec/entrypoints/encoding.ts` imports the enum). An `@aztec/*` bump renumbering a separator silently desyncs the streamed `argsHash` from canonical → every clear-sign fails closed (`SW_HASH_MISMATCH`) or the parity test catches it. Fail-closed, not attacker-triggered, but a load-bearing crypto constant with no drift guard. `_AUTHWIT_OUTER` literal is already dead. **Fix dir:** import `DomainSeparator` from `@aztec/constants` or assert each literal `===` the member; drop the dead one. **Dedup:** distinct from AHW-035 (codegen) + AHW-015 (parity-anchor comment). **Src:** F-C-2.
+
+### AHW-085 · MED · APP · OURS · VALIDATED
+**Authwit FINALIZE re-hashes the cached `args_hash`, never re-derives from stored raw args.** `session.h:40-46` documents raw-args storage for "M5.2's three-pass finalize re-derivation from stored raw args," but the three passes (`finalize_and_sign.c:165-219` → `l4_compute_outer_hash`) consume the cached `call->args_hash` via `parity.c:57-58`; `l4_compute_outer_hash` (`parity.c:85-137`) never recomputes per-call `args_hash` from `call->args[]`. The cached value is written once at APPEND (`append_call.c:160-181`, double-recompute + cross-check). So a fault/glitch corrupting `slot->args_hash`/`slot->args[]` BETWEEN APPEND and FINALIZE is not caught — all three passes re-hash the same corrupted field and agree. Outer-hash 3-pass + B3 consumer-binding still hold → narrow defense-in-depth + comment-truth gap, not a host exploit. **Sev:** held MED (validator confirmed not HIGH): the code actively advertises a hardening it doesn't perform; exploitation needs a precise post-APPEND glitch. **Fix dir:** recompute each call's `args_hash` from `selector+args[]+is_public` every pass and compare before use. **Dedup:** distinct from AHW-025 (missing glitch-sim TESTS) — this is an impl/comment gap in the hardening itself. **Src:** F-A-1.
+
+### AHW-086 · MED · APP · OURS · VALIDATED
+**Call flags STATIC / HIDE_MSG_SENDER are signed but NOT rendered for MINT / DRIP / SPONSOR.** `parity.c:62-67` binds `is_public`/`hide_msg_sender`/`is_static` into the inner→outer hash for EVERY call. `append_call.c:110-146` constrains only the flag mask + `is_public` vs verb — STATIC/HIDE_MSG_SENDER unconstrained for all verbs. `verified_calls_ui.c`: `format_mode` (the only surface showing those flags, `:139-159`) is called ONLY in the TRANSFER arm (`:261`); the MINT/SPONSOR/DRIP arms emit no Flags pair. So a patched host streams a MINT/DRIP/SPONSOR call with HIDE_MSG_SENDER/STATIC; the device binds it into the approved signature but shows nothing. Bounded (still cryptographically bound — no forgery; `is_static` self-defeats a state change) but breaks "rendered == signed" for 3 of 4 verb families. **Fix dir:** emit the Flags pair for any verb when the flag is set, OR reject non-zero STATIC/HIDE_SENDER on verbs whose UI omits them. **Dedup:** distinct from AHW-040 (DRIP value pairs) + AHW-055 (mint warning); directly refines the index Confirmed-clean flags negative (which verified BINDING, not DISPLAY). **Src:** F-B-1.
+
+### AHW-087 · LOW · WIRE · OURS · VALIDATED
+**Live Ledger adapter never verifies the device's returned signature.** `provider.ts:151-167`/`:196-212` length-check `r‖s` (64B) and return; `clear-signing-entrypoint.ts:176`/`:231` wrap straight into `new AuthWitness(...)` with zero verification, though the host caches the pubkey (`auth-witness-provider.ts:79-89`) and bundles `@noble/curves`. A MITM/compromised transport returning any well-formed 64-byte blob with `sw=0x9000` is trusted; bad sig only fails late in-circuit (opaque). No fund loss (in-circuit verifier backstops) — defense-in-depth + clearer-error miss. **Fix dir:** `secp256k1.verify(r‖s, sha256(outerHash), cachedPubkey)` (+ Grumpkin-Schnorr equiv); throw on failure. **Dedup:** AHW-075 = same principle but scoped to the DELETED `adapter-trezor` (dissolved); the live sole-v0 adapter is uncovered. **Src:** F-C-3.
+
+### AHW-088 · LOW · WIRE · OURS · VALIDATED
+**`overrideAccount` mutates the shared wallet account-map every transfer/drip and is never reverted.** `aztec-ledger-session.ts:618-620` installs a fresh per-tx `BaseAccount` via `session.overrideAccount(...)`; the `finally` (`:638-642`) only nulls `inflight` — no override revert. Contrast the deploy path (`:371-396`) which uses `setEntrypointOverride(ep)` + `finally(null)`. The override outlives submission; `EmbeddedWallet.sendTx` auto-authwit harvesting routes through the overridden account. Fail-closed today (its `createAuthWit` throws, AHW-001/089), but a stale-state seam: a second account on the same session, or a future non-throwing override, inherits a permanently-installed entrypoint built for the FIRST tx's options. **Fix dir:** revert the override in `transferViaRealSendTx`'s `finally`, or build the per-tx account without mutating shared state. **Dedup:** distinct from AHW-009 (monolith/mutex) — un-reverted shared-map mutation. **Src:** F-C-4.
+
+### AHW-089 · LOW · WIRE · MIXED · VALIDATED
+**Auto-authwit fail-close (AHW-001) is silently swallowed upstream — no user signal.** `EmbeddedWallet.sendTx` derives app-authwits in `embedded_wallet.js:85-98` via `…map(async … try{createAuthWit}catch{return undefined})`, pushing only truthy. Our `createAuthWit` always throws (AHW-001 fail-close), so any tx genuinely needing an app-authwit has it dropped to `undefined` and filtered; the tx then proves WITHOUT it and fails later with an unrelated kernel/sim error — the user never sees "this flow needs an authorization the device can't clear-sign yet." Availability/observability only (live own-account flows generate no offchain auth effects, so it never fires today). **Owned MIXED:** the swallowing catch is upstream `@aztec/wallets`; the throw-with-no-signal decision is OURS. **Fix dir:** detect non-empty `offchainEffects` needing authwits BEFORE `sendTx` and raise a clear error in our wrapper. **Dedup:** AHW-001 = the capability fix; this is the new interaction observation. **Src:** F-C-5.
+
+### AHW-090 · LOW · TEST · OURS · VALIDATED
+**No host test threads `(profileId, salt)` from a non-zero-salt account through provider → entrypoint → `buildL4Manifest`.** The post-impl codex salt fix is enforced by threading through `auth-witness-provider.ts:115-123` → `aztec-ledger-session.ts:246-250` → `clear-signing-entrypoint.ts:160-167`. Verified by grep: NO `*.test.ts` references `createClearSigningEntrypoint`; manifest-builder tests construct the header by hand with no `profileId` equality assert. A regression dropping `salt`/`profileId` would compile, pass every test, and silently sign with salt=0/profile=0 → device 0x6F12 only at runtime on a non-zero-salt account. **Fix dir:** pure-TS test stubbing `LedgerProvider` to capture the `beginAuthwit(header)` arg, asserting `header.profileId`/`header.salt`. **Dedup:** AHW-026 tests the DEVICE-side lock-out; this is the untested HOST producer side. **Src:** F-C-6.
+
+### AHW-091 · LOW · TEST · OURS · VALIDATED
+**The B3 binding / finalize tail is outside the adversarial fuzz/replay envelope.** `tests/wire_host/Makefile:11-14` states the harness proves "per-APDU memory-safety + parser robustness, NOT multi-APDU session-state machines"; the deploy target fuzzes only `deploy_parse_and_validate()`, and `fuzz_deploy_parse.c:26-53` defines `account_binding_deploy_pubkey_xy`, `account_binding_deploy_partial`, `az_account_derive_from_path` as `__builtin_trap()` stubs. So B3 binding, deploy pre-sign recompute, and FINALIZE state-handling are never executed by the fuzz/differential-replay suite — regressions in the new remediation cluster can ship unhit. **Fix dir:** seeded replay/fuzz targets for `FINALIZE_AND_SIGN` + `FINALIZE_DEPLOY_AND_SIGN`, plus a host-buildable oracle that runs the binding tail instead of trapping. **Dedup:** AHW-024/025 are individual missing tests; this is the structural blind spot around the centralized binding/finalize code. **Src:** F-A-3.
+
+### AHW-092 · LOW · APP · OURS · VALIDATED
+**Shared binding helper defaults unknown constructor schemas to ECDSA; FINALIZE never re-checks schema.** `account_binding.c:57-72` (`account_binding_deploy_partial`) handles `CS_DEPLOY_ARG_SCHEMA_SCHNORR_PUBKEY_XY` explicitly and sends every other `arg_schema` down the ECDSA path (`:69`). Authwit FINALIZE (`finalize_and_sign.c:108-115`) re-checks only `(curve_id, profile_id)` via `l4_authwit_curve_profile_allowed`, not `profile->arg_schema`. Not exploitable with today's 2 profiles (K1↔0, GRUMPKIN↔1), but a real fail-closed hole in the new shared helper: manifest/codegen drift changing the schema behind an allowlisted profile id → B3 keeps accepting it and binds against the wrong ctor encoding instead of fail-closing. **Fix dir:** switch exhaustively on known schemas + `return -1` on default; assert `arg_schema` matches the expected curve in `b3_verify_consumer_is_this_account`. **Dedup:** novel; the closed post-impl "fail closed on unknown CURVES" left the arg_schema axis open. **Src:** F-A-2.
+
+### AHW-093 · LOW · WIRE · OURS · VALIDATED
+**No assert that deploy/tx mode matches the presence of `ledgerDeployContext`.** `clear-signing-entrypoint.ts:127` decides deploy-vs-tx purely on `(options).ledgerDeployContext`; `createTxExecutionRequest` never inspects `options` for a stray context, and `#assertClearSignPolicy:284-320` checks authWitnesses/capsules/extraHashedArgs/feeMode/cancellable but never the deploy-context presence per `kind`. The mode-select is an unauthenticated host-chosen sideband — nothing asserts "a tx MUST NOT carry a deploy context" / "a deploy MUST carry one." Fail-closed both ways today (rests on luck, not an assert); a future field/branch change could silently downgrade a deploy to a verb review. **Sev:** LOW (defense-in-depth pin only). **Fix dir:** in `#assertClearSignPolicy`, assert `kind==='deploy'` ⇔ context present; pairs with AHW-005's typed-options fix. **Dedup:** AHW-005 (PARKED) = the type annotation; this is the missing mode-consistency assert (thin, but distinct + highest-trust seam). **Src:** F-C-1.
+
+### AHW-094 · INFO · APP · OURS · VALIDATED
+**Master-secret reveal UI header docstring is stale — claims "Path: full BIP-32 path", code shows "Account #N".** `master_secret_reveal_ui.c:11-14` documents "Two pairs: Path = full BIP-32 path … Confirm = checksum," but `ui_display_master_secret_reveal` (`:64-71`) shows `Account="#N"` (masked `reveal_account_index()`, `:52-54`) + `Confirm=checksum` — no "Path" pair, the full path is never displayed (the M9 B2 change switched path→"#N" but left the docstring). No runtime effect — comment-truth defect on the most sensitive screen (privacy-root reveal); an auditor reading the header would believe the full path is shown. **Fix dir:** update the docstring to match (Account #N + Confirm checksum; note full path intentionally not shown post-M9 B2). **Dedup:** distinct from AHW-022 (dismiss status) + AHW-047 (subtitle wording). **Src:** F-B-3.
+
+### C2 wave-1 folds (no new ID)
+- **F-B-2 → AHW-070** (extended above): the reveal handler is a genuine 4th inline canonical-path copy not enumerated in AHW-070's deploy-only scope; folded for register succinctness (identical defect class + one-line fix). AHW-070 scope now "DEPLOY + REVEAL."
+- **F-C-7 → AHW-010** (location updated above): same `bytesEqual` `as number` cast, relocated to `clear-signing-entrypoint.ts:82` by the rewrite — one defect, new line.
+
+---
+
+## Catalog Campaign C2 — Wave 2 + 10-codex Burst (2026-06-02; LOOP STOPPED per owner)
+
+**Finders:** wave-2/3 = D/E/F/G/H/J (codex: deploy, crypto/signing, wire/codegen; opus: memsafety, modularity/tests, onboarding/attestation); a one-time **10-codex burst** K1–K10 (fault-injection · side-channel · APDU state-machine · crypto-correctness · scheme-confusion · build/supply-chain · consumer-API · privacy · fail-open · recovery/custody). **Validators:** 3 theme-split opus (V1 fault/signing/state · V2 supply-chain/API/attestation · V3 quality/sidechannel/privacy) — every claim source-verified, deduped vs AHW-001..094, consolidated within-cluster. Full per-finding blocks + fix-sketches: `audit/_raw/c2/validated-V{1,2,3}.md` (raw finder transcripts: `audit/_raw/c2/{D..J,K1..K10}*.md`).
+
+**Consolidation was the story: ~15 raw HIGH candidates → 4 validated HIGH.** The inflation was killed honestly — K1's "5 HIGH" fault cluster collapsed (blind-sign triple G-1/K1-2/K3-1 → one AHW-095; "every confirm callback is one branch" = universal BOLOS pattern → AHW-128 INFO/PLATFORM; "widens to arbitrary children" / "reveals child's root" = factually false [B3 re-binds; emitted secret frozen] → LOW); K2's three side-channel "HIGH" → LOW/LOW/fold (leaked value is the PUBLIC sig `s`; the limb-predicate is the AHW-029 PLATFORM residual); K10-1 single-seed-vs-spec → MED (doc↔impl; runtime consequence already AHW-047).
+
+**The 4 HIGH (all NEW):**
+- **AHW-095** (FW) — blind-sign approval re-reads mutable `G_context` (`sign_ui.c:94` + `sign_outer_hash.c:126`); the ONLY signing sink that signs an unsnapshotted hash/path (authwit + deploy provably sign a fresh local recompute). Bounded by blind-sign default-OFF/NVM-sticky. Fix: sign an immutable reviewed snapshot + reject on post-review mismatch.
+- **AHW-096** (BUILD) — `crossCheckDeployProfile` verifies only class-id/ctor; `sponsor_fpc_address`/`sponsor_selector_u32`/`deployer` are emitted unchecked, signed by the device, shown only as "Sponsored (testnet)". Fix: canonical-equality gate at codegen + gate the firmware build on gen-drift + render the sponsor.
+- **AHW-097** (HOST) — `index.ts` root-exports `LedgerProvider.signOuterHash` (raw digest signer) outside the clear-sign entrypoint; only guard is the device toggle. Fix: drop from the root barrel / relocate behind an explicit unsafe subpath.
+- **AHW-098** (DESIGN) — onboard derives the address host-side; the device attests the SECRET (reveal checksum) but never the ADDRESS, and deploy address-attestation is skipped on host-controlled `alreadyDeployed`. Fix: an approval-gated device-derived `GET_AZTEC_ADDRESS`, or an address fingerprint in the reveal pair.
+
+**Systemic themes for the deep-plan (each = ONE work-item across sites):**
+1. **Post-review mutable-state TOCTOU** — AHW-095 (live HIGH) + AHW-099 (deploy) + AHW-085 (authwit): sign/emit an immutable reviewed snapshot, never re-read globals.
+2. **Host-trusted/unattested field → signing or "verified" display** — AHW-096, AHW-098, AHW-105, AHW-118; cf. AHW-084/086.
+3. **Over-broad published API surface** — AHW-097 + AHW-104 + AHW-103 compose into a clear-sign bypass.
+4. **Build/supply-chain provenance** (release-gate class, owner-PARKED CI) — AHW-096/101/102 + existing AHW-034/035.
+5. **Untested fail-closed reject arms + anti-malleability** — AHW-108/109 + existing AHW-024/025/091 (one consolidated test item).
+6. **Duplicated C security primitives** — AHW-126 (`ct_memcmp32`×5, low-S×3) + existing AHW-070/008.
+
+**Folds into existing findings (enrich, no new ID):** AHW-029 += side-channel limb-predicate control-flow (gate on the same -Oz/dudect evidence); AHW-021 += `cxmath_spike` skips `l4_session_reset` + uncapped ≤65535 loop (dead in shipped build); AHW-025 += the concrete 0x6F06 dup-sig glitch-sim arm; AHW-093 += the `wrapExecutionPayload` branch-select test companion.
+
+---
+
 ## Confirmed-clean — negative results (checked & robust; auditor-facing)
 Recorded so the auditor doesn't re-chase, and to show the review's breadth.
+- **[C2] Firmware in scope is MEMORY-SAFE** (opus, source-verified): no OOB / off-by-one / integer-overflow / stale-buffer / VLA / recursion across `dispatcher.c`, `app_main.c`, the 5 parse fns, `cxmath_spike.c`, `format.c`. Every host count capped at a compile-time constant BEFORE indexing; every BIP-32 read doubly bounded; every parser rejects trailing bytes + gates `buffer_read_*` on remaining length; `cs_format_amount` bounds-safe. The one platform reliance (BOLOS `apdu_parser` body-sizing) is AHW-124.
+- **[C2] Crypto-correctness clean** (codex K4, source-verified + re-ran `poseidon2_cli`): poseidon2 / pedersen / blake2s / grumpkin + `args_hash` / `outer_hash` / padding match the Aztec canonical refs across edge cases (0, p−1, identity, point-at-∞, unreduced→reject, empty/max args); **no collision or second-preimage**; `deploy_outer_hash` matches the sponsored-deploy authwit shape.
+- **[C2] Dual-scheme (ECDSA-K1 vs Schnorr-Grumpkin) confusion clean** (codex K5, source-verified): BEGIN+FINALIZE validate `curve_id`/canonical-path/allowlisted `(curve,profile)` + re-derive the bound account before AND just before signing; the "Scheme" review line is 1:1 with the signer; Schnorr nonce bound to `curve_id+pubkey+priv+msg`; deploy validates `curve_id` vs the profile `arg_schema`. (Builds on AHW-018/092.)
 - **Signature malleability:** ECDSA-K low-`s` enforced; Schnorr (R,s) canonical; no malleable encoding accepted. (codex)
 - **Domain separation:** device vs host separators match `@aztec/constants`; no cross-context (authwit↔deploy↔nonce↔pedersen↔poseidon) preimage collision found. (codex)
-- **Clear-sign flags** (STATIC / HIDE_MSG / PUBLIC) are bound into the inner_hash (`parity.c:62-67`) — no display-vs-sign gap; `is_public` double-bound via the args_hash separator. (UI validator N-1)
+- **Clear-sign flags** (STATIC / HIDE_MSG / PUBLIC) are bound into the inner_hash (`parity.c:62-67`) — no sign-side forgery; `is_public` double-bound via the args_hash separator. **⚠ REFINED by AHW-086 (C2):** binding ≠ display — STATIC/HIDE_MSG_SENDER are rendered only in the TRANSFER arm, so MINT/DRIP/SPONSOR carry a display-vs-sign gap. (UI validator N-1)
 - **Multi-call review cannot overflow/mask:** `call_count ≤ 5` (`begin_authwit.c:95`), `VC_PAIR_CAPACITY = 32`, worst case 29 pairs; all calls render. (UI validator N-2)
 - **No in-allowlist token-symbol collision** today (4 distinct symbols @ distinct addresses; carries the AHW-042 codegen caveat). (UI validator N-3)
 - **`cs_format_amount` arithmetic is faithful:** locale-free fixed-point, correct trailing-zero trim, high-bytes/`decimals>30` rejected — only the `decimals` SOURCE deceives (AHW-051). (UI validator N-4)
@@ -445,7 +565,7 @@ Recorded so the auditor doesn't re-chase, and to show the review's breadth.
 
 ---
 
-## Loop closed — final (83 findings)
+## Round-1 campaign closed (83 findings) — REOPENED by Catalog Campaign C2 (2026-06-02, now 94)
 Stopped on the "repeating ourselves" condition — the 125 ceiling was deliberately NOT padded to. Rounds 4–5 (depth + every remaining unrun angle) produced **0 surviving new HIGH/CRIT**; yield collapsed to MED/LOW/INFO/hardening/dead-code/enrichments. The round-5 validators independently flagged diminishing returns in the impact profile (0-reject/0-dup, but all-LOW/INFO — the 0-reject rate was inflated by the angles being genuinely unrun, not by remaining HIGHs).
 
 **Coverage:** 9 red-team subagents (5 opus + 4 codex xhigh) across — trust-boundary · firmware crypto-memory · quality/modularity/tests · supply-chain/CI · host-validation/frontend/codegen · protocol/crypto · UI-deception · crypto-correctness · failure-modes · build/manifest-hardening · trezor/deps · privacy/metadata — each finding run through one of 8 separate validation subagents (validated + deduped) before indexing. Raw + validation transcripts in `audit/_raw/`.
