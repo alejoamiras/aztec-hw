@@ -165,13 +165,13 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-094 | INFO | APP | OURS | VALIDATED | Reveal UI header docstring claims "full BIP-32 path"; code shows "Account #N" (comment-truth, sensitive screen) |
 | AHW-095 | HIGH | APP | OURS | VALIDATED | Blind-sign approval signs UNSNAPSHOTTED `G_context` (path/outer_hash re-read at approval) — post-review fault signs ≠ reviewed (absorbs F-G-1/F-K1-2/F-K3-1) |
 | AHW-096 | HIGH | BUILD | OURS | VALIDATED | Deploy-profile `sponsor_*`/`deployer` + emitted `*.gen.*` never canonical-verified → poisoned build signs a hidden sponsor/deployer (UI shows only "Sponsored") |
-| AHW-097 | HIGH | HOST | OURS | VALIDATED | Root-exported `LedgerProvider.signOuterHash` = published blind-sign oracle outside the entrypoint (distinct from closed AHW-002) |
+| AHW-097 | HIGH | HOST | OURS | FIXED | Root-exported `LedgerProvider.signOuterHash` = published blind-sign oracle outside the entrypoint (distinct from closed AHW-002) |
 | AHW-098 | HIGH | DESIGN | OURS | VALIDATED | Onboard/receive address host-derived, NEVER device-attested; reveal checksum binds the SECRET not the address; deploy attest skipped on host `alreadyDeployed` |
 | AHW-099 | MED | APP | OURS | VALIDATED | Deploy FINALIZE display-identity TOCTOU — approval re-reads mutable session `#N`/address (signs a fresh local, so bounded; sibling of AHW-095) |
-| AHW-100 | MED | APP | OURS | VALIDATED | Schnorr sign leaves key-equivalent `pe = priv·e` (+ derive/serialize temporaries) un-scrubbed on the stack |
+| AHW-100 | MED | APP | OURS | FIXED | Schnorr sign leaves key-equivalent `pe = priv·e` (+ derive/serialize temporaries) un-scrubbed on the stack |
 | AHW-101 | MED | BUILD | OURS | VALIDATED | Mutable GitHub Action refs (`@v6`/`@v4`…) in the firmware build + CI gates (images digest-pinned; release-gate class) |
 | AHW-102 | MED | BUILD | MIXED | VALIDATED | CI blesses the same ELF it built — no independent reproducible rebuild / digest gate / recorded BOLOS-SDK identity (folds F-K6-4) |
-| AHW-103 | MED | DESIGN | OURS | VALIDATED | Root barrel exports the reveal + `loadCachedSecret` reread → in-process same-origin reread of the privacy root w/o a 2nd prompt |
+| AHW-103 | MED | DESIGN | OURS | FIXED | Root barrel exports the reveal + `loadCachedSecret` reread → in-process same-origin reread of the privacy root w/o a 2nd prompt |
 | AHW-104 | MED | DESIGN | OURS | VALIDATED | Public `setEntrypointOverride`/`overrideAccount` policy-escape seams (full clear-sign bypass when paired with AHW-097) |
 | AHW-105 | MED | HOST | OURS | VALIDATED | Signing pubkey fetched approval-free from 2 provider instances, no byte-equal/verify cross-check → selective-MITM identity split |
 | AHW-106 | MED | DESIGN | OURS | VALIDATED | Impl derives master secret from HW seed (single-seed custody) while the recovery spec mandates 2-of-2 split-brain (doc↔impl; runtime = AHW-047) |

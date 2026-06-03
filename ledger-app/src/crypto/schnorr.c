@@ -68,9 +68,18 @@ static bool sign_once(uint8_t out_sig[64], const uint8_t priv_be[32], const uint
     ok = true;
 
 done:
-    /* Scrub secret-derived material. */
-    gk_fq_zero(&priv_fq);
-    gk_fq_zero(&k_fq);
+    /* Scrub ALL secret-derived field elements (AHW-100). `pe = priv·e` is the
+     * dangerous one: with the public `e` (in the signature), leftover `pe`
+     * recovers `priv = pe·e⁻¹`. gk_fq_zero is the cross-platform wipe (device +
+     * the host parity oracle). gk_fq_secure_wipe does VOLATILE stores that survive
+     * -Oz dead-store elimination — gk_fq_zero inlines to dead stores the compiler
+     * drops — and needs no BOLOS os.h (host crypto build unaffected).
+     * pe/s_fq may be indeterminate if we jumped here pre-assignment — writing
+     * their storage is safe (no read of an uninit value). */
+    gk_fq_secure_wipe(&priv_fq);
+    gk_fq_secure_wipe(&k_fq);
+    gk_fq_secure_wipe(&pe);
+    gk_fq_secure_wipe(&s_fq);
     return ok;
 }
 

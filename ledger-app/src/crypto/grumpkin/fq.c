@@ -64,6 +64,14 @@ void gk_fq_zero(gk_fq_t *out) {
   out->limbs[3] = 0;
 }
 
+void gk_fq_secure_wipe(gk_fq_t *x) {
+  /* AHW-100: volatile so the zeroing survives -Oz dead-store elimination. */
+  volatile uint64_t *p = x->limbs;
+  for (int i = 0; i < AZ_FQ_NUM_LIMBS; i++) {
+    p[i] = 0;
+  }
+}
+
 void gk_fq_set(gk_fq_t *out, const gk_fq_t *a) {
   out->limbs[0] = a->limbs[0];
   out->limbs[1] = a->limbs[1];
@@ -234,6 +242,12 @@ void gk_fq_from_bytes_wide_be(gk_fq_t *out, const uint8_t bytes[64]) {
     gk_fq_add(&acc, &acc, &term);
   }
   gk_fq_set(out, &acc);
+  /* AHW-100: scrub secret-derived temporaries at the helper level so secret
+   * callers (aztec_secret.c viewing-scalar derivation) don't have to remember.
+   * Harmless on public-input calls. c256 is the public constant 256. gk_fq_zero
+   * (not explicit_bzero) keeps this file host-oracle-buildable; -Oz asm-checked. */
+  gk_fq_secure_wipe(&acc);
+  gk_fq_secure_wipe(&term);
 }
 
 bool gk_fq_from_bytes_be(gk_fq_t *out, const uint8_t bytes[AZ_FQ_BYTE_LEN]) {
@@ -270,4 +284,7 @@ void gk_fq_to_bytes_be(uint8_t bytes[AZ_FQ_BYTE_LEN], const gk_fq_t *a) {
       bytes[i * 8 + b] = (uint8_t)(limb >> (56 - b * 8));
     }
   }
+  /* AHW-100: scrub the de-Montgomery'd normal-form value (secret when `a` is a
+   * secret scalar). Helper-level so callers are covered by construction. */
+  gk_fq_secure_wipe(&normal);
 }

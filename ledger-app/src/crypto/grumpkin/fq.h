@@ -50,6 +50,12 @@ typedef struct {
 /** Initialize to zero (Montgomery form of 0 is 0). */
 void gk_fq_zero(gk_fq_t *out);
 
+/** Secure-wipe a SECRET field element via volatile stores the compiler MUST emit
+ * — NOT dead-store-eliminated under -Oz (gk_fq_zero inlines to dead stores that
+ * get dropped). Needs no BOLOS os.h, so the host parity oracle still builds.
+ * Use for scrubbing secret-derived gk_fq_t (AHW-100); NOT for the zero element. */
+void gk_fq_secure_wipe(gk_fq_t *x);
+
 /** Copy. */
 void gk_fq_set(gk_fq_t *out, const gk_fq_t *a);
 
