@@ -23,6 +23,7 @@
 #include "sign_outer_hash.h"
 #include "../globals.h"
 #include "../path_canonical.h"
+#include "../review_snapshot.h"
 #include "../settings.h"
 #include "../sw.h"
 #include "../ui/display.h"
@@ -124,10 +125,31 @@ int handler_sign_outer_hash(buffer_t *cdata) {
  * Performs the actual ECDSA signature + low-S normalization + duplicate-check, then sends the response.
  */
 int sign_outer_hash_after_approval(void) {
+    /* AHW-095: sign ONLY what was reviewed. Verify the live G_context still
+     * matches the out-of-band snapshot taken at review-draw, copy the reviewed
+     * values into locals, then disarm (single-use). A mid-review clobber/glitch
+     * → verify returns NULL → reject; we never sign the (possibly-mutated) live
+     * globals. The signature below is over the snapshot, not G_context. */
+    const blind_sign_snapshot_t *snap = review_snapshot_verify_blind_sign(
+        G_context.bip32_path, G_context.bip32_path_len, G_context.sign_info.outer_hash);
+    if (snap == NULL) {
+        review_snapshot_disarm();
+        explicit_bzero(&G_context, sizeof(G_context));
+        int rc = io_send_sw(SW_REVIEW_STATE_MISMATCH);
+        nbgl_useCaseStatus("Review state changed", false, ui_menu_main);
+        return rc;
+    }
+    uint8_t reviewed_outer_hash[AZTEC_OUTER_HASH_LEN];
+    uint32_t reviewed_path[MAX_BIP32_PATH_LEN];
+    uint8_t reviewed_path_len = snap->bip32_path_len;
+    memcpy(reviewed_outer_hash, snap->outer_hash, AZTEC_OUTER_HASH_LEN);
+    memcpy(reviewed_path, snap->bip32_path, sizeof(reviewed_path));
+    review_snapshot_disarm();
+
     // 1) Device-side SHA-256 of outer_hash.
     //    `cx_hash_sha256` returns the digest length (32) on success — NOT a cx_err_t.
     uint8_t digest[32];
-    size_t digest_len = cx_hash_sha256(G_context.sign_info.outer_hash, AZTEC_OUTER_HASH_LEN, digest, sizeof(digest));
+    size_t digest_len = cx_hash_sha256(reviewed_outer_hash, AZTEC_OUTER_HASH_LEN, digest, sizeof(digest));
     if (digest_len != 32) {
         explicit_bzero(&G_context, sizeof(G_context));
         return io_send_sw(SWO_UNKNOWN);
@@ -141,8 +163,8 @@ int sign_outer_hash_after_approval(void) {
     uint8_t s[32];
     uint32_t info = 0;
     cx_err_t err = bip32_derive_ecdsa_sign_rs_hash_256(CX_CURVE_256K1,
-                                                       G_context.bip32_path,
-                                                       G_context.bip32_path_len,
+                                                       reviewed_path,
+                                                       reviewed_path_len,
                                                        CX_RND_RFC6979,
                                                        CX_SHA256,
                                                        digest, sizeof(digest),
@@ -167,8 +189,8 @@ int sign_outer_hash_after_approval(void) {
     uint8_t s2[32];
     uint32_t info2 = 0;
     err = bip32_derive_ecdsa_sign_rs_hash_256(CX_CURVE_256K1,
-                                              G_context.bip32_path,
-                                              G_context.bip32_path_len,
+                                              reviewed_path,
+                                              reviewed_path_len,
                                               CX_RND_RFC6979,
                                               CX_SHA256,
                                               digest, sizeof(digest),

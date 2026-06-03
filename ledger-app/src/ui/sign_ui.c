@@ -17,6 +17,7 @@
 
 #include "display.h"
 #include "../globals.h"
+#include "../review_snapshot.h"
 #include "../sw.h"
 #include "../handler/sign_outer_hash.h"
 
@@ -110,6 +111,12 @@ int ui_display_blind_sign(void) {
     g_review_list.nbPairs = 2;
     g_review_list.smallCaseForValue = false;
     g_review_list.wrapping = true;
+
+    /* AHW-095: snapshot what we're about to show, OUT-OF-BAND (not G_context).
+     * The approval callback signs FROM this snapshot + compares the live state
+     * back to it, so a mid-review clobber/glitch can't change what is signed. */
+    review_snapshot_capture_blind_sign(G_context.bip32_path, G_context.bip32_path_len,
+                                       G_context.sign_info.outer_hash);
 
     nbgl_useCaseReviewBlindSigning(TYPE_TRANSACTION,
                                    &g_review_list,
