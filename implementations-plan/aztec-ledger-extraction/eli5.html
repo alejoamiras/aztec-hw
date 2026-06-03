@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ELI5 — aztec-ledger SDK extraction</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.6 -apple-system, system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1.2rem; }
+  h1 { font-size: 1.7rem; } h2 { margin-top: 2rem; border-bottom: 1px solid #8884; padding-bottom: .3rem; }
+  code, pre { font-family: ui-monospace, Menlo, monospace; }
+  pre { background: #8881; padding: 1rem; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .seed { border-left: 4px solid #4a90d9; }
+  .pill { display: inline-block; background: #4a90d922; border: 1px solid #4a90d955; border-radius: 999px; padding: 0 .6rem; font-size: .8rem; }
+  .ok { color: #2e7d32; } .warn { color: #c77700; }
+  table { border-collapse: collapse; width: 100%; } td, th { border: 1px solid #8884; padding: .35rem .5rem; text-align: left; font-size: .92rem; }
+  a { color: #4a90d9; }
+</style>
+</head>
+<body>
+
+<h1>aztec-ledger: turning our Ledger work into a real SDK</h1>
+<p><span class="pill">Plan</span> <a href="plan.md">plan.md</a> &nbsp;·&nbsp; <span class="pill">drafts</span> <a href="plan-boundary.md">plan-boundary.md</a>, <a href="plan-dx.md">plan-dx.md</a> &nbsp;·&nbsp; <span class="pill">status</span> <b>awaiting approval</b> · no code moved</p>
+
+<h2>The 5-year-old version</h2>
+<p>Right now our Ledger code lives in one box (<code>adapter-ledger</code>) that mixes <b>two different things</b>:</p>
+<ul>
+  <li><b>The reusable bit</b> — "talk to a Ledger and get an Aztec account." Anyone could use this.</li>
+  <li><b>The demo bit</b> — our specific test app: it knows about USDC/the faucet, spins up a prover (PXE), and runs deploy/drip/transfer. Nobody else wants this.</li>
+</ul>
+<p>We're going to <b>split the box in two</b>: a clean <code>aztec-ledger</code> SDK (the reusable bit) that a stranger can <code>npm install</code> and use, and the demo bit moves into the demo app where it belongs. The tell that we cut correctly: the heavy demo-only libraries (<code>@aztec/pxe</code>, <code>@aztec/noir-contracts.js</code>, <code>@aztec/wallets</code>) must <b>completely disappear</b> from the SDK.</p>
+<p>"Publish-quality but private" = we make it <i>look and behave</i> like a shippable npm package (clean API, a real build, docs, 3 ways to plug in a device), but we keep it <code>private</code> until the Ledger app itself is installable from Ledger Live. Until then, a developer can still side-load the dev app and connect through the SDK.</p>
+
+<h2>What a stranger gets afterward</h2>
+<pre>import { connectLedger } from 'aztec-ledger';
+import { webhid } from 'aztec-ledger/webhid';        // or /node-hid, or /speculos (tests)
+
+const conn = await connectLedger({ transport: webhid() });   // fails closed if the firmware is wrong
+const account = await conn.createAccount({ scheme: 'ecdsa' }); // device-attested address by default
+// → use `account` with @aztec/aztec.js like any account
+</pre>
+
+<h2>The non-obvious truths the planning surfaced</h2>
+<table>
+<tr><th>Finding</th><th>So we…</th></tr>
+<tr><td>The root barrel re-exports the demo session + transports → the "no heavy deps" promise leaks at the public API.</td><td>Cut a tiny ~12-symbol root barrel <b>first</b>; demote internals/transports/raw-signer/reveal to subpaths.</td></tr>
+<tr><td>We feared the call-decoder was glued to the demo's contract list. It isn't — the only glue is <b>one</b> host-side "early reject" check, and <b>the device re-checks everything anyway</b> (codex + opus both verified this in the firmware).</td><td>Make that check an <b>optional hook</b>; the SDK ships <b>no</b> contract list. Consumers bring their own (matched to their firmware) or skip it.</td></tr>
+<tr><td>The code-generator also writes the <b>firmware's</b> tables and pulls a heavy lib.</td><td>It moves to a shared <code>tools/</code> dir — not in the SDK, not buried in the demo.</td></tr>
+<tr><td>There's <b>no build step</b> today (we ship raw TypeScript).</td><td>Add a real emitter (tsdown → JS + types). Spike it early — 29 deep <code>@aztec/*</code> imports could bite.</td></tr>
+<tr><td><span class="warn">"Keys never leave the device" is false.</span> The <i>spend</i> key stays, but onboarding <b>reveals the viewing/privacy root</b> to the browser by design.</td><td>Say so plainly; put <code>reveal</code>/<code>onboarding</code> on an <code>./advanced</code> subpath that's explicitly outside the safe-by-default guarantees.</td></tr>
+</table>
+
+<h2>How sure are we? (the protocol ran in full)</h2>
+<p>3 independent plan drafts (triangulated) → <b>codex</b> pre-impl audit (<i>fix-plan-first</i>, 3 HIGH folded) → consolidate → <b>codex + opus dual audit</b> of the consolidated. Both final verdicts: the core design is <b class="ok">sound to implement</b>; the fixes were all "on paper" (naming, what-physically-moves, the version-handshake spec, P0 ordering, build-spike timing). All 7 refinements are folded into <a href="plan.md">plan.md</a> §"Final audit fold".</p>
+<p><b>Open decisions for approval:</b> npm scope; rename <code>adapter-ledger→aztec-ledger</code> (rec: yes); codegen home (<code>tools/</code>); builder (tsdown). CI is intentionally skipped for now.</p>
+
+<h2 class="seed">Seed — <code>/goal</code> (paste to set the implementation contract)</h2>
+<pre class="seed">Implement implementations-plan/aztec-ledger-extraction/plan.md — extract a publish-quality, PRIVATE `aztec-ledger` SDK from packages/adapter-ledger; keep `core` separate. BINDING (audit-folded):
+1. Pure ~12-symbol root barrel; concrete transports + ./unsafe + ./advanced (reveal/onboarding/raw LedgerProvider) on SUBPATHS; root exports only safe API + types.
+2. Move OUT to apps/demo-browser: aztec-ledger-session.ts, session-embedded-wallet.ts, preflight.ts, registry.generated.ts, selectors.generated.ts, PreflightError/PreflightDecodedCall. SDK keeps ONLY the ClearSignPreflight hook TYPE (no registry shipped).
+3. Codegen + manifest.json → root tools/ dir (writes BOTH firmware C tables + a TS registry); NOT in the SDK.
+4. Transports: WebHID + Speculos exist; ADD NodeHidTransport. Subpath-exported. autoConfirm Speculos-only.
+5. @aztec/* → peerDependencies (4.2.1). Mandatory connect handshake in every safe constructor: GET_VERSION 3-tuple compat-range + GET_CAPS ⊇ required-bitmask — SEPARATE from the optional registry/manifest-id check (rides the preflight hook). Add a registry/manifest id to the codegen bundle.
+6. Add tsdown build (ESM + .d.ts) — SPIKE EARLY (150 .ts-ext imports, verbatimModuleSyntax, 29 @aztec deep-subpaths as externals; exports map must mirror).
+7. Honest docs: spend key device-only; viewing/privacy root revealed-under-approval; ./advanced is OUTSIDE the fail-closed guarantees. Preserve AHW-097 unsafe-gating + AHW-098 attested-address default.
+8. Decide+do rename adapter-ledger→aztec-ledger (~20 importers) as P0 step 0.
+P0 ORDER (no red window): rename → demo gains pxe/wallets deps → move glue + repoint state.ts + tests (aztec-ledger-session.test, .integration.test, deploy-profile-selection.test) → cut root barrel LAST.
+DONE = lint:all + bun test packages/ + tsc (aztec-ledger + core isolated) + tsdown build exit 0; Speculos matrix green FROM the package; a standalone consumer-smoke derives an address; demo smoke+onboard e2e green (8 e2e files import the app → survive); `git grep '@aztec/pxe|@aztec/wallets|@aztec/noir-contracts'` in the SDK pkg = ∅. CI SKIPPED. Firmware UNCHANGED. R1 stays dropped.</pre>
+
+<h2 class="seed">Seed — <code>/loop</code> (paste to drive iterative implementation)</h2>
+<pre class="seed">/loop implement the next phase of implementations-plan/aztec-ledger-extraction/plan.md in order (P0 sub-steps a→c first). After each step: `bun run lint:all` + `bun test packages/` + the boundary `git grep` proof; rebuild the demo to confirm it still works. Log each phase to implementations-plan/aztec-ledger-extraction/lessons/phase-N.md. Commit small + signed. Stop when every DONE criterion in plan.md is green, then report.</pre>
+
+</body>
+</html>
