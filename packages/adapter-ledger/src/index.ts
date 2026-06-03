@@ -50,7 +50,13 @@ export {
   defaultDeployPath,
   encodeBeginDeployAccountBody,
 } from './deploy-context.ts';
-export { deviceCacheKey, type RevealedMasterSecret, revealMasterSecret } from './onboarding.ts';
+export {
+  deviceCacheKey,
+  type RevealedMasterSecret,
+  type RevealOrReuseResult,
+  revealMasterSecret,
+  revealOrReuseMasterSecret,
+} from './onboarding.ts';
 export {
   LedgerProvider,
   type LedgerPublicKey,
@@ -58,12 +64,12 @@ export {
   type SignOuterHashOptions,
   type VersionInfo,
 } from './provider.ts';
-export {
-  cacheSecret,
-  clearAllCachedSecrets,
-  clearCachedSecret,
-  loadCachedSecret,
-} from './secret-cache.ts';
+// AHW-103: the raw cache read/write/clear-one primitives (`loadCachedSecret`,
+// `cacheSecret`, `clearCachedSecret`) are NO LONGER public — they let any
+// in-process consumer re-pull the revealed privacy root with no device approval.
+// The barrel exposes only the "forget" control + a presence check; obtaining a
+// secret goes through `revealOrReuseMasterSecret` (onboarding layer).
+export { clearAllCachedSecrets, hasCachedSecret } from './secret-cache.ts';
 export { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
 export {
   type ButtonId,

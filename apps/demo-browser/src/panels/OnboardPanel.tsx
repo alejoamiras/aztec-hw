@@ -14,11 +14,8 @@
  */
 import {
   AztecLedgerSession,
-  cacheSecret,
   defaultAztecPath,
-  deviceCacheKey,
-  loadCachedSecret,
-  revealMasterSecret,
+  revealOrReuseMasterSecret,
 } from '@aztec-hwwallet-poc/adapter-ledger';
 import { useState } from 'react';
 import {
@@ -61,17 +58,14 @@ export function OnboardPanel({ state, setState }: Props) {
        * the cache, so the next onboard re-reveals — the re-derivation that makes
        * reconnect == recovery. */
       setBusy('Reading device…');
-      const cacheKey = await deviceCacheKey(ledger, path);
-      let secret = loadCachedSecret(cacheKey);
-      if (secret) {
-        setChecksum('cached');
-      } else {
-        setBusy('Approve the reveal on your device…');
-        const reveal = await revealMasterSecret(ledger, path);
-        setChecksum(reveal.checksum);
-        cacheSecret(reveal.secret, cacheKey); // in this browser tab for the session — not disk
-        secret = reveal.secret;
-      }
+      /* AHW-103: reveal-or-reuse is owned by the adapter's onboarding layer now —
+       * the panel no longer touches the raw secret cache (no public loadCachedSecret/
+       * cacheSecret). One device approval on a cache miss; the secret lives only in
+       * that layer's memory-only cache and is handed back just for this connect(). */
+      const { secret, checksum, fromCache } = await revealOrReuseMasterSecret(ledger, path, {
+        onReveal: () => setBusy('Approve the reveal on your device…'),
+      });
+      setChecksum(fromCache ? 'cached' : checksum);
       /* 2. Recompute the pinned demo contract instances (PXE rejects
        *    address-only overrides — full instances required). */
       setBusy('Building session (PXE + WASM prover)…');

@@ -28,3 +28,19 @@ describe('AHW-097 — raw signOuterHash is not a public-surface oracle', () => {
     expect(typeof unsafe.unsafeSignOuterHash).toBe('function');
   });
 });
+
+describe('AHW-103 — privacy-root cache reread is off the public barrel', () => {
+  test('barrel does NOT export the raw cache read/write/clear-one primitives', () => {
+    const r = root as unknown as Record<string, unknown>;
+    expect(r.loadCachedSecret).toBeUndefined();
+    expect(r.cacheSecret).toBeUndefined();
+    expect(r.clearCachedSecret).toBeUndefined();
+  });
+
+  test('barrel exposes only presence + forget + the onboarding-owned reveal-or-reuse', () => {
+    const r = root as unknown as Record<string, unknown>;
+    expect(typeof r.hasCachedSecret).toBe('function');
+    expect(typeof r.clearAllCachedSecrets).toBe('function');
+    expect(typeof r.revealOrReuseMasterSecret).toBe('function');
+  });
+});

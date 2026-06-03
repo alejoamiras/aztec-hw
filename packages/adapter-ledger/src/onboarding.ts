@@ -18,6 +18,7 @@ import { Fr } from '@aztec/foundation/curves/bn254';
 import { defaultAztecPath } from './apdu.ts';
 import { masterSecretChecksum } from './master-secret.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
+import { cacheSecret, loadCachedSecret } from './secret-cache.ts';
 import type { LedgerTransport } from './transport.ts';
 
 export interface RevealedMasterSecret {
@@ -80,4 +81,34 @@ export async function deviceCacheKey(
 ): Promise<string> {
   const pk = await new LedgerProvider(transport).getPublicKey(bip32Path);
   return Buffer.concat([Buffer.from(pk.x), Buffer.from(pk.y)]).toString('hex');
+}
+
+export interface RevealOrReuseResult extends RevealedMasterSecret {
+  /** True if the secret came from the in-session cache (no fresh device reveal). */
+  readonly fromCache: boolean;
+}
+
+/**
+ * AHW-103 — reveal-or-reuse, OWNED by the onboarding layer so consumers never
+ * touch the raw secret cache. Computes the device-scoped cache key, returns the
+ * cached secret if present, else does exactly ONE device reveal and caches it
+ * for the page lifetime. `opts.onReveal` fires just before the device approval
+ * (cache miss only) so the UI can prompt. This is the only sanctioned way to get
+ * the revealed privacy root — `loadCachedSecret`/`cacheSecret` are no longer on
+ * the package's public surface.
+ */
+export async function revealOrReuseMasterSecret(
+  transport: LedgerTransport,
+  bip32Path: readonly number[] = defaultAztecPath(),
+  opts: SignOuterHashOptions & { readonly onReveal?: () => void } = {},
+): Promise<RevealOrReuseResult> {
+  const key = await deviceCacheKey(transport, bip32Path);
+  const cached = loadCachedSecret(key);
+  if (cached) {
+    return { secret: cached, checksum: 'cached', fromCache: true };
+  }
+  opts.onReveal?.();
+  const revealed = await revealMasterSecret(transport, bip32Path, opts);
+  cacheSecret(revealed.secret, key);
+  return { ...revealed, fromCache: false };
 }

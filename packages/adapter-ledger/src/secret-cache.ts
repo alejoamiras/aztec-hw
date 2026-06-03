@@ -48,3 +48,14 @@ export function clearCachedSecret(key: string): void {
 export function clearAllCachedSecrets(): void {
   mem.clear();
 }
+
+/**
+ * Presence check WITHOUT returning the secret (AHW-103). The reread accessor
+ * (`loadCachedSecret`) is intentionally NOT on the package's public surface — a
+ * consumer may ask "is a secret cached?" but must go through the onboarding
+ * layer (`revealOrReuseMasterSecret`) to actually obtain one, so no in-process
+ * code can re-pull the privacy root from the barrel without a device approval.
+ */
+export function hasCachedSecret(key: string): boolean {
+  return mem.has(key);
+}
