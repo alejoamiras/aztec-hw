@@ -155,7 +155,7 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-084 | MED | HOST | OURS | VALIDATED | Poseidon2 domain-separator literals hardcoded in `l4-manifest.ts`, no `===` guard vs `@aztec/constants` (silent drift) |
 | AHW-085 | MED | APP | OURS | VALIDATED | Authwit FINALIZE re-hashes cached `args_hash`, never re-derives from raw args — contradicts session.h "three-pass" claim |
 | AHW-086 | MED | APP | OURS | VALIDATED | Flags STATIC/HIDE_MSG_SENDER signed for every call but rendered only in TRANSFER arm (MINT/DRIP/SPONSOR blind) |
-| AHW-087 | LOW | HOST | OURS | VALIDATED | Live Ledger adapter never `secp.verify`s device sig vs cached pubkey (AHW-075 was trezor-only, dissolved) |
+| AHW-087 | LOW | HOST | OURS | FIXED | Live Ledger adapter never `secp.verify`s device sig vs cached pubkey (AHW-075 was trezor-only, dissolved) |
 | AHW-088 | LOW | HOST | OURS | VALIDATED | `overrideAccount` mutates shared wallet map on transfer/drip, never reverted (deploy path uses try/finally) |
 | AHW-089 | LOW | HOST | MIXED | VALIDATED | `createAuthWit` fail-close throw swallowed by upstream `embedded_wallet` catch → no user signal |
 | AHW-090 | LOW | TEST | OURS | VALIDATED | No host test threads `(salt,profileId)` through provider→entrypoint→`buildL4Manifest` header |
@@ -176,8 +176,8 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-105 | MED | HOST | OURS | RESIDUAL | Signing pubkey fetched approval-free from 2 provider instances, no byte-equal/verify cross-check → selective-MITM identity split |
 | AHW-106 | MED | DESIGN | OURS | FIXED | Impl derives master secret from HW seed (single-seed custody) while the recovery spec mandates 2-of-2 split-brain (doc↔impl; runtime = AHW-047) |
 | AHW-107 | MED | APP | OURS | DEFER | Onboarding UI hard-limits recovery to account indices 0–4 while the path accepts any uint31 (recovery footgun) |
-| AHW-108 | MED | TEST | OURS | VALIDATED | APPEND_CALL strict-allowlist reject arms (0x6F09/0A/0B/0C incl. delegated-spend gate) have NO input→SW test; fuzzer is membership-only |
-| AHW-109 | MED | TEST | OURS | VALIDATED | Device low-S anti-malleability + 0x6F06 dup-sig asserted by NO test (host low-S test exercises a different impl) |
+| AHW-108 | MED | TEST | OURS | FIXED | APPEND_CALL strict-allowlist reject arms (0x6F09/0A/0B/0C incl. delegated-spend gate) have NO input→SW test; fuzzer is membership-only |
+| AHW-109 | MED | TEST | OURS | FIXED | Device low-S anti-malleability + 0x6F06 dup-sig asserted by NO test (host low-S test exercises a different impl) — low-S now asserted on device sig; 0x6F06 reject = glitch-only RESIDUAL (RFC6979-deterministic, untestable via emulator) |
 | AHW-110 | LOW | APP | OURS | VALIDATED | Blind-sign NVM toggle checked pre-UI but NOT re-checked in the approval callback (single-glitch policy bypass) |
 | AHW-111 | LOW | APP | OURS | VALIDATED | Authwit clear-sign review shows no path/account fingerprint (B3 re-binds at sign, so display-scope only) |
 | AHW-112 | LOW | APP | MIXED | VALIDATED | Reveal review `#N` can skew under a post-validation path glitch (emitted secret is frozen/safe; display-only) |
