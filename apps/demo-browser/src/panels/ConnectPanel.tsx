@@ -3,13 +3,12 @@
  * AztecLedgerSession. After this resolves, the rest of the UI unlocks.
  */
 
+import { clearAllCachedSecrets, LedgerProvider } from '@alejoamiras/aztec-ledger-sdk/advanced';
+import { SpeculosTransport } from '@alejoamiras/aztec-ledger-sdk/speculos';
 import {
-  clearAllCachedSecrets,
   createWebHidTransport,
-  LedgerProvider,
-  SpeculosTransport,
   WebHidNotSupportedError,
-} from '@alejoamiras/aztec-ledger-sdk';
+} from '@alejoamiras/aztec-ledger-sdk/webhid';
 import { useState } from 'react';
 import type { DemoState, Transport } from '../state.ts';
 

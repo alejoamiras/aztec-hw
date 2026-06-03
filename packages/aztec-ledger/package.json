@@ -6,7 +6,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./unsafe": "./src/unsafe.ts"
+    "./advanced": "./src/advanced.ts",
+    "./speculos": "./src/speculos.ts",
+    "./unsafe": "./src/unsafe.ts",
+    "./webhid": "./src/webhid.ts"
   },
   "scripts": {
     "gen:clear-signing-v0": "bun scripts/gen-clear-signing-v0.ts",

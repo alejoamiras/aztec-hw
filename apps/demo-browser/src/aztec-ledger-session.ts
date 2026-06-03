@@ -46,17 +46,19 @@ export type AccountScheme = 'ecdsa' | 'schnorr';
 import type {
   AutoConfirmContext,
   DeployContext,
-  LedgerEcdsaKAuthWitnessProvider,
   LedgerTransport,
 } from '@alejoamiras/aztec-ledger-sdk';
 import {
   assertDeviceAttestedAddress,
   CAPS,
-  type CsDeployProfileId,
   CURVE_ID,
-  csDeployProfileLookup,
   defaultAztecPath,
 } from '@alejoamiras/aztec-ledger-sdk';
+import {
+  type CsDeployProfileId,
+  csDeployProfileLookup,
+  type LedgerEcdsaKAuthWitnessProvider,
+} from '@alejoamiras/aztec-ledger-sdk/advanced';
 import { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
 
 /** Convert any Fr-like (Fr, AztecAddress) to a 32-byte big-endian Uint8Array. */
