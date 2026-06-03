@@ -25,10 +25,18 @@ W2 single-sourcing as sound.
   - `wire-reject-arms` 4 — exact-SW per APPEND_CALL arm (0x6F09/0A/0B/0C).
   - `verified-calls-content` 2 — clear-sign verbs unchanged.
 
+## Demo e2e — FIXED (post-impl follow-on)
+Default-on `connect()` adds a 2nd device review (reveal → address attestation) to onboarding, which
+broke the whole demo e2e suite. Fixed: shared `apps/demo-browser/e2e/onboard-speculos.ts`
+(`revealApprove` + `confirmAddressReview`) wired into all 6 onboarding e2e files; OnboardPanel copy
+1→2 approvals. **Found + fixed a PRE-EXISTING bug:** the reveal walk was a fixed `4×right` but the
+reveal review is 6 screens — it silently stuck on "Confirm" and timed out (→ bumped to 5). **Runtime-
+verified** on demo + testnet + Speculos:5001: `smoke.e2e` (DERIVE OK + DRIP OK, device-attested
+`0x0aa630…773b`) and `onboard.e2e` (ONBOARD OK, 20.9s, full attest screen log). The other 4 +
+`schnorr-full-flow` use the identical proven helper (biome-clean, not individually re-run — each is a
+5–15min testnet run). The `confirmAddressReview` latch matches the NBGL-wrapped intro ("Confirm
+receive  | address") + advances to "Use this Aztec address?", never pressing on home.
+
 ## Open on return (NOT code — process)
 - **Commits UNSIGNED** — 1Password agent died mid-session; backfill `git rebase --exec 'git commit --amend --no-edit -S' main`.
 - **NOT merged** to main, no PR.
-- **Demo e2e** (`smoke.e2e`/`OnboardPanel`, frontend — OUT of the firmware+wire audit scope): with
-  `connect()` now attesting by default, the demo onboarding will prompt an on-device address
-  confirmation. A real Ledger user just taps; the Speculos-driven e2e needs an attestation autoConfirm
-  step (or `attestReceiveAddress:false` if a test deliberately wants the legacy path). Frontend follow-up.
