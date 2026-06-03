@@ -39,6 +39,11 @@ typedef enum {
      * The Schnorr signing scalar is derived device-side from the BIP-32 child
      * priv (distinct domain, reduced mod the Grumpkin order) — never exported. */
     INS_GET_SCHNORR_PUBKEY = 0x13,
+    /* AHW-098 (W4) — derive + attest the Aztec account address on-device for a path.
+     * Approval-gated + CAPS_ATTEST_ADDRESS-gated; returns the 32-byte address only
+     * (never a signed blob, no host fallback). Lets onboarding/receive be device-
+     * attested instead of host-derived. Single-shot, path+salt+profile+curve body. */
+    INS_GET_AZTEC_ADDRESS = 0x14,
 #ifdef CX_MATH_SPIKE
     /* M12 P3 — THROWAWAY cx_math prototype-spike INS (flag-gated; never in the
      * shipped build). cx_bn_mod_mul vs native fr_mul/gk_fq_mul for both moduli. */
@@ -54,6 +59,10 @@ typedef enum {
     CAPS_R1 = 1u << 1,
     CAPS_CLEAR_SIGN = 1u << 2,
     CAPS_GRUMPKIN = 1u << 3,
+    /* AHW-098 (W4) — device can derive + attest its Aztec receive address
+     * (INS_GET_AZTEC_ADDRESS). The host MUST hard-fail when this bit is absent —
+     * never fall back to a host-derived address. */
+    CAPS_ATTEST_ADDRESS = 1u << 4,
 } caps_e;
 
 typedef enum {

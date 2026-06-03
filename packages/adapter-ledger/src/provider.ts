@@ -9,8 +9,12 @@
  * now OFF by default behind the device blind_signing toggle. `AuthWitnessProvider` /
  * entrypoint wrapping lives in auth-witness-provider.ts + clear-signing-entrypoint.ts.
  */
-import { type AzCall, type AzManifestHeader, FR_BYTES, INS, SW } from './apdu.ts';
-import { type DeployContext, encodeBeginDeployAccountBody } from './deploy-context.ts';
+import { type AzCall, type AzManifestHeader, type CurveId, FR_BYTES, INS, SW } from './apdu.ts';
+import {
+  type DeployContext,
+  encodeBeginDeployAccountBody,
+  encodeGetAztecAddressBody,
+} from './deploy-context.ts';
 import { encodeAppendCallBody, encodeBeginAuthwitBody } from './l4-manifest.ts';
 import type { AutoConfirmContext, LedgerTransport } from './transport.ts';
 
@@ -119,6 +123,43 @@ export class LedgerProvider {
     this.requireOk(r.sw, 'GET_AZTEC_MASTER_SECRET');
     if (r.data.length !== FR_BYTES) {
       throw new Error(`GET_AZTEC_MASTER_SECRET: expected 32 bytes, got ${r.data.length}`);
+    }
+    return r.data.slice(0, 32);
+  }
+
+  /**
+   * W4 (AHW-098) — GET_AZTEC_ADDRESS. The device DERIVES the Aztec account address
+   * for (profileId, curveId, path, salt) on-device — the SAME partial→pkh→address
+   * chain the deploy uses — shows it for confirmation, and returns the 32-byte
+   * address after approval. NO signed blob, NO host fallback.
+   *
+   * The caller MUST equality-check this against its OWN host derivation (connect()
+   * does, fail-closed) so a malicious host cannot substitute a receive address it
+   * controls. Gated behind CAPS.ATTEST_ADDRESS — callers should refuse to onboard a
+   * device lacking the bit rather than fall back to a host-derived address.
+   */
+  async attestReceiveAddress(
+    params: {
+      readonly bip32Path: readonly number[];
+      readonly salt: Uint8Array; // 32 B
+      readonly profileId?: number;
+      readonly curveId?: CurveId;
+    },
+    opts: SignOuterHashOptions = {},
+  ): Promise<Uint8Array> {
+    const body = encodeGetAztecAddressBody({
+      profileId: params.profileId ?? 0,
+      curveId: params.curveId,
+      bip32Path: params.bip32Path,
+      salt: params.salt,
+    });
+    const r = await this.transport.send(
+      { ins: INS.GET_AZTEC_ADDRESS, data: body },
+      opts.autoConfirm,
+    );
+    this.requireOk(r.sw, 'GET_AZTEC_ADDRESS');
+    if (r.data.length !== FR_BYTES) {
+      throw new Error(`GET_AZTEC_ADDRESS: expected 32 bytes, got ${r.data.length}`);
     }
     return r.data.slice(0, 32);
   }

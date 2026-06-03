@@ -88,6 +88,8 @@ export const APPROVE_MARKERS = {
    * account", and the subtitle lacks "reveal this account", so this matches only
    * the final approve page (a bare /privacy root/ would fire on the intro). */
   revealRoot: { approve: /reveal this account/i },
-  /** W4 GET_AZTEC_ADDRESS receive-address attestation review. */
-  attestAddress: { approve: /receive address|confirm address|use this address|address\?/i },
+  /** W4 GET_AZTEC_ADDRESS receive-address attestation review. Finish-page text ONLY
+   * ("Use this Aztec address?") — the intro title is "Confirm receive address" and the
+   * subtitle mentions "Aztec address", so a looser marker would fire on the intro. */
+  attestAddress: { approve: /use this aztec address/i },
 } as const satisfies Record<string, MarkerApproveOpts>;

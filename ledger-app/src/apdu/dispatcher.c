@@ -37,6 +37,7 @@
 #include "../handler/finalize_deploy_and_sign.h"
 #include "../handler/get_aztec_master_secret.h"
 #include "../handler/get_schnorr_pubkey.h"
+#include "../handler/get_aztec_address.h"
 #ifdef CX_MATH_SPIKE
 #include "../handler/cxmath_spike.h"
 #endif
@@ -78,7 +79,9 @@ int apdu_dispatcher(const command_t *cmd) {
             if (cmd->p1 != 0 || cmd->p2 != 0) {
                 return reject_dispatch(SWO_INCORRECT_P1_P2);
             }
-            uint32_t caps = CAPS_K1 | CAPS_CLEAR_SIGN | CAPS_GRUMPKIN; /* M10: Schnorr */
+            /* M10: Schnorr (GRUMPKIN). W4 (AHW-098): ATTEST_ADDRESS = the host may
+             * call INS_GET_AZTEC_ADDRESS to get a device-attested receive address. */
+            uint32_t caps = CAPS_K1 | CAPS_CLEAR_SIGN | CAPS_GRUMPKIN | CAPS_ATTEST_ADDRESS;
             uint8_t caps_be[4] = {
                 (uint8_t)(caps >> 24), (uint8_t)(caps >> 16),
                 (uint8_t)(caps >> 8), (uint8_t)caps,
@@ -176,6 +179,18 @@ int apdu_dispatcher(const command_t *cmd) {
             if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
             buf = make_buf(cmd);
             return handler_get_aztec_master_secret(&buf);
+
+        /* W4 (AHW-098) — device-attested receive address. Single-shot, path+salt+
+         * profile+curve body like the reveal; an L4 boundary, so reset any in-flight
+         * verified-calls session first. Approval-gated inside the handler. */
+        case INS_GET_AZTEC_ADDRESS:
+            l4_session_reset();
+            if (cmd->p1 != 0 || cmd->p2 != 0) {
+                return reject_dispatch(SWO_INCORRECT_P1_P2);
+            }
+            if (!cmd->data) return reject_dispatch(SWO_WRONG_DATA_LENGTH);
+            buf = make_buf(cmd);
+            return handler_get_aztec_address(&buf);
 
 #ifdef CX_MATH_SPIKE
         /* M12 P3 — throwaway cx_math spike (flag-gated; never in the shipped

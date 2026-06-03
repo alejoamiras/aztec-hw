@@ -109,6 +109,53 @@ export function encodeBeginDeployAccountBody(ctx: DeployContext): Uint8Array {
   return out;
 }
 
+/**
+ * W4 (AHW-098) — encode the INS_GET_AZTEC_ADDRESS request body. Structurally the
+ * deploy body MINUS the manifest_version (deliberately not reused — feature
+ * negotiation is CAPS.ATTEST_ADDRESS + the app-version bump) and MINUS every Fr
+ * field except salt (the device AUTHORS the address; nothing is host-claimed):
+ *   profile_id(1) | curve_id(1) | path_scheme(1) | path_len(1) | path(4·len) | salt(32)
+ */
+export function encodeGetAztecAddressBody(params: {
+  readonly profileId: number;
+  readonly curveId?: CurveId;
+  readonly bip32Path: readonly number[];
+  readonly salt: Uint8Array; // 32 B
+}): Uint8Array {
+  if (!Number.isInteger(params.profileId) || params.profileId < 0 || params.profileId > 0xff) {
+    throw new Error(`profileId must be a uint8, got ${params.profileId}`);
+  }
+  assertCanonicalAztecPath(params.bip32Path);
+  assertFr('salt', params.salt);
+
+  const out = new Uint8Array(
+    1 /* profile_id */ +
+      1 /* curve_id */ +
+      1 /* path_scheme */ +
+      1 /* path_len */ +
+      4 * params.bip32Path.length +
+      FR_BYTES /* salt */,
+  );
+  let off = 0;
+  out[off++] = params.profileId;
+  out[off++] = params.curveId ?? CURVE_ID.SECP256K1;
+  out[off++] = PATH_SCHEME.DEFAULT;
+  out[off++] = params.bip32Path.length;
+  for (const p of params.bip32Path) {
+    if (!Number.isInteger(p) || p < 0 || p > 0xffff_ffff) {
+      throw new Error(`bip32 path component out of uint32 range: ${p}`);
+    }
+    out[off++] = (p >>> 24) & 0xff;
+    out[off++] = (p >>> 16) & 0xff;
+    out[off++] = (p >>> 8) & 0xff;
+    out[off++] = p & 0xff;
+  }
+  out.set(params.salt, off);
+  off += FR_BYTES;
+  if (off !== out.length) throw new Error(`encoder offset mismatch: ${off} != ${out.length}`);
+  return out;
+}
+
 /** M9 A2: `defaultDeployPath` now DELEGATES to `defaultAztecPath` — there is ONE
  * path implementation (opus MAJOR: two byte-identical helpers invited drift, and
  * the deploy flow used to call this one independently of the account). Kept as a

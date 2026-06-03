@@ -68,17 +68,20 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
     await toggleBlindSigning(transport); // OFF -> ON
   });
 
-  test('GET_VERSION returns 0.0.1', async () => {
+  test('GET_VERSION returns 0.1.0', async () => {
     const v = await provider.getVersion();
-    expect(v).toEqual({ major: 0, minor: 0, patch: 1 });
+    /* W4 (AHW-098) bumped the minor version (new INS_GET_AZTEC_ADDRESS + the
+     * CAPS_ATTEST_ADDRESS capability) — deliberately NOT a MANIFEST_VERSION bump. */
+    expect(v).toEqual({ major: 0, minor: 1, patch: 0 });
   });
 
-  test('GET_CAPS advertises K1 | CLEAR_SIGN | GRUMPKIN on the L4+Schnorr build', async () => {
+  test('GET_CAPS advertises K1 | CLEAR_SIGN | GRUMPKIN | ATTEST_ADDRESS', async () => {
     const caps = await provider.getCaps();
     /* L2 baseline advertised K1 (0x01) only. L4 added CLEAR_SIGN (0x04) for the
      * verified-calls streaming path; M10 added GRUMPKIN (0x08) for Schnorr-over-
-     * Grumpkin. The current build advertises all three → 0x0D. */
-    expect(caps).toBe(CAPS.K1 | CAPS.CLEAR_SIGN | CAPS.GRUMPKIN);
+     * Grumpkin; W4 (AHW-098) added ATTEST_ADDRESS (0x10) for device-attested receive
+     * addresses. The current build advertises all four → 0x1D. */
+    expect(caps).toBe(CAPS.K1 | CAPS.CLEAR_SIGN | CAPS.GRUMPKIN | CAPS.ATTEST_ADDRESS);
   });
 
   test('GET_PUBLIC_KEY for Aztec path returns 64-byte uncompressed pubkey (X||Y)', async () => {

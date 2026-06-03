@@ -29,6 +29,7 @@ import { Fr } from '@aztec/foundation/curves/bn254';
 import type { AuthWitness } from '@aztec/stdlib/auth-witness';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import { verify } from '@noble/secp256k1';
+import { CURVE_ID } from './apdu.ts';
 import { defaultDeployPath } from './deploy-context.ts';
 import { masterSecretChecksum } from './master-secret.ts';
 import { deriveAztecKeysFromMasterSecret } from './oracle/index.ts';
@@ -258,6 +259,45 @@ describe.skipIf(!SPECULOS_URL)('M8 device — Speculos', () => {
     await expect(
       provider.finalizeDeployAndSign(wrong, { autoConfirm: approveDeploy }),
     ).rejects.toThrow('SW=0x6f01');
+  });
+
+  /* --- W4 (AHW-098) — device-attested receive address (GET_AZTEC_ADDRESS) ------ */
+
+  test('GET_AZTEC_ADDRESS attests the SAME address the host derives (round-trip)', async () => {
+    /* The headline W4 proof: the device derives the receive address on-device from
+     * (profile, curve, path, salt) and returns it after approval. It MUST equal the
+     * host's INDEPENDENT derivation (deviceValidDeployContext computes it via the
+     * genuine Aztec instance derivation from the device's revealed secret + signing
+     * pubkey) — so onboarding/receive can be device-attested, not host-trusted. */
+    const { salt, address } = await deviceValidDeployContext(provider, approveReveal);
+    const attested = await provider.attestReceiveAddress(
+      { bip32Path: DEPLOY_PATH, salt: toBE32(salt), profileId: 0, curveId: CURVE_ID.SECP256K1 },
+      { autoConfirm: approveByMarker(APPROVE_MARKERS.attestAddress) },
+    );
+    expect(Buffer.from(attested).toString('hex')).toBe(address.toBuffer().toString('hex'));
+  });
+
+  test('GET_AZTEC_ADDRESS rejects an unknown profile_id with 0x6F0D (pre-UI)', async () => {
+    await expect(
+      provider.attestReceiveAddress({
+        bip32Path: DEPLOY_PATH,
+        salt: new Uint8Array(32),
+        profileId: 7 /* unregistered */,
+        curveId: CURVE_ID.SECP256K1,
+      }),
+    ).rejects.toThrow('SW=0x6f0d');
+  });
+
+  test('GET_AZTEC_ADDRESS rejects a curve/profile mismatch with 0x6F04 (pre-UI)', async () => {
+    /* profile 0 is the ECDSA-K template; pairing it with GRUMPKIN must fail closed. */
+    await expect(
+      provider.attestReceiveAddress({
+        bip32Path: DEPLOY_PATH,
+        salt: new Uint8Array(32),
+        profileId: 0,
+        curveId: CURVE_ID.GRUMPKIN,
+      }),
+    ).rejects.toThrow('SW=0x6f04');
   });
 
   test('host masterSecretChecksum helper produces 4 hex chars', () => {

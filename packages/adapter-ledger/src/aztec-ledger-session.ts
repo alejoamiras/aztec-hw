@@ -42,15 +42,16 @@ import { LedgerSchnorrAccountContract } from './schnorr-account-contract.ts';
 /** M10 — signature scheme for the session's account. */
 export type AccountScheme = 'ecdsa' | 'schnorr';
 
-import { CURVE_ID, defaultAztecPath } from './apdu.ts';
+import { CAPS, CURVE_ID, defaultAztecPath } from './apdu.ts';
 import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
 import {
   type CsDeployProfileId,
   csDeployProfileLookup,
 } from './clear_signing_v0/deploy_profiles.generated.ts';
 import type { DeployContext } from './deploy-context.ts';
+import { assertDeviceAttestedAddress } from './receive-address-verify.ts';
 import { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
-import type { LedgerTransport } from './transport.ts';
+import type { AutoConfirmContext, LedgerTransport } from './transport.ts';
 
 /** Convert any Fr-like (Fr, AztecAddress) to a 32-byte big-endian Uint8Array. */
 function toBE32(value: { toBuffer(): Buffer }): Uint8Array {
@@ -185,6 +186,15 @@ export interface AztecLedgerSessionConnectOptions {
   readonly secret?: Fr;
   /** Enable in-browser proving (default true). Heavy WASM init on first use. */
   readonly proverEnabled?: boolean;
+  /**
+   * W4 (AHW-098) — when set, connect() attests this account's receive address
+   * ON-DEVICE and REJECTS if the device-attested address != the host-derived one (or
+   * if the device lacks CAPS.ATTEST_ADDRESS — no fallback). `true` expects a real
+   * on-device tap; pass an autoConfirm callback to drive Speculos. Off by default so a
+   * headless reconnect without a device isn't wedged waiting for an approval;
+   * onboarding/receive flows SHOULD enable it (or call session.verifyReceiveAddress).
+   */
+  readonly attestReceiveAddress?: boolean | ((ctx: AutoConfirmContext) => Promise<void>);
 }
 
 /**
@@ -312,7 +322,58 @@ export class AztecLedgerSession {
       tokenArtifact: opts.tokenArtifact,
       dripperArtifact: opts.dripperArtifact,
     };
-    return new AztecLedgerSession(deps, accountAddress, accountCompleteAddress, accountManager);
+    const ledgerSession = new AztecLedgerSession(
+      deps,
+      accountAddress,
+      accountCompleteAddress,
+      accountManager,
+    );
+    if (opts.attestReceiveAddress) {
+      /* connect() fail-closes here (AHW-098): a host that substitutes a receive address
+       * the device did not author is rejected before the session is handed back. */
+      const autoConfirm =
+        typeof opts.attestReceiveAddress === 'function' ? opts.attestReceiveAddress : undefined;
+      await ledgerSession.verifyReceiveAddress({ autoConfirm });
+    }
+    return ledgerSession;
+  }
+
+  /**
+   * W4 (AHW-098) — attest this account's receive address ON-DEVICE and fail closed
+   * unless it byte-equals the host-derived address. The device authors + displays the
+   * address (the user confirms it on-device); a mismatch means the host tried to
+   * substitute an address it controls, and a device that lacks CAPS.ATTEST_ADDRESS is
+   * refused (NO fallback to a host-derived address). INDEPENDENT of deploy state — it
+   * attests whether or not the account is already deployed (closing the "attest skipped
+   * on alreadyDeployed" half of the finding). `autoConfirm` is for Speculos only; a real
+   * user taps the device. Onboarding/receive flows MUST call this before trusting the
+   * address; it is exposed (not forced inside connect()) so a headless reconnect without
+   * a device present isn't wedged waiting for an approval.
+   */
+  async verifyReceiveAddress(
+    opts: { autoConfirm?: (ctx: AutoConfirmContext) => Promise<void> } = {},
+  ): Promise<void> {
+    const { ledgerProvider, scheme, bip32Path, salt } = this.deps;
+    const deployProfile = csDeployProfileLookup(DEPLOY_PROFILE_BY_SCHEME[scheme]);
+    if (!deployProfile) {
+      throw new Error(`verifyReceiveAddress: no deploy profile for '${scheme}'`);
+    }
+    const curveId = scheme === 'schnorr' ? CURVE_ID.GRUMPKIN : CURVE_ID.SECP256K1;
+
+    /* getCaps + GET_AZTEC_ADDRESS are non-signing device queries → the raw provider. */
+    const provider = ledgerProvider.getLedgerProvider();
+    const caps = await provider.getCaps();
+    let attestedAddress: Uint8Array | undefined;
+    /* Only issue the INS when the capability is present — an un-capable device would
+     * reject INS_GET_AZTEC_ADDRESS with INVALID_INS; the assert below fails closed on
+     * the missing bit regardless (no fallback to a host-derived address). */
+    if ((caps & CAPS.ATTEST_ADDRESS) !== 0) {
+      attestedAddress = await provider.attestReceiveAddress(
+        { bip32Path, salt: toBE32(salt), profileId: deployProfile.profile_index, curveId },
+        { autoConfirm: opts.autoConfirm },
+      );
+    }
+    assertDeviceAttestedAddress({ caps, attestedAddress, hostAddress: this.address.toBuffer() });
   }
 
   /**

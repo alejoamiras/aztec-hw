@@ -35,6 +35,10 @@ export const INS = {
   /* M10 — Grumpkin Schnorr signing pubkey P=priv·G (64B X||Y) for the
    * SchnorrAccount ctor. Non-sensitive, no confirmation (like GET_PUBLIC_KEY). */
   GET_SCHNORR_PUBKEY: 0x13,
+  /* W4 (AHW-098) — device-attested Aztec receive address. Approval-gated +
+   * CAPS.ATTEST_ADDRESS-gated; returns the 32-byte address only (no signed blob,
+   * no host fallback). Body: profile_id, curve_id, path_scheme, path_len, path, salt. */
+  GET_AZTEC_ADDRESS: 0x14,
 } as const;
 
 export type Ins = (typeof INS)[keyof typeof INS];
@@ -68,6 +72,10 @@ export const CAPS = {
   R1: 1 << 1,
   CLEAR_SIGN: 1 << 2,
   GRUMPKIN: 1 << 3,
+  /** W4 (AHW-098): device can derive + attest its receive address
+   * (INS.GET_AZTEC_ADDRESS). Host MUST hard-fail when this bit is absent —
+   * never fall back to a host-derived address. */
+  ATTEST_ADDRESS: 1 << 4,
 } as const;
 
 export interface AzKeyPath {
@@ -235,6 +243,9 @@ export const SW = {
   DEPLOY_CONTEXT_WRONG_STATE: 0x6f11,
   /* M9 B3 — authwit consumer ≠ device-recomputed account address (fail-closed). */
   AUTHWIT_CONSUMER_MISMATCH: 0x6f12,
+  /* W1 (AHW-095) — live review state != the immutable snapshot at approval time
+   * (blind-sign, deploy/reveal identity, and the W4 address attestation). */
+  REVIEW_STATE_MISMATCH: 0x6f14,
 } as const;
 
 export type StatusWord = (typeof SW)[keyof typeof SW];

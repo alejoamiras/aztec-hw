@@ -88,6 +88,16 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
     return this.cachedXY;
   }
 
+  /**
+   * W4 (AHW-098) — expose the underlying device provider for the NON-signing device
+   * queries the receive-address attestation needs (GET_CAPS, GET_AZTEC_ADDRESS). Safe
+   * post-W3: `LedgerProvider` no longer carries a raw blind-sign oracle (that moved to
+   * the `./unsafe` subpath), so this is not the AHW-097 surface.
+   */
+  getLedgerProvider(): LedgerProvider {
+    return this.inner;
+  }
+
   async createAuthWit(_messageHash: Fr | Buffer): Promise<AuthWitness> {
     /* AHW-001 (host fail-close): blind, hash-only authwit signing is DISABLED.
      * `EmbeddedWallet.sendTx` auto-derives app-level authwits from a tx's offchain
