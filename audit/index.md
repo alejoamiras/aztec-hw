@@ -169,13 +169,13 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-098 | HIGH | DESIGN | OURS | VALIDATED | Onboard/receive address host-derived, NEVER device-attested; reveal checksum binds the SECRET not the address; deploy attest skipped on host `alreadyDeployed` |
 | AHW-099 | MED | APP | OURS | VALIDATED | Deploy FINALIZE display-identity TOCTOU — approval re-reads mutable session `#N`/address (signs a fresh local, so bounded; sibling of AHW-095) |
 | AHW-100 | MED | APP | OURS | FIXED | Schnorr sign leaves key-equivalent `pe = priv·e` (+ derive/serialize temporaries) un-scrubbed on the stack |
-| AHW-101 | MED | BUILD | OURS | VALIDATED | Mutable GitHub Action refs (`@v6`/`@v4`…) in the firmware build + CI gates (images digest-pinned; release-gate class) |
-| AHW-102 | MED | BUILD | MIXED | VALIDATED | CI blesses the same ELF it built — no independent reproducible rebuild / digest gate / recorded BOLOS-SDK identity (folds F-K6-4) |
+| AHW-101 | MED | BUILD | OURS | DEFER | Mutable GitHub Action refs (`@v6`/`@v4`…) in the firmware build + CI gates (images digest-pinned; release-gate class) |
+| AHW-102 | MED | BUILD | MIXED | DEFER | CI blesses the same ELF it built — no independent reproducible rebuild / digest gate / recorded BOLOS-SDK identity (folds F-K6-4) |
 | AHW-103 | MED | DESIGN | OURS | FIXED | Root barrel exports the reveal + `loadCachedSecret` reread → in-process same-origin reread of the privacy root w/o a 2nd prompt |
-| AHW-104 | MED | DESIGN | OURS | VALIDATED | Public `setEntrypointOverride`/`overrideAccount` policy-escape seams (full clear-sign bypass when paired with AHW-097) |
-| AHW-105 | MED | HOST | OURS | VALIDATED | Signing pubkey fetched approval-free from 2 provider instances, no byte-equal/verify cross-check → selective-MITM identity split |
-| AHW-106 | MED | DESIGN | OURS | VALIDATED | Impl derives master secret from HW seed (single-seed custody) while the recovery spec mandates 2-of-2 split-brain (doc↔impl; runtime = AHW-047) |
-| AHW-107 | MED | APP | OURS | VALIDATED | Onboarding UI hard-limits recovery to account indices 0–4 while the path accepts any uint31 (recovery footgun) |
+| AHW-104 | MED | DESIGN | OURS | RESIDUAL | Public `setEntrypointOverride`/`overrideAccount` policy-escape seams (full clear-sign bypass when paired with AHW-097) |
+| AHW-105 | MED | HOST | OURS | RESIDUAL | Signing pubkey fetched approval-free from 2 provider instances, no byte-equal/verify cross-check → selective-MITM identity split |
+| AHW-106 | MED | DESIGN | OURS | FIXED | Impl derives master secret from HW seed (single-seed custody) while the recovery spec mandates 2-of-2 split-brain (doc↔impl; runtime = AHW-047) |
+| AHW-107 | MED | APP | OURS | DEFER | Onboarding UI hard-limits recovery to account indices 0–4 while the path accepts any uint31 (recovery footgun) |
 | AHW-108 | MED | TEST | OURS | VALIDATED | APPEND_CALL strict-allowlist reject arms (0x6F09/0A/0B/0C incl. delegated-spend gate) have NO input→SW test; fuzzer is membership-only |
 | AHW-109 | MED | TEST | OURS | VALIDATED | Device low-S anti-malleability + 0x6F06 dup-sig asserted by NO test (host low-S test exercises a different impl) |
 | AHW-110 | LOW | APP | OURS | VALIDATED | Blind-sign NVM toggle checked pre-UI but NOT re-checked in the approval callback (single-glitch policy bypass) |
