@@ -19,6 +19,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { EcdsaKAccountContractArtifact } from '@aztec/accounts/ecdsa';
+import { SchnorrAccountContractArtifact } from '@aztec/accounts/schnorr';
 import { getContractInstanceFromInstantiationParams } from '@aztec/aztec.js/contracts';
 import { SponsoredFeePaymentMethod } from '@aztec/aztec.js/fee';
 import {
@@ -275,6 +276,32 @@ describe.skipIf(!SPECULOS_URL)('M8 device — Speculos', () => {
       { autoConfirm: approveByMarker(APPROVE_MARKERS.attestAddress) },
     );
     expect(Buffer.from(attested).toString('hex')).toBe(address.toBuffer().toString('hex'));
+  });
+
+  test('GET_AZTEC_ADDRESS (Schnorr) attests the SAME address the host derives', async () => {
+    /* Schnorr arm of the round-trip (curveId GRUMPKIN + profile 1): the device's
+     * Schnorr derivation (GET_SCHNORR_PUBKEY → 2-Fr args_hash → partial → address)
+     * must equal the host's SchnorrAccount instance derivation. Same viewing keys
+     * (scheme-independent, from the master secret); only the ctor args differ
+     * (2 Fields, not 64 bytes). Proves the new INS's Schnorr path end-to-end. */
+    const pk = await provider.getSchnorrPublicKey(DEPLOY_PATH);
+    const secret = await provider.getAztecMasterSecret(DEPLOY_PATH, { autoConfirm: approveReveal });
+    const derived = await deriveAztecKeysFromMasterSecret(Fr.fromBuffer(Buffer.from(secret)));
+    const salt = new Fr(0x5n);
+    const instance = await getContractInstanceFromInstantiationParams(
+      SchnorrAccountContractArtifact,
+      {
+        constructorArgs: [Fr.fromBuffer(Buffer.from(pk.x)), Fr.fromBuffer(Buffer.from(pk.y))],
+        salt,
+        publicKeys: derived.publicKeys,
+        deployer: AztecAddress.ZERO,
+      },
+    );
+    const attested = await provider.attestReceiveAddress(
+      { bip32Path: DEPLOY_PATH, salt: toBE32(salt), profileId: 1, curveId: CURVE_ID.GRUMPKIN },
+      { autoConfirm: approveByMarker(APPROVE_MARKERS.attestAddress) },
+    );
+    expect(Buffer.from(attested).toString('hex')).toBe(instance.address.toBuffer().toString('hex'));
   });
 
   test('GET_AZTEC_ADDRESS rejects an unknown profile_id with 0x6F0D (pre-UI)', async () => {
