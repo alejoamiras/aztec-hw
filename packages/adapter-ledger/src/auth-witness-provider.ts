@@ -89,13 +89,17 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
   }
 
   /**
-   * W4 (AHW-098) — expose the underlying device provider for the NON-signing device
-   * queries the receive-address attestation needs (GET_CAPS, GET_AZTEC_ADDRESS). Safe
-   * post-W3: `LedgerProvider` no longer carries a raw blind-sign oracle (that moved to
-   * the `./unsafe` subpath), so this is not the AHW-097 surface.
+   * W4 (AHW-098) — narrow delegations for the receive-address attestation's NON-signing
+   * device queries. Post-impl codex LOW: expose ONLY these two (not the whole
+   * `LedgerProvider`) so a higher-level consumer can't reach past the session guardrails.
    */
-  getLedgerProvider(): LedgerProvider {
-    return this.inner;
+  getCaps(): Promise<number> {
+    return this.inner.getCaps();
+  }
+  attestReceiveAddress(
+    ...args: Parameters<LedgerProvider['attestReceiveAddress']>
+  ): Promise<Uint8Array> {
+    return this.inner.attestReceiveAddress(...args);
   }
 
   async createAuthWit(_messageHash: Fr | Buffer): Promise<AuthWitness> {

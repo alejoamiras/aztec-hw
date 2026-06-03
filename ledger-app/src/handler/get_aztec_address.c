@@ -46,6 +46,11 @@ static void disarm(void) {
     s_curve_id = 0;
 }
 
+/* Public hook for l4_session_reset (post-impl codex MED) — see header. */
+void get_aztec_address_disarm(void) {
+    disarm();
+}
+
 const uint8_t *aztec_address_bytes(void) {
     return s_addr;
 }

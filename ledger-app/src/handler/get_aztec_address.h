@@ -28,6 +28,11 @@ int handler_get_aztec_address(buffer_t *cdata);
 /* NBGL review entry — renders the derived address + arms the identity snapshot. */
 int ui_display_aztec_address_review(void);
 
+/* Post-impl codex MED: public disarm of the armed address state, called from
+ * l4_session_reset so every dispatch boundary / reject / error tears down a pending
+ * W4 attestation (no stale `s_armed` surviving an L2 boundary forced mid-review). */
+void get_aztec_address_disarm(void);
+
 /* UI choice callbacks (ui/address_review_ui.c routes approve/reject here). */
 int aztec_address_review_approved(void);
 int aztec_address_review_rejected(void);

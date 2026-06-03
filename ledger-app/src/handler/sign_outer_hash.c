@@ -239,6 +239,7 @@ int sign_outer_hash_after_approval(void) {
 }
 
 int sign_outer_hash_rejected(void) {
+    review_snapshot_disarm(); /* post-impl codex MED: disarm the blind snapshot on reject too */
     explicit_bzero(&G_context, sizeof(G_context));
     int rc = io_send_sw(SW_USER_REJECTED);
     nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_menu_main);
