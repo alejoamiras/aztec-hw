@@ -163,7 +163,7 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-092 | LOW | APP | OURS | VALIDATED | `account_binding_deploy_partial` defaults unknown `arg_schema`→ECDSA; FINALIZE never re-checks schema |
 | AHW-093 | LOW | HOST | OURS | VALIDATED | No assert that `kind==='deploy'` ⇔ `ledgerDeployContext` present (mode-select is an unpinned sideband) |
 | AHW-094 | INFO | APP | OURS | VALIDATED | Reveal UI header docstring claims "full BIP-32 path"; code shows "Account #N" (comment-truth, sensitive screen) |
-| AHW-095 | HIGH | APP | OURS | VALIDATED | Blind-sign approval signs UNSNAPSHOTTED `G_context` (path/outer_hash re-read at approval) — post-review fault signs ≠ reviewed (absorbs F-G-1/F-K1-2/F-K3-1) |
+| AHW-095 | HIGH | APP | OURS | FIXED | Blind-sign approval signs UNSNAPSHOTTED `G_context` (path/outer_hash re-read at approval) — post-review fault signs ≠ reviewed (absorbs F-G-1/F-K1-2/F-K3-1) |
 | AHW-096 | HIGH | BUILD | OURS | VALIDATED | Deploy-profile `sponsor_*`/`deployer` + emitted `*.gen.*` never canonical-verified → poisoned build signs a hidden sponsor/deployer (UI shows only "Sponsored") |
 | AHW-097 | HIGH | HOST | OURS | FIXED | Root-exported `LedgerProvider.signOuterHash` = published blind-sign oracle outside the entrypoint (distinct from closed AHW-002) |
 | AHW-098 | HIGH | DESIGN | OURS | VALIDATED | Onboard/receive address host-derived, NEVER device-attested; reveal checksum binds the SECRET not the address; deploy attest skipped on host `alreadyDeployed` |
