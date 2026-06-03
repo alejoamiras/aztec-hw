@@ -22,6 +22,10 @@
  */
 
 import type { ChainInfo } from '@alejoamiras/aztec-ledger-core';
+import {
+  LedgerEcdsaKAccountContract,
+  LedgerSchnorrAccountContract,
+} from '@alejoamiras/aztec-ledger-sdk';
 import { BaseAccount } from '@aztec/aztec.js/account';
 import { AztecAddress, type CompleteAddress } from '@aztec/aztec.js/addresses';
 import { Contract, type ContractMethod } from '@aztec/aztec.js/contracts';
@@ -36,22 +40,24 @@ import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
 import { GasSettings } from '@aztec/stdlib/gas';
 import { type ExecutionPayload, type TxHash, type TxReceipt, TxStatus } from '@aztec/stdlib/tx';
 
-import { LedgerEcdsaKAccountContract } from './account-contract.ts';
-import { LedgerSchnorrAccountContract } from './schnorr-account-contract.ts';
-
 /** M10 — signature scheme for the session's account. */
 export type AccountScheme = 'ecdsa' | 'schnorr';
 
-import { CAPS, CURVE_ID, defaultAztecPath } from './apdu.ts';
-import type { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
+import type {
+  AutoConfirmContext,
+  DeployContext,
+  LedgerEcdsaKAuthWitnessProvider,
+  LedgerTransport,
+} from '@alejoamiras/aztec-ledger-sdk';
 import {
+  assertDeviceAttestedAddress,
+  CAPS,
   type CsDeployProfileId,
+  CURVE_ID,
   csDeployProfileLookup,
-} from './clear_signing_v0/deploy_profiles.generated.ts';
-import type { DeployContext } from './deploy-context.ts';
-import { assertDeviceAttestedAddress } from './receive-address-verify.ts';
+  defaultAztecPath,
+} from '@alejoamiras/aztec-ledger-sdk';
 import { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
-import type { AutoConfirmContext, LedgerTransport } from './transport.ts';
 
 /** Convert any Fr-like (Fr, AztecAddress) to a 32-byte big-endian Uint8Array. */
 function toBE32(value: { toBuffer(): Buffer }): Uint8Array {

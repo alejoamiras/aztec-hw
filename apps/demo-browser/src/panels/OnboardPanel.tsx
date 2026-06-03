@@ -13,12 +13,9 @@
  * The reveal path is `defaultAztecPath()`, which is byte-identical to the
  * deploy path the device verifies against (see adapter `defaultDeployPath`).
  */
-import {
-  AztecLedgerSession,
-  defaultAztecPath,
-  revealOrReuseMasterSecret,
-} from '@alejoamiras/aztec-ledger-sdk';
+import { defaultAztecPath, revealOrReuseMasterSecret } from '@alejoamiras/aztec-ledger-sdk';
 import { useState } from 'react';
+import { AztecLedgerSession } from '../aztec-ledger-session.ts';
 import {
   DRIPPER_ARTIFACT,
   dripperInstance,

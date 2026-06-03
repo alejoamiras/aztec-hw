@@ -6,7 +6,7 @@
  * Deploy is one-shot and self-disables; Drip is gated on Deploy.
  */
 
-import type { PhaseId, SubmitResult } from '@alejoamiras/aztec-ledger-sdk';
+import type { PhaseId, SubmitResult } from '../aztec-ledger-session.ts';
 import {
   assertMonotonicPhase,
   type DemoState,

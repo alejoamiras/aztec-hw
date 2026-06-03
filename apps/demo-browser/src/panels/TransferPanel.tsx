@@ -3,9 +3,9 @@
  * status visible to the user.
  */
 
-import type { AztecLedgerSession, PhaseId, SubmitResult } from '@alejoamiras/aztec-ledger-sdk';
 import { AztecAddress } from '@aztec/aztec.js/addresses';
 import { useState } from 'react';
+import type { AztecLedgerSession, PhaseId, SubmitResult } from '../aztec-ledger-session.ts';
 import {
   assertMonotonicPhase,
   type DemoState,
