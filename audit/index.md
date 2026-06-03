@@ -164,10 +164,10 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-093 | LOW | HOST | OURS | VALIDATED | No assert that `kind==='deploy'` ⇔ `ledgerDeployContext` present (mode-select is an unpinned sideband) |
 | AHW-094 | INFO | APP | OURS | VALIDATED | Reveal UI header docstring claims "full BIP-32 path"; code shows "Account #N" (comment-truth, sensitive screen) |
 | AHW-095 | HIGH | APP | OURS | FIXED | Blind-sign approval signs UNSNAPSHOTTED `G_context` (path/outer_hash re-read at approval) — post-review fault signs ≠ reviewed (absorbs F-G-1/F-K1-2/F-K3-1) |
-| AHW-096 | HIGH | BUILD | OURS | VALIDATED | Deploy-profile `sponsor_*`/`deployer` + emitted `*.gen.*` never canonical-verified → poisoned build signs a hidden sponsor/deployer (UI shows only "Sponsored") |
+| AHW-096 | HIGH | BUILD | OURS | FIXED | Deploy-profile `sponsor_*`/`deployer` + emitted `*.gen.*` never canonical-verified → poisoned build signs a hidden sponsor/deployer (UI shows only "Sponsored") — now device renders sponsor 8+6+selector, codegen fail-closes sponsor==single SPONSOR slot + selector==artifact verb + deployer==0, host asserts runtime==manifest; RESIDUAL: hand-edited `*.gen.c` build-gate deferred to AHW-102 |
 | AHW-097 | HIGH | HOST | OURS | FIXED | Root-exported `LedgerProvider.signOuterHash` = published blind-sign oracle outside the entrypoint (distinct from closed AHW-002) |
 | AHW-098 | HIGH | DESIGN | OURS | VALIDATED | Onboard/receive address host-derived, NEVER device-attested; reveal checksum binds the SECRET not the address; deploy attest skipped on host `alreadyDeployed` |
-| AHW-099 | MED | APP | OURS | VALIDATED | Deploy FINALIZE display-identity TOCTOU — approval re-reads mutable session `#N`/address (signs a fresh local, so bounded; sibling of AHW-095) |
+| AHW-099 | MED | APP | OURS | FIXED | Deploy FINALIZE display-identity TOCTOU — approval re-reads mutable session `#N`/address (signs a fresh local, so bounded; sibling of AHW-095) — out-of-band identity snapshot captured at review, verify-or-reject (0x6F14) in finalize_deploy_after_approval |
 | AHW-100 | MED | APP | OURS | FIXED | Schnorr sign leaves key-equivalent `pe = priv·e` (+ derive/serialize temporaries) un-scrubbed on the stack |
 | AHW-101 | MED | BUILD | OURS | DEFER | Mutable GitHub Action refs (`@v6`/`@v4`…) in the firmware build + CI gates (images digest-pinned; release-gate class) |
 | AHW-102 | MED | BUILD | MIXED | DEFER | CI blesses the same ELF it built — no independent reproducible rebuild / digest gate / recorded BOLOS-SDK identity (folds F-K6-4) |
@@ -180,7 +180,7 @@ their CATALOG status; this section is the WORK disposition.
 | AHW-109 | MED | TEST | OURS | FIXED | Device low-S anti-malleability + 0x6F06 dup-sig asserted by NO test (host low-S test exercises a different impl) — low-S now asserted on device sig; 0x6F06 reject = glitch-only RESIDUAL (RFC6979-deterministic, untestable via emulator) |
 | AHW-110 | LOW | APP | OURS | VALIDATED | Blind-sign NVM toggle checked pre-UI but NOT re-checked in the approval callback (single-glitch policy bypass) |
 | AHW-111 | LOW | APP | OURS | VALIDATED | Authwit clear-sign review shows no path/account fingerprint (B3 re-binds at sign, so display-scope only) |
-| AHW-112 | LOW | APP | MIXED | VALIDATED | Reveal review `#N` can skew under a post-validation path glitch (emitted secret is frozen/safe; display-only) |
+| AHW-112 | LOW | APP | MIXED | FIXED | Reveal review `#N` can skew under a post-validation path glitch (emitted secret is frozen/safe; display-only) — folded into W1: identity snapshot captured at reveal UI, verify-or-reject (0x6F14) in master_secret_reveal_approved |
 | AHW-113 | LOW | DESIGN | OURS | VALIDATED | Duplicate-compute defenses use a single mismatch-compare site (collapse to one pass if the lone branch is skipped) |
 | AHW-114 | LOW | DESIGN | OURS | VALIDATED | SW conflation: 0x6F01/0x6F06 cover internal recompute-fault AND host-mismatch — weak alerting (fail-closed) |
 | AHW-115 | LOW | APP | OURS | VALIDATED | `GET_PUBLIC_KEY` forwards raw `cx_err_t` via `io_send_sw` — leaks SDK codes outside the app SW taxonomy |

@@ -22,7 +22,12 @@ AHW-095 (HIGH) + AHW-099 (MED) + fold AHW-112 (LOW). Commit `8194377`.
 - **Reject-branch (firmware-native host test):** `cc -I src tests/review_snapshot_test.c src/review_snapshot.c && ./a.out` → exit 0. `review_snapshot_verify_blind_sign` returns NULL on hash mismatch (first + last byte), path-component mismatch, length mismatch, and disarmed/not-armed; returns the snapshot only on exact match. The handler maps NULL → `io_send_sw(SW_REVIEW_STATE_MISMATCH)` (code-verified one-liner). Speculos can't inject a mid-review RAM mutation, so this host test is the honest proof of the reject decision.
 - Register: AHW-095 → **FIXED**.
 
-## Remaining W1 siblings (lower-value display-skew; signature already safe)
-AHW-099 (deploy review identity) + AHW-112 (reveal #N) — the deploy/reveal SIGNATURES are already over a fresh device recompute (sovereign), so these are display-consistency, not signature-integrity. Reuse the snapshot pattern for those review screens; pending.
+## W1 siblings — DONE (AHW-099 + AHW-112), commit `966a041`
+The deploy/reveal SIGNATURES are already over a fresh device recompute (sovereign), so these are display-consistency, not signature-integrity. Implemented alongside W2's deploy-review change (one rebuild):
+- **Generalized `review_snapshot`** with an out-of-band `review_identity_snapshot_t` (`armed`, `has_address`, `account_index`, `address[32]`) + `capture_identity`/`verify_identity`/`disarm_identity`. Separate static from the blind-sign snapshot (different flow, used sequentially). Constant-time diff-OR over the address bytes; presence-flag (NULL vs address) is part of the match so reveal (#N only) and deploy (#N+address) can't be confused.
+- **AHW-099 (deploy):** `ui_display_deploy_review` captures `(#N, address_local)`; `finalize_deploy_after_approval` verifies the live values, rejecting `SW_REVIEW_STATE_MISMATCH` (0x6F14) + dismissing the NBGL page on skew. The downstream p6 recompute already caught an address glitch; this binds the DISPLAY.
+- **AHW-112 (reveal):** `ui_display_master_secret_reveal` captures `(#N, NULL)`; `master_secret_reveal_approved` verifies before exporting the privacy root.
+- **Proof:** firmware-native `review_snapshot_test.c` extended — identity verify→NULL on #N/address/presence mismatch + disarmed (exit 0). Speculos `provider.m8` 6 pass: the deploy + reveal happy paths still sign/reveal correctly (the snapshot matches), so the gate doesn't false-reject.
+- Register: AHW-099 → **FIXED**, AHW-112 → **FIXED** (folded into W1).
 
 Build: docker `ledger-app-builder-lite` exit 0, `bin/app.elf` Jun-3 12:02.
