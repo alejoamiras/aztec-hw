@@ -59,6 +59,7 @@ import {
   csDeployProfileLookup,
   type LedgerEcdsaKAuthWitnessProvider,
 } from '@alejoamiras/aztec-ledger-sdk/advanced';
+import { preflightIntent } from './clear-signing/preflight.ts';
 import { SessionEmbeddedWallet } from './session-embedded-wallet.ts';
 
 /** Convert any Fr-like (Fr, AztecAddress) to a 32-byte big-endian Uint8Array. */
@@ -266,8 +267,16 @@ export class AztecLedgerSession {
     const salt = opts.salt ?? DEFAULT_ACCOUNT_SALT;
     const accountContract =
       scheme === 'schnorr'
-        ? new LedgerSchnorrAccountContract(opts.transport, { bip32Path, salt: toBE32(salt) })
-        : new LedgerEcdsaKAccountContract(opts.transport, { bip32Path, salt: toBE32(salt) });
+        ? new LedgerSchnorrAccountContract(opts.transport, {
+            bip32Path,
+            salt: toBE32(salt),
+            preflight: preflightIntent,
+          })
+        : new LedgerEcdsaKAccountContract(opts.transport, {
+            bip32Path,
+            salt: toBE32(salt),
+            preflight: preflightIntent,
+          });
     const ledgerProvider = accountContract.getProvider();
     const secret = opts.secret ?? Fr.random();
 

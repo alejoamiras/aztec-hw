@@ -13,8 +13,8 @@
  *   - raw `LedgerProvider`, reveal, onboarding, low-level APDU → `./advanced`
  *     (the expert surface, OUTSIDE the fail-closed guarantees)
  *
- * (`connectLedger` / `LedgerConnection` / typed errors / the `ClearSignPreflight`
- * hook type land here in P1/P4 of the extraction plan.)
+ * (`connectLedger` / `LedgerConnection` / typed errors land here in P4 of the
+ * extraction plan; the `ClearSignPreflight` hook type is exported below, P1.)
  */
 
 export {
@@ -27,6 +27,7 @@ export {
   type CurveId,
   defaultAztecPath,
 } from './apdu.ts';
+export type { ClearSignPreflight } from './clear-signing-entrypoint.ts';
 export type { DeployContext } from './deploy-context.ts';
 export type { VersionInfo } from './provider.ts';
 export {

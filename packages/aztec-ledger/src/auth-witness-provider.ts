@@ -33,7 +33,10 @@ import type { AuthWitness, Fr } from '@alejoamiras/aztec-ledger-core';
 import type { AuthWitnessProvider } from '@aztec/aztec.js/account';
 import type { AztecAddress } from '@aztec/stdlib/aztec-address';
 import { CURVE_ID, type CurveId } from './apdu.ts';
-import { LedgerClearSigningEntrypoint } from './clear-signing-entrypoint.ts';
+import {
+  type ClearSignPreflight,
+  LedgerClearSigningEntrypoint,
+} from './clear-signing-entrypoint.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
 import type { LedgerTransport } from './transport.ts';
 
@@ -59,6 +62,12 @@ export interface LedgerProviderOptions {
    */
   readonly salt?: Uint8Array | bigint;
   readonly profileId?: number;
+  /**
+   * Optional host-side clear-sign preflight (see {@link ClearSignPreflight}). The
+   * SDK ships no registry; a consumer injects one built from its own. Device stays
+   * authoritative — omitting it only drops the host-side fast reject.
+   */
+  readonly preflight?: ClearSignPreflight;
 }
 
 export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
@@ -133,6 +142,7 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
       salt: this.options.salt,
       profileId: this.options.profileId,
       signOptions: this.options.signOptions,
+      preflight: this.options.preflight,
     });
   }
 }

@@ -29,6 +29,7 @@
  * algorithm matches the installed canonical (4.2.1).
  */
 
+import type { CallIntent } from '@alejoamiras/aztec-ledger-core';
 import { packEcdsaSignature } from '@alejoamiras/aztec-ledger-core';
 import {
   AccountFeePaymentMethodOptions,
@@ -43,14 +44,26 @@ import type { AztecAddress } from '@aztec/stdlib/aztec-address';
 import type { GasSettings } from '@aztec/stdlib/gas';
 import type { ExecutionPayload, TxExecutionRequest } from '@aztec/stdlib/tx';
 import type { CurveId } from './apdu.ts';
-import { preflightIntent } from './clear_signing_v0/preflight.ts';
 import type { DeployContext } from './deploy-context.ts';
 import { buildL4Manifest } from './l4-manifest.ts';
 import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
 import type { LedgerProvider, SignOuterHashOptions } from './provider.ts';
 
+/**
+ * Optional host-side preflight hook. The SDK ships NO contract registry — a
+ * consumer that wants the fast, ergonomic host-side reject (clear TS errors
+ * instead of opaque device SWs) injects one built from ITS OWN registry, matched
+ * to its firmware. The DEVICE is always the authority: it re-validates every gate
+ * this could check (REGISTRY_MISS / DECODER_MISS / DESYNC / VISIBILITY / delegated
+ * spend / token-kind), so omitting the hook never lets a bad call through — it only
+ * changes host UX. Throw to reject. Lives outside the fail-closed guarantees.
+ */
+export type ClearSignPreflight = (intent: CallIntent) => void;
+
 export interface ClearSigningEntrypointOptions {
   readonly bip32Path: readonly number[];
+  /** Optional host-side preflight (see {@link ClearSignPreflight}); device stays authoritative. */
+  readonly preflight?: ClearSignPreflight;
   readonly curveId?: CurveId;
   /** AHW-018 (wire v3): the account's deploy salt + allowlisted template id, sent on
    * BEGIN_AUTHWIT so the device re-derives the right account. Default salt Fr.ZERO,
@@ -143,7 +156,7 @@ export class LedgerClearSigningEntrypoint implements EntrypointInterface {
     txNonce?: Fr,
   ): Promise<void> {
     const intent = projectExecutionPayloadIntoCallIntent(exec, this.address, chainInfo);
-    preflightIntent(intent); // keep the host-side allowlist (clear TS errors, not opaque device SW)
+    this.options.preflight?.(intent); // OPTIONAL host-side allowlist; device is authoritative
 
     // Canonical hash (what the inner entrypoint + the chain compute).
     const {
