@@ -20,6 +20,7 @@
 
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { confirmAddressReview, revealApprove } from './onboard-speculos.ts';
 
 const SPECULOS_URL = 'http://localhost:5001';
 
@@ -39,13 +40,14 @@ async function onboardOnce(page: Page): Promise<string> {
   const derive = page.getByRole('button', { name: /Derive .* viewing keys/ });
   await expect(derive).toBeVisible({ timeout: 30_000 });
   await derive.click();
-  await new Promise((r) => setTimeout(r, 1500)); // let the reveal screen render
-  for (let i = 0; i < 4; i++) await press('right');
-  await press('both', 900);
+  await revealApprove(SPECULOS_URL); // reveal review (6 screens → 5 rights + both)
+  // W4 (AHW-098): connect() then attests the receive address — walk that 2nd review.
+  const attestPromise = confirmAddressReview(SPECULOS_URL, 200_000);
   await page.waitForFunction(
     () => !!document.querySelector('.address') || !!document.querySelector('.status.err'),
-    { timeout: 120_000 },
+    { timeout: 200_000 },
   );
+  await attestPromise.catch(() => {});
   const err = page.locator('.status.err').first();
   if ((await err.count()) > 0) throw new Error('onboard failed: ' + (await err.innerText()));
   return (await page.locator('.address').first().innerText()).trim();

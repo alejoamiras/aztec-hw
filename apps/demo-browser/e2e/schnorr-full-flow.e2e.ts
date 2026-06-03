@@ -17,6 +17,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { confirmAddressReview } from './onboard-speculos.ts';
 
 const SPECULOS_URL = 'http://localhost:5001';
 const SCHNORR_INDEX = Number(process.env.SCHNORR_INDEX ?? 4); // dropdown [0..4]; override via SCHNORR_INDEX env for a fresh-index on-chain deploy
@@ -106,10 +107,13 @@ async function onboardSchnorr(page: Page, index: number): Promise<string> {
     await new Promise((r) => setTimeout(r, 400));
   }
   await pressSpeculos('both');
+  // W4 (AHW-098): connect() then attests the receive address — walk that 2nd review.
+  const attestPromise = confirmAddressReview(SPECULOS_URL, 200_000);
   await page.waitForFunction(
     () => !!document.querySelector('.address') || !!document.querySelector('.status.err'),
-    { timeout: 120_000 },
+    { timeout: 200_000 },
   );
+  await attestPromise.catch(() => {});
   const err = page.locator('.status.err').first();
   if ((await err.count()) > 0) throw new Error('onboard failed: ' + (await err.innerText()));
   return (await page.locator('.address').first().innerText()).trim();

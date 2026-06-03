@@ -13,6 +13,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { confirmAddressReview, revealApprove } from './onboard-speculos.ts';
 
 const SPECULOS_URL = 'http://localhost:5001';
 
@@ -42,13 +43,14 @@ async function onboardAccount(page: Page, index: number): Promise<string> {
   await page.locator('#account-index').selectOption(String(index));
   const derive = page.getByRole('button', { name: /Derive .* viewing keys/ });
   await derive.click();
-  await new Promise((r) => setTimeout(r, 1500));
-  for (let i = 0; i < 4; i++) await press('right');
-  await press('both', 900);
+  await revealApprove(SPECULOS_URL); // reveal review (6 screens → 5 rights + both)
+  // W4 (AHW-098): connect() then attests the receive address — walk that 2nd review.
+  const attestPromise = confirmAddressReview(SPECULOS_URL, 200_000);
   await page.waitForFunction(
     () => !!document.querySelector('.address') || !!document.querySelector('.status.err'),
-    { timeout: 120_000 },
+    { timeout: 200_000 },
   );
+  await attestPromise.catch(() => {});
   return (await page.locator('.address').first().innerText()).trim();
 }
 
