@@ -15,27 +15,9 @@
  * reachable via the /aztec proxy (connect() does an initial PXE sync).
  */
 import { expect, test } from '@playwright/test';
+import { confirmAddressReview, revealApprove, speculosScreen } from './onboard-speculos.ts';
 
 const SPECULOS_URL = 'http://localhost:5001';
-
-async function press(button: 'left' | 'right' | 'both', ms = 450): Promise<void> {
-  await fetch(`${SPECULOS_URL}/button/${button}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'press-and-release' }),
-  }).catch(() => {});
-  await new Promise((r) => setTimeout(r, ms));
-}
-
-async function speculosScreen(): Promise<string> {
-  try {
-    const res = await fetch(`${SPECULOS_URL}/events?currentscreenonly=true`);
-    const json = (await res.json()) as { events: { text: string }[] };
-    return json.events.map((e) => e.text).join(' | ');
-  } catch {
-    return '<unreachable>';
-  }
-}
 
 test('onboarding: connect → derive viewing keys → session address renders', async ({ page }) => {
   const consoleErrors: string[] = [];
@@ -62,23 +44,23 @@ test('onboarding: connect → derive viewing keys → session address renders', 
   await test.step('Derive viewing keys (reveal approved on Speculos)', async () => {
     await page.getByRole('button', { name: /Derive .* viewing keys/ }).click();
 
-    /* Drive the reveal approval. nbgl_useCaseReview shows: intro → subtitle →
-     * Path → Confirm → "Reveal viewing key to this computer?" → both. Mirrors
-     * provider.m8.test.ts makeApprover(4): blind 4×right then both (the
-     * screen-walking approver raced the renderer → 0x6985, per phase-6 lessons).
-     * Let the reveal screen render first. */
-    await new Promise((r) => setTimeout(r, 1500));
-    const before = await speculosScreen();
+    const before = await speculosScreen(SPECULOS_URL);
     console.log('[onboard] reveal screen before approve: ' + before);
-    for (let i = 0; i < 4; i++) await press('right');
-    await press('both', 900);
+    await revealApprove(SPECULOS_URL); // reveal review: 5 rights + both (6-screen review)
 
-    /* After approval: connect() builds the PXE + syncs against testnet, then
-     * the AccountPanel renders `.address`. Wait for address OR an error. */
+    /* After the reveal, connect() attests the receive address ON-DEVICE by default
+     * (W4 AHW-098) — a 2nd review. Walk it concurrently while connect() builds the PXE
+     * + syncs, then the AccountPanel renders `.address`. Wait for address OR an error. */
+    const attestScreens: string[] = [];
+    const attestPromise = confirmAddressReview(SPECULOS_URL, 200_000, attestScreens);
     await page.waitForFunction(
       () => !!document.querySelector('.address') || !!document.querySelector('.status.err'),
-      { timeout: 120_000 },
+      { timeout: 200_000 },
     );
+    await attestPromise.catch(() => {});
+    if (attestScreens.length > 0) {
+      console.log('[onboard] attest-address screens: ' + JSON.stringify(attestScreens));
+    }
   });
 
   await test.step('assert the session is built from the device secret', async () => {
