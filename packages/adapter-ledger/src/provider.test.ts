@@ -108,6 +108,11 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
     });
     expect(sig.r.length).toBe(32);
     expect(sig.s.length).toBe(32);
+    // AHW-109: the DEVICE must emit low-S (s <= n/2) or the signature is malleable.
+    // (The prior low-S test exercised the host `core` impl; this asserts the device's.)
+    const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+    const sBig = BigInt(`0x${Buffer.from(sig.s).toString('hex')}`);
+    expect(sBig <= SECP256K1_N >> 1n).toBe(true);
 
     // Aztec ECDSA preimage = sha256(outer_hash). The device signs the same
     // digest; @noble.secp256k1's `verify` expects the *digest* (not the message)
