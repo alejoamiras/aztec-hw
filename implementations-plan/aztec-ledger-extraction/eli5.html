@@ -46,13 +46,13 @@ const account = await conn.createAccount({ scheme: 'ecdsa' }); // device-atteste
 <tr><td>The root barrel re-exports the demo session + transports → the "no heavy deps" promise leaks at the public API.</td><td>Cut a tiny ~12-symbol root barrel <b>first</b>; demote internals/transports/raw-signer/reveal to subpaths.</td></tr>
 <tr><td>We feared the call-decoder was glued to the demo's contract list. It isn't — the only glue is <b>one</b> host-side "early reject" check, and <b>the device re-checks everything anyway</b> (codex + opus both verified this in the firmware).</td><td>Make that check an <b>optional hook</b>; the SDK ships <b>no</b> contract list. Consumers bring their own (matched to their firmware) or skip it.</td></tr>
 <tr><td>The code-generator also writes the <b>firmware's</b> tables and pulls a heavy lib.</td><td>It moves to a shared <code>tools/</code> dir — not in the SDK, not buried in the demo.</td></tr>
-<tr><td>There's <b>no build step</b> today (we ship raw TypeScript).</td><td>Add a real emitter (tsdown → JS + types). Spike it early — 29 deep <code>@aztec/*</code> imports could bite.</td></tr>
+<tr><td>There's <b>no build step</b> today (we ship raw TypeScript).</td><td>Add a real emitter (tsup → JS + types). Spike it early — 29 deep <code>@aztec/*</code> imports could bite.</td></tr>
 <tr><td><span class="warn">"Keys never leave the device" is false.</span> The <i>spend</i> key stays, but onboarding <b>reveals the viewing/privacy root</b> to the browser by design.</td><td>Say so plainly; put <code>reveal</code>/<code>onboarding</code> on an <code>./advanced</code> subpath that's explicitly outside the safe-by-default guarantees.</td></tr>
 </table>
 
 <h2>How sure are we? (the protocol ran in full)</h2>
 <p>3 independent plan drafts (triangulated) → <b>codex</b> pre-impl audit (<i>fix-plan-first</i>, 3 HIGH folded) → consolidate → <b>codex + opus dual audit</b> of the consolidated. Both final verdicts: the core design is <b class="ok">sound to implement</b>; the fixes were all "on paper" (naming, what-physically-moves, the version-handshake spec, P0 ordering, build-spike timing). All 7 refinements are folded into <a href="plan.md">plan.md</a> §"Final audit fold".</p>
-<p><b>Open decisions for approval:</b> npm scope; rename <code>adapter-ledger→aztec-ledger</code> (rec: yes); codegen home (<code>tools/</code>); builder (tsdown). CI is intentionally skipped for now.</p>
+<p><b>Decisions (resolved by owner):</b> scope <code>@alejoamiras/*</code> (placeholder, changeable pre-publish); rename → <code>packages/aztec-ledger</code> = <b>yes</b>; codegen → root <code>tools/</code>; builder <code>tsup</code>. CI intentionally skipped.</p>
 
 <h2 class="seed">Seed — <code>/goal</code> (paste to set the implementation contract)</h2>
 <pre class="seed">Implement implementations-plan/aztec-ledger-extraction/plan.md — extract a publish-quality, PRIVATE `aztec-ledger` SDK from packages/adapter-ledger; keep `core` separate. BINDING (audit-folded):
@@ -61,11 +61,11 @@ const account = await conn.createAccount({ scheme: 'ecdsa' }); // device-atteste
 3. Codegen + manifest.json → root tools/ dir (writes BOTH firmware C tables + a TS registry); NOT in the SDK.
 4. Transports: WebHID + Speculos exist; ADD NodeHidTransport. Subpath-exported. autoConfirm Speculos-only.
 5. @aztec/* → peerDependencies (4.2.1). Mandatory connect handshake in every safe constructor: GET_VERSION 3-tuple compat-range + GET_CAPS ⊇ required-bitmask — SEPARATE from the optional registry/manifest-id check (rides the preflight hook). Add a registry/manifest id to the codegen bundle.
-6. Add tsdown build (ESM + .d.ts) — SPIKE EARLY (150 .ts-ext imports, verbatimModuleSyntax, 29 @aztec deep-subpaths as externals; exports map must mirror).
+6. Add tsup build (ESM + .d.ts) — SPIKE EARLY (150 .ts-ext imports, verbatimModuleSyntax, 29 @aztec deep-subpaths as externals; exports map must mirror).
 7. Honest docs: spend key device-only; viewing/privacy root revealed-under-approval; ./advanced is OUTSIDE the fail-closed guarantees. Preserve AHW-097 unsafe-gating + AHW-098 attested-address default.
-8. Decide+do rename adapter-ledger→aztec-ledger (~20 importers) as P0 step 0.
+8. RENAME packages/adapter-ledger → packages/aztec-ledger (pkg name @alejoamiras/aztec-ledger-sdk; core @alejoamiras/aztec-ledger-core; placeholder scope) — ~20 importers — as P0 step 0.
 P0 ORDER (no red window): rename → demo gains pxe/wallets deps → move glue + repoint state.ts + tests (aztec-ledger-session.test, .integration.test, deploy-profile-selection.test) → cut root barrel LAST.
-DONE = lint:all + bun test packages/ + tsc (aztec-ledger + core isolated) + tsdown build exit 0; Speculos matrix green FROM the package; a standalone consumer-smoke derives an address; demo smoke+onboard e2e green (8 e2e files import the app → survive); `git grep '@aztec/pxe|@aztec/wallets|@aztec/noir-contracts'` in the SDK pkg = ∅. CI SKIPPED. Firmware UNCHANGED. R1 stays dropped.</pre>
+DONE = lint:all + bun test packages/ + tsc (aztec-ledger + core isolated) + tsup build exit 0; Speculos matrix green FROM the package; a standalone consumer-smoke derives an address; demo smoke+onboard e2e green (8 e2e files import the app → survive); `git grep '@aztec/pxe|@aztec/wallets|@aztec/noir-contracts'` in the SDK pkg = ∅. CI SKIPPED. Firmware UNCHANGED. R1 stays dropped.</pre>
 
 <h2 class="seed">Seed — <code>/loop</code> (paste to drive iterative implementation)</h2>
 <pre class="seed">/loop implement the next phase of implementations-plan/aztec-ledger-extraction/plan.md in order (P0 sub-steps a→c first). After each step: `bun run lint:all` + `bun test packages/` + the boundary `git grep` proof; rebuild the demo to confirm it still works. Log each phase to implementations-plan/aztec-ledger-extraction/lessons/phase-N.md. Commit small + signed. Stop when every DONE criterion in plan.md is green, then report.</pre>

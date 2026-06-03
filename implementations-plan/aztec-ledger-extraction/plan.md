@@ -9,14 +9,14 @@ Carve the reusable Ledger↔Aztec signer out of `packages/adapter-ledger/` into 
 1. **Boundary is real AND the surface must be cut first.** B's import trace: only `session-embedded-wallet.ts` → `@aztec/pxe`+`@aztec/wallets`; only `aztec-ledger-session.ts` → `@aztec/noir-contracts.js`; the `aztec-standards`/`noir` refs in `apdu.ts`/`l4-manifest.ts` are **comments**. But codex: the **root `index.ts` re-exports the session + transports**, so the leak is at the *public surface*. → **P0 cuts a pure root barrel first** (not "move session last").
 2. **Registry coupling = one non-load-bearing seam → optional hook (NOT a RegistryBundle).** The only registry leak in the signing path is `preflightIntent` (`clear-signing-entrypoint.ts` → `preflight.ts` → generated tables). Preflight is a host-side **early-fail UX** check; the **device is the authoritative validator** (rejects unknown verbs/selectors on-chain-side regardless). → The SDK ships **no registry**; `preflight` becomes an **optional injected hook** the consumer supplies (with their firmware-matched registry) or omits. Resolves codex-HIGH-2 with B's lighter, correct fix.
 3. **Codegen + `manifest.json` are firmware-shared, not SDK, not demo.** The codegen emits the device's C allowlist (`ledger-app/src/clear_signing_v0/`) too, and it imports `@aztec/noir-contracts.js`. → Relocate codegen + `manifest.json` to a **root/`ledger-app`-level codegen dir**; the SDK bundles **neither** (shipping it would re-introduce noir + break the boundary — codex-HIGH-3).
-4. **A build step is mandatory.** Today: `noEmit` + raw `./src/index.ts` exports. Publish-quality needs a real emitter (**tsdown** → ESM + `.d.ts`). (C)
+4. **A build step is mandatory.** Today: `noEmit` + raw `./src/index.ts` exports. Publish-quality needs a real emitter (**tsup** → ESM + `.d.ts`). (C)
 5. **Public API is consumer-first.** `connectLedger(opts)` → `LedgerConnection.createAccount({scheme})` → a `LedgerAztecAccount` usable with `@aztec/aztec.js`; **barrel 31 → ~12** (driver internals `LedgerProvider`/`INS`/`SW`/encoders demoted to internal); **typed error taxonomy** over `SW=0x…`. (C)
 6. **Honest key-disclosure.** The *spend* key never leaves the device, but onboarding **reveals the viewing/privacy root to host memory by design** — "keys never leave" is false. → Precise wording + `reveal`/`onboarding` behind an **advanced subpath**. (codex-LOW)
 
 ## Package topology (after)
 ```
 packages/
-  core/            @scope/core         — framework-agnostic types (publish-quality, private, built w/ tsdown)
+  core/            @scope/core         — framework-agnostic types (publish-quality, private, built w/ tsup)
   aztec-ledger/    @scope/aztec-ledger — the SDK; deps: core + @aztec/{aztec.js,accounts,entrypoints,foundation,stdlib} as PEERS. NO pxe/wallets/noir. (private)
 tools/clear-signing-codegen/  (or ledger-app/tools/) — manifest.json + gen-clear-signing → BOTH the firmware C tables and a TS registry artifact. NOT in the SDK.
 apps/demo-browser/             — consumes aztec-ledger + core; OWNS the session, the generated demo registry, the demo contracts; gains direct @aztec/pxe + @aztec/wallets + @aztec/noir-contracts.js deps.
@@ -31,7 +31,7 @@ apps/demo-browser/             — consumes aztec-ledger + core; OWNS the sessio
 - **P2 — codegen relocation.** Move `gen-clear-signing-v0.ts` + `manifest.json` to the root/`ledger-app` codegen dir with explicit `--manifest/--out-c/--out-ts` flags; it emits the firmware C tables + the demo's TS registry. SDK depends on none of it.
 - **P3 — three transports.** Keep WebHID + Speculos (exist); **add `NodeHidTransport`** (net-new, `@ledgerhq/hw-transport-node-hid`). Subpath-exported. `autoConfirm` stays Speculos-only (typed as optional; real transports = user taps).
 - **P4 — production API + version handshake.** `connectLedger` + typed errors + the convenience account flow. Version negotiation: `GET_VERSION`/`GET_CAPS` **plus** firmware-version + registry/manifest identifier carried in the (consumer) registry bundle, **enforced in every safe constructor** (not just the factory — root no longer exports the raw `LedgerProvider`). `@aztec/*` → `peerDependencies` pinned `4.2.1`.
-- **P5 — build + docs + types.** Add **tsdown** (ESM + `.d.ts`); curated `exports` map; README (install, dev-mode-firmware caveat, a connect example per transport, the honest spend-vs-viewing-key disclosure); a firmware↔SDK co-versioning doc. Same for `core`.
+- **P5 — build + docs + types.** Add **tsup** (ESM + `.d.ts`); curated `exports` map; README (install, dev-mode-firmware caveat, a connect example per transport, the honest spend-vs-viewing-key disclosure); a firmware↔SDK co-versioning doc. Same for `core`.
 - **P6 — validation.** `bun test` + `tsc` + lint green from `aztec-ledger`/`core` in isolation; the Speculos matrix runs from the package; a **standalone consumer-smoke** (import the built `aztec-ledger` + a transport → derive an address); demo `smoke`+`onboard` e2e still green; the boundary `git grep` proof; build emits valid ESM+types.
 
 ## Security & Adversarial Considerations
@@ -44,19 +44,20 @@ apps/demo-browser/             — consumes aztec-ledger + core; OWNS the sessio
 - **App fallout:** `apps/demo-browser` now holds the PXE/wallet/noir surface — its own threat model, out of the SDK's.
 
 ## Verification (DONE)
-`lint:all` + `bun test packages/` + `tsc` (aztec-ledger + core isolated) + the build (tsdown emits ESM+`.d.ts`) exit 0 · Speculos matrix green from the package · standalone consumer-smoke derives an address · demo `smoke`/`onboard` e2e green · `git grep '@aztec/pxe|@aztec/wallets|@aztec/noir-contracts'` in `packages/aztec-ledger` = ∅ (boundary proof) · root barrel ≤ ~12 symbols, no concrete-transport/raw-signer/reveal at root.
+`lint:all` + `bun test packages/` + `tsc` (aztec-ledger + core isolated) + the build (tsup emits ESM+`.d.ts`) exit 0 · Speculos matrix green from the package · standalone consumer-smoke derives an address · demo `smoke`/`onboard` e2e green · `git grep '@aztec/pxe|@aztec/wallets|@aztec/noir-contracts'` in `packages/aztec-ledger` = ∅ (boundary proof) · root barrel ≤ ~12 symbols, no concrete-transport/raw-signer/reveal at root.
 
 ## Risks / open
 - **Session relocation = highest friction** (6 demo files re-wire) — do it inside P0 with the demo e2e as the guard.
 - **node-hid native build** — optional peer + `./node-hid` subpath only.
-- **Build introduction (tsdown)** may surface `.ts`-extension-import + ESM/CJS interop issues across the `@aztec/*` peers — spike early in P5.
+- **Build introduction (tsup)** may surface `.ts`-extension-import + ESM/CJS interop issues across the `@aztec/*` peers — spike early in P5.
 - **Registry/manifest co-versioning** is a real contract; the handshake id + the codegen `--check` are the tripwires.
 
-## Open decisions (confirm at approval)
-1. **npm scope** for `@scope/{aztec-ledger,core}`. 
-2. **Codegen home:** `tools/clear-signing-codegen/` (root) vs `ledger-app/tools/` — *rec:* root `tools/` (it's firmware+host shared).
-3. **Glue home:** `apps/demo-browser` (rec) vs a thin `packages/demo`.
-4. **Builder:** tsdown (rec) vs tsup/unbuild.
+## Decisions — RESOLVED (owner, at approval 2026-06-03)
+1. **npm scope/names (placeholder, changeable pre-publish):** SDK = `@alejoamiras/aztec-ledger-sdk`; core = `@alejoamiras/aztec-ledger-core`.
+2. **Rename:** YES → dir `packages/aztec-ledger`, name `@alejoamiras/aztec-ledger-sdk` (P0 **step 0**; ~20 importers: tests, `vite.config.ts`, scripts, demo `state.ts`).
+3. **Codegen home:** root `tools/clear-signing-codegen/` (writes both the firmware C tables + the host TS registry).
+4. **Glue home:** `apps/demo-browser`.
+5. **Builder:** **tsup** (esbuild-based; rewrites `.ts`→`.js`, emits `.d.ts`, ESM). NOTE the audit-fold spike still applies — verify `.d.ts` resolution for the 29 `@aztec/*` deep-subpaths as externals + the `exports` map mirrors them, EARLY.
 
 ## Final audit fold (codex `019e8f1c` + opus — core verified, edges refined)
 Both auditors independently re-read `ledger-app/src/handler/append_call.c` and confirmed the **core design is SOUND**: the device re-validates EVERY gate host `preflight.ts` guards (REGISTRY_MISS / DECODER_MISS / DECODER_DESYNC / VISIBILITY_MISMATCH / 4-arg `from==consumer` delegated-spend / DRIP token-kind), in the same order, against the C twins — preflight's return value is discarded (`clear-signing-entrypoint.ts:146`), its only effect a fast typed throw. So preflight→optional-hook cannot let a bad call through or change signed bytes. The following refinements are **binding** (supersede the body on conflict):
@@ -65,7 +66,7 @@ Both auditors independently re-read `ledger-app/src/handler/append_call.c` and c
 2. **Package name — DECIDE (opus HIGH).** Today it's `@aztec-hwwallet-poc/adapter-ledger` at `packages/adapter-ledger/`; the plan's `packages/aztec-ledger` strings imply a rename touching ~20 importers (tests, `vite.config.ts`, 3 scripts, demo `state.ts`). *Rec:* rename dir+name → `aztec-ledger` (clean for publish), as step 0 of P0. Open decision below.
 3. **Version handshake — concrete semantics (codex+opus MED; resolves the §"optional" vs §"constructor-enforces" contradiction).** Split mandatory from optional: **(a) mandatory** at connect, in every safe constructor — `GET_VERSION` 3-tuple compat-RANGE check + `GET_CAPS` ⊇ required-bitmask; **(b) optional** — the registry/manifest-id check rides the `ClearSignPreflight` hook. ADD a registry/manifest identifier to the codegen bundle (does NOT exist today; only per-APDU `MANIFEST_VERSION=3` is enforced device-side). Failure mode to catch: device firmware's registry ≠ the consumer's preflight registry → device signs under its tables while the host renders stale ones.
 4. **P0 ordered sub-steps (opus MED) — no long red window:** (0, if renaming) rename; (a) demo gains `@aztec/pxe`+`@aztec/wallets` deps, `state.ts` still imports the old barrel; (b) move `session-embedded-wallet.ts`+`aztec-ledger-session.ts` to the demo, repoint `state.ts` + the in-package session tests (`aztec-ledger-session.test.ts`, `.integration.test.ts`) + `deploy-profile-selection.test.ts`; (c) THEN cut the root re-exports.
-5. **tsdown spike EARLY (opus MED), not P5.** 150 `.ts`-extension imports + `verbatimModuleSyntax` + 29 `@aztec/*` deep-subpaths → verify `.d.ts` resolution for those as externals, the `exports` map mirrors them, ESM-only is fine. Spike in P0/P1 before committing the builder.
+5. **tsup spike EARLY (opus MED), not P5.** 150 `.ts`-extension imports + `verbatimModuleSyntax` + 29 `@aztec/*` deep-subpaths → verify `.d.ts` resolution for those as externals, the `exports` map mirrors them, ESM-only is fine. Spike in P0/P1 before committing the builder.
 6. **`./advanced` is OUTSIDE the fail-closed guarantees (codex LOW)** — document explicitly: raw `LedgerProvider`, `reveal`, `onboarding` live there; the expert/unguarded surface, by design.
 7. **e2e count = 8, not 6 (opus LOW).** The `e2e/*.e2e.ts` import the demo APP (not the package) → they survive the move; P0 lists them as a verify-still-green step, no rewrite.
 
