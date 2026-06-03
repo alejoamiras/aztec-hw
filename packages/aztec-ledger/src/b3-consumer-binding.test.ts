@@ -26,9 +26,9 @@
  *   SPECULOS_URL=http://localhost:5001 bun test packages/adapter-ledger/src/b3-consumer-binding.test.ts
  */
 import { describe, expect, test } from 'bun:test';
+import type { CallIntent } from '@alejoamiras/aztec-ledger-core';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
-import type { CallIntent } from '@aztec-hwwallet-poc/core';
 import { CURVE_ID, defaultAztecPath, INS, SW } from './apdu.ts';
 import {
   buildL4Manifest,

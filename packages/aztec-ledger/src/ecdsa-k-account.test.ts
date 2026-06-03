@@ -21,10 +21,10 @@
  *   - Deploying the EcdsaKAccount contract on a sandbox.
  */
 import { describe, expect, test } from 'bun:test';
+import { Fr } from '@alejoamiras/aztec-ledger-core';
 import { Ecdsa, EcdsaSignature } from '@aztec/foundation/crypto/ecdsa';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import { CompleteAddress } from '@aztec/stdlib/contract';
-import { Fr } from '@aztec-hwwallet-poc/core';
 
 import { LedgerEcdsaKAccountContract } from './account-contract.ts';
 import { defaultAztecPath } from './apdu.ts';

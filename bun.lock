@@ -17,23 +17,12 @@
         "vite-plugin-node-polyfills": "^0.28.0",
       },
     },
-    "apps/demo": {
-      "name": "@aztec-hwwallet-poc/demo",
-      "version": "0.0.1",
-      "dependencies": {
-        "@aztec-hwwallet-poc/adapter-ledger": "workspace:*",
-        "@aztec-hwwallet-poc/adapter-trezor": "workspace:*",
-        "@aztec-hwwallet-poc/core": "workspace:*",
-        "@aztec/foundation": "4.2.1",
-        "@noble/secp256k1": "^3.1.0",
-      },
-    },
     "apps/demo-browser": {
       "name": "@aztec-hwwallet-poc/demo-browser",
       "version": "0.0.1",
       "dependencies": {
-        "@aztec-hwwallet-poc/adapter-ledger": "workspace:*",
-        "@aztec-hwwallet-poc/core": "workspace:*",
+        "@alejoamiras/aztec-ledger-core": "workspace:*",
+        "@alejoamiras/aztec-ledger-sdk": "workspace:*",
         "@aztec/aztec.js": "4.2.1",
         "@aztec/bb-prover": "4.2.1",
         "@aztec/foundation": "4.2.1",
@@ -55,11 +44,11 @@
         "vite-plugin-node-polyfills": "^0.28.0",
       },
     },
-    "packages/adapter-ledger": {
-      "name": "@aztec-hwwallet-poc/adapter-ledger",
+    "packages/aztec-ledger": {
+      "name": "@alejoamiras/aztec-ledger-sdk",
       "version": "0.0.1",
       "dependencies": {
-        "@aztec-hwwallet-poc/core": "workspace:*",
+        "@alejoamiras/aztec-ledger-core": "workspace:*",
         "@aztec/accounts": "4.2.1",
         "@aztec/aztec.js": "4.2.1",
         "@aztec/entrypoints": "4.2.1",
@@ -76,16 +65,8 @@
         "@defi-wonderland/aztec-standards": "4.2.0-aztecnr-rc.2",
       },
     },
-    "packages/adapter-trezor": {
-      "name": "@aztec-hwwallet-poc/adapter-trezor",
-      "version": "0.0.1",
-      "dependencies": {
-        "@aztec-hwwallet-poc/core": "workspace:*",
-        "@noble/secp256k1": "^3.1.0",
-      },
-    },
     "packages/core": {
-      "name": "@aztec-hwwallet-poc/core",
+      "name": "@alejoamiras/aztec-ledger-core",
       "version": "0.0.1",
       "dependencies": {
         "@aztec/aztec.js": "4.2.1",
@@ -97,6 +78,10 @@
   },
   "packages": {
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
+
+    "@alejoamiras/aztec-ledger-core": ["@alejoamiras/aztec-ledger-core@workspace:packages/core"],
+
+    "@alejoamiras/aztec-ledger-sdk": ["@alejoamiras/aztec-ledger-sdk@workspace:packages/aztec-ledger"],
 
     "@aws-crypto/crc32": ["@aws-crypto/crc32@5.2.0", "", { "dependencies": { "@aws-crypto/util": "^5.2.0", "@aws-sdk/types": "^3.222.0", "tslib": "^2.6.2" } }, "sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg=="],
 
@@ -159,14 +144,6 @@
     "@aws-sdk/xml-builder": ["@aws-sdk/xml-builder@3.972.24", "", { "dependencies": { "@nodable/entities": "2.1.0", "@smithy/types": "^4.14.1", "fast-xml-parser": "5.7.3", "tslib": "^2.6.2" } }, "sha512-V8z5YcDPfsvzrBlj0xR1vhRtocblhYbqdreCJB/voGd4Sr5zjNAeWxexbnqVtskTJe0vFb5KMqbSL++ePl+zRw=="],
 
     "@aws/lambda-invoke-store": ["@aws/lambda-invoke-store@0.2.4", "", {}, "sha512-iY8yvjE0y651BixKNPgmv1WrQc+GZ142sb0z4gYnChDDY2YqI4P/jsSopBWrKfAt7LOJAkOXt7rC/hms+WclQQ=="],
-
-    "@aztec-hwwallet-poc/adapter-ledger": ["@aztec-hwwallet-poc/adapter-ledger@workspace:packages/adapter-ledger"],
-
-    "@aztec-hwwallet-poc/adapter-trezor": ["@aztec-hwwallet-poc/adapter-trezor@workspace:packages/adapter-trezor"],
-
-    "@aztec-hwwallet-poc/core": ["@aztec-hwwallet-poc/core@workspace:packages/core"],
-
-    "@aztec-hwwallet-poc/demo": ["@aztec-hwwallet-poc/demo@workspace:apps/demo"],
 
     "@aztec-hwwallet-poc/demo-browser": ["@aztec-hwwallet-poc/demo-browser@workspace:apps/demo-browser"],
 
@@ -972,7 +949,7 @@
 
     "git-raw-commits": ["git-raw-commits@5.0.1", "", { "dependencies": { "@conventional-changelog/git-client": "^2.6.0", "meow": "^13.0.0" }, "bin": { "git-raw-commits": "src/cli.js" } }, "sha512-Y+csSm2GD/PCSh6Isd/WiMjNAydu0VBiG9J7EdQsNA5P9uXvLayqjmTsNlK5Gs9IhblFZqOU0yid5Il5JPoLiQ=="],
 
-    "glob": ["glob@13.0.6", "", { "dependencies": { "minimatch": "^10.2.2", "minipass": "^7.1.3", "path-scurry": "^2.0.2" } }, "sha512-Wjlyrolmm8uDpm/ogGyXZXb1Z+Ca2B8NbJwqBVg0axK9GbBeoS7yGV6vjXnYdGm6X53iehEuxxbyiKp8QmN4Vw=="],
+    "glob": ["glob@11.1.0", "", { "dependencies": { "foreground-child": "^3.3.1", "jackspeak": "^4.1.1", "minimatch": "^10.1.1", "minipass": "^7.1.2", "package-json-from-dist": "^1.0.0", "path-scurry": "^2.0.0" }, "bin": { "glob": "dist/esm/bin.mjs" } }, "sha512-vuNwKSaKiqm7g0THUBu2x7ckSs3XJLXE+2ssL7/MfTGPLLcrJQ/4Uq1CjPTtO5cCIiRxqvN6Twy1qOwhL0Xjcw=="],
 
     "global-directory": ["global-directory@5.0.0", "", { "dependencies": { "ini": "6.0.0" } }, "sha512-1pgFdhK3J2LeM+dVf2Pd424yHx2ou338lC0ErNP2hPx4j8eW1Sp0XqSjNxtk6Tc4Kr5wlWtSvz8cn2yb7/SG/w=="],
 
@@ -1580,6 +1557,8 @@
 
     "@aztec-hwwallet-poc/demo-browser/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
+    "@aztec/noir-noir_codegen/glob": ["glob@13.0.6", "", { "dependencies": { "minimatch": "^10.2.2", "minipass": "^7.1.3", "path-scurry": "^2.0.2" } }, "sha512-Wjlyrolmm8uDpm/ogGyXZXb1Z+Ca2B8NbJwqBVg0axK9GbBeoS7yGV6vjXnYdGm6X53iehEuxxbyiKp8QmN4Vw=="],
+
     "@babel/core/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
@@ -1685,8 +1664,6 @@
     "md5.js/hash-base": ["hash-base@3.1.2", "", { "dependencies": { "inherits": "^2.0.4", "readable-stream": "^2.3.8", "safe-buffer": "^5.2.1", "to-buffer": "^1.2.1" } }, "sha512-Bb33KbowVTIj5s7Ked1OsqHUeCpz//tPwR+E2zJgJKo9Z5XolZ9b6bdUgjmYlwnWhoOQKoTd1TYToZGn5mAYOg=="],
 
     "miller-rabin/bn.js": ["bn.js@4.12.3", "", {}, "sha512-fGTi3gxV/23FTYdAoUtLYp6qySe2KE3teyZitipKNRuVYcBkoP/bB3guXN/XVKUe9mxCHXnc9C4ocyz8OmgN0g=="],
-
-    "node-pg-migrate/glob": ["glob@11.1.0", "", { "dependencies": { "foreground-child": "^3.3.1", "jackspeak": "^4.1.1", "minimatch": "^10.1.1", "minipass": "^7.1.2", "package-json-from-dist": "^1.0.0", "path-scurry": "^2.0.0" }, "bin": { "glob": "dist/esm/bin.mjs" } }, "sha512-vuNwKSaKiqm7g0THUBu2x7ckSs3XJLXE+2ssL7/MfTGPLLcrJQ/4Uq1CjPTtO5cCIiRxqvN6Twy1qOwhL0Xjcw=="],
 
     "node-pg-migrate/yargs": ["yargs@17.7.2", "", { "dependencies": { "cliui": "^8.0.1", "escalade": "^3.1.1", "get-caller-file": "^2.0.5", "require-directory": "^2.1.1", "string-width": "^4.2.3", "y18n": "^5.0.5", "yargs-parser": "^21.1.1" } }, "sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w=="],
 

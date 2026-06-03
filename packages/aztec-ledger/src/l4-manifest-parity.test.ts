@@ -11,12 +11,12 @@
  * we verify against whatever `@aztec/*` is installed (4.2.1).
  */
 import { describe, expect, test } from 'bun:test';
+import { Fr } from '@alejoamiras/aztec-ledger-core';
 import { AztecAddress } from '@aztec/aztec.js/addresses';
 import { EncodedAppEntrypointCalls } from '@aztec/entrypoints/encoding';
 import { FunctionCall, FunctionSelector, FunctionType } from '@aztec/stdlib/abi';
 import { computeOuterAuthWitHash } from '@aztec/stdlib/auth-witness';
 import type { ExecutionPayload } from '@aztec/stdlib/tx';
-import { Fr } from '@aztec-hwwallet-poc/core';
 
 import { defaultAztecPath } from './apdu.ts';
 import { deviceOuterHashForIntent } from './l4-manifest.ts';

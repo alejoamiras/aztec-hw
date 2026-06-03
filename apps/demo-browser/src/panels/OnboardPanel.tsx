@@ -17,7 +17,7 @@ import {
   AztecLedgerSession,
   defaultAztecPath,
   revealOrReuseMasterSecret,
-} from '@aztec-hwwallet-poc/adapter-ledger';
+} from '@alejoamiras/aztec-ledger-sdk';
 import { useState } from 'react';
 import {
   DRIPPER_ARTIFACT,

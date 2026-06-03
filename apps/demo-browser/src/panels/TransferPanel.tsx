@@ -2,8 +2,9 @@
  * Transfer panel — 4 modes, each clear-signed on device with step-by-step
  * status visible to the user.
  */
+
+import type { AztecLedgerSession, PhaseId, SubmitResult } from '@alejoamiras/aztec-ledger-sdk';
 import { AztecAddress } from '@aztec/aztec.js/addresses';
-import type { AztecLedgerSession, PhaseId, SubmitResult } from '@aztec-hwwallet-poc/adapter-ledger';
 import { useState } from 'react';
 import {
   assertMonotonicPhase,

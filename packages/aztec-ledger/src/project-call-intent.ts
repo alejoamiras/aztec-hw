@@ -17,10 +17,10 @@
  * handles the u64-into-Fr widening.
  */
 
+import type { CallIntent, ChainInfo, StructuredFunctionCall } from '@alejoamiras/aztec-ledger-core';
 import type { AztecAddress } from '@aztec/aztec.js/addresses';
 import { FunctionType } from '@aztec/stdlib/abi';
 import type { ExecutionPayload } from '@aztec/stdlib/tx';
-import type { CallIntent, ChainInfo, StructuredFunctionCall } from '@aztec-hwwallet-poc/core';
 
 export function projectExecutionPayloadIntoCallIntent(
   exec: ExecutionPayload,

@@ -8,7 +8,7 @@
  * are gone with those methods.
  */
 import { describe, expect, test } from 'bun:test';
-import { Fr } from '@aztec-hwwallet-poc/core';
+import { Fr } from '@alejoamiras/aztec-ledger-core';
 import { defaultAztecPath } from './apdu.ts';
 import { LedgerEcdsaKAuthWitnessProvider } from './auth-witness-provider.ts';
 import { SpeculosTransport } from './speculos-transport.ts';

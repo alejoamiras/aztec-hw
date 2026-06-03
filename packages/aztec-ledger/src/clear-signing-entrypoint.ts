@@ -28,6 +28,8 @@
  * on mismatch at runtime, and `l4-manifest-parity.test.ts` verifies the device's
  * algorithm matches the installed canonical (4.2.1).
  */
+
+import { packEcdsaSignature } from '@alejoamiras/aztec-ledger-core';
 import {
   AccountFeePaymentMethodOptions,
   DefaultAccountEntrypoint,
@@ -40,8 +42,6 @@ import { AuthWitness, computeOuterAuthWitHash } from '@aztec/stdlib/auth-witness
 import type { AztecAddress } from '@aztec/stdlib/aztec-address';
 import type { GasSettings } from '@aztec/stdlib/gas';
 import type { ExecutionPayload, TxExecutionRequest } from '@aztec/stdlib/tx';
-
-import { packEcdsaSignature } from '@aztec-hwwallet-poc/core';
 import type { CurveId } from './apdu.ts';
 import { preflightIntent } from './clear_signing_v0/preflight.ts';
 import type { DeployContext } from './deploy-context.ts';

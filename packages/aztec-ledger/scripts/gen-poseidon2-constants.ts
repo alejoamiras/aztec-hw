@@ -27,7 +27,7 @@
  * sums them into one accumulator anyway. We assert at codegen that those
  * slots are exactly zero in the source.
  *
- * Run via: `bun run packages/adapter-ledger/scripts/gen-poseidon2-constants.ts`
+ * Run via: `bun run packages/aztec-ledger/scripts/gen-poseidon2-constants.ts`
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -195,7 +195,7 @@ const headerLines: string[] = [
   ' *   dd03c4a23ab067274b4964cacb36d1545f73fb14',
   ' *',
   ' * DO NOT EDIT. Regenerate via:',
-  ' *   bun run packages/adapter-ledger/scripts/gen-poseidon2-constants.ts',
+  ' *   bun run packages/aztec-ledger/scripts/gen-poseidon2-constants.ts',
   ' */',
   '#pragma once',
   '',

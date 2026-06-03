@@ -21,6 +21,7 @@
  * single device session at a time; two parallel submissions would corrupt its state.
  */
 
+import type { ChainInfo } from '@alejoamiras/aztec-ledger-core';
 import { BaseAccount } from '@aztec/aztec.js/account';
 import { AztecAddress, type CompleteAddress } from '@aztec/aztec.js/addresses';
 import { Contract, type ContractMethod } from '@aztec/aztec.js/contracts';
@@ -34,7 +35,6 @@ import type { ContractArtifact } from '@aztec/stdlib/abi';
 import type { ContractInstanceWithAddress } from '@aztec/stdlib/contract';
 import { GasSettings } from '@aztec/stdlib/gas';
 import { type ExecutionPayload, type TxHash, type TxReceipt, TxStatus } from '@aztec/stdlib/tx';
-import type { ChainInfo } from '@aztec-hwwallet-poc/core';
 
 import { LedgerEcdsaKAccountContract } from './account-contract.ts';
 import { LedgerSchnorrAccountContract } from './schnorr-account-contract.ts';

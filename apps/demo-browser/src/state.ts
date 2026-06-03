@@ -11,11 +11,7 @@
  * keep it opaque here (typed `unknown`) so this file doesn't transitively
  * pull in @aztec/* into every renderer. Concrete callers narrow it.
  */
-import type {
-  AztecLedgerSession,
-  LedgerTransport,
-  PhaseId,
-} from '@aztec-hwwallet-poc/adapter-ledger';
+import type { AztecLedgerSession, LedgerTransport, PhaseId } from '@alejoamiras/aztec-ledger-sdk';
 
 export type Transport = 'speculos' | 'webhid';
 

@@ -11,9 +11,9 @@
  *   SPECULOS_URL=http://localhost:5005 bun test packages/adapter-ledger/src/wire-reject-arms.test.ts
  */
 import { describe, expect, test } from 'bun:test';
+import type { CallIntent, StructuredFunctionCall } from '@alejoamiras/aztec-ledger-core';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
-import type { CallIntent, StructuredFunctionCall } from '@aztec-hwwallet-poc/core';
 import { CURVE_ID, defaultAztecPath } from './apdu.ts';
 import { buildL4Manifest } from './l4-manifest.ts';
 import { LedgerProvider } from './provider.ts';

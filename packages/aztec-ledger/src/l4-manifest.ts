@@ -11,12 +11,11 @@
  * recomputes the outer_hash from this stream and rejects on mismatch (SW_HASH_MISMATCH).
  */
 
+import type { CallIntent, StructuredFunctionCall } from '@alejoamiras/aztec-ledger-core';
 import { poseidon2HashWithSeparator } from '@aztec/foundation/crypto/poseidon';
 import { type Fr as AztecFr, Fr } from '@aztec/foundation/curves/bn254';
 import { computeOuterAuthWitHash } from '@aztec/stdlib/auth-witness';
 import type { AztecAddress } from '@aztec/stdlib/aztec-address';
-
-import type { CallIntent, StructuredFunctionCall } from '@aztec-hwwallet-poc/core';
 
 import {
   APP_MAX_ARGS,

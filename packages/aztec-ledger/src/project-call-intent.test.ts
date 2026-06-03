@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { Fr } from '@alejoamiras/aztec-ledger-core';
 import { AztecAddress } from '@aztec/aztec.js/addresses';
 import { FunctionCall, FunctionSelector, FunctionType } from '@aztec/stdlib/abi';
 import type { ExecutionPayload } from '@aztec/stdlib/tx';
-import { Fr } from '@aztec-hwwallet-poc/core';
 
 import { projectExecutionPayloadIntoCallIntent } from './project-call-intent.ts';
 

@@ -10,7 +10,7 @@
  * Single source of truth — only the adapter calls `onStep`. The browser
  * never synthesizes phase callbacks.
  */
-import type { PhaseId } from '@aztec-hwwallet-poc/adapter-ledger';
+import type { PhaseId } from '@alejoamiras/aztec-ledger-sdk';
 import { type DemoState, PHASE_ORDER, type SubmitStep } from '../state.ts';
 
 interface Props {

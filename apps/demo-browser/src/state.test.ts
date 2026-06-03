@@ -6,7 +6,7 @@
  * (forward or same-phase) don't throw.
  */
 import { describe, expect, it } from 'bun:test';
-import type { PhaseId } from '@aztec-hwwallet-poc/adapter-ledger';
+import type { PhaseId } from '@alejoamiras/aztec-ledger-sdk';
 import { assertMonotonicPhase, PHASE_ORDER } from './state.ts';
 
 describe('assertMonotonicPhase', () => {

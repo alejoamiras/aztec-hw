@@ -1,8 +1,8 @@
 {
-  "name": "@aztec-hwwallet-poc/adapter-ledger",
+  "name": "@alejoamiras/aztec-ledger-sdk",
   "version": "0.0.1",
   "private": true,
-  "description": "Ledger BOLOS app adapter for Aztec. Talks to the device via Speculos (test) or @ledgerhq/hw-transport (real hardware). Mirrors @aztec-hwwallet-poc/adapter-trezor.",
+  "description": "Ledger BOLOS app adapter for Aztec. Talks to the device via Speculos (test) or @ledgerhq/hw-transport (real hardware).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aztec-hwwallet-poc/core": "workspace:*",
+    "@alejoamiras/aztec-ledger-core": "workspace:*",
     "@aztec/accounts": "4.2.1",
     "@aztec/aztec.js": "4.2.1",
     "@aztec/entrypoints": "4.2.1",

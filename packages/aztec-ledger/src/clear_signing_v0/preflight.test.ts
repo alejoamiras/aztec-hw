@@ -6,8 +6,8 @@
  * M5.2's strict-allowlist gates.
  */
 import { describe, expect, test } from 'bun:test';
+import { type CallIntent, Fr, type StructuredFunctionCall } from '@alejoamiras/aztec-ledger-core';
 import { AztecAddress } from '@aztec/aztec.js/addresses';
-import { type CallIntent, Fr, type StructuredFunctionCall } from '@aztec-hwwallet-poc/core';
 
 import { PreflightError, preflightIntent } from './preflight.ts';
 

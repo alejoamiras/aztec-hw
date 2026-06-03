@@ -26,11 +26,11 @@
  *   SPECULOS_URL=http://localhost:5005 bun test packages/adapter-ledger/src/verified-calls-content.test.ts
  */
 import { describe, expect, test } from 'bun:test';
+import type { CallIntent, StructuredFunctionCall } from '@alejoamiras/aztec-ledger-core';
 import { EcdsaKAccountContractArtifact } from '@aztec/accounts/ecdsa';
 import { getContractInstanceFromInstantiationParams } from '@aztec/aztec.js/contracts';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
-import type { CallIntent, StructuredFunctionCall } from '@aztec-hwwallet-poc/core';
 import { CURVE_ID, defaultAztecPath, INS, SW } from './apdu.ts';
 import { buildL4Manifest, deviceOuterHashForIntent } from './l4-manifest.ts';
 import { deriveAztecKeysFromMasterSecret } from './oracle/index.ts';

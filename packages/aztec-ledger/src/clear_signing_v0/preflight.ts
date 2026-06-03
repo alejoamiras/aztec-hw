@@ -7,8 +7,9 @@
  * the adapter never trusts the preflight result; it just surfaces a cleaner
  * developer experience when an intent is structurally wrong.
  */
+
+import type { CallIntent, StructuredFunctionCall } from '@alejoamiras/aztec-ledger-core';
 import type { AztecAddress } from '@aztec/aztec.js/addresses';
-import type { CallIntent, StructuredFunctionCall } from '@aztec-hwwallet-poc/core';
 
 import { CS_REGISTRY, type CsRegistryEntry, csRegistryLookup } from './registry.generated.ts';
 import { CS_VERBS, type CsVerbEntry, csVerbLookup } from './selectors.generated.ts';

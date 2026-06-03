@@ -11,7 +11,7 @@
  * recomputation on-device must reproduce the `outer_hash` for the same inputs,
  * byte-for-byte.
  *
- * Run via: `bun run packages/adapter-ledger/scripts/gen-l4-vectors.ts`
+ * Run via: `bun run packages/aztec-ledger/scripts/gen-l4-vectors.ts`
  *
  * Aztec dependencies used:
  *   - `@aztec/foundation/crypto/poseidon` (`poseidon2HashWithSeparator`)

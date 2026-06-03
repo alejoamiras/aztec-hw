@@ -29,9 +29,9 @@
  * (spy/freeze deploy) are gone — their job is the entrypoint's now.
  */
 
+import type { AuthWitness, Fr } from '@alejoamiras/aztec-ledger-core';
 import type { AuthWitnessProvider } from '@aztec/aztec.js/account';
 import type { AztecAddress } from '@aztec/stdlib/aztec-address';
-import type { AuthWitness, Fr } from '@aztec-hwwallet-poc/core';
 import { CURVE_ID, type CurveId } from './apdu.ts';
 import { LedgerClearSigningEntrypoint } from './clear-signing-entrypoint.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';

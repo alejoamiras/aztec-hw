@@ -9,7 +9,7 @@ import {
   LedgerProvider,
   SpeculosTransport,
   WebHidNotSupportedError,
-} from '@aztec-hwwallet-poc/adapter-ledger';
+} from '@alejoamiras/aztec-ledger-sdk';
 import { useState } from 'react';
 import type { DemoState, Transport } from '../state.ts';
 

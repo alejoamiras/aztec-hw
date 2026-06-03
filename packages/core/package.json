@@ -1,5 +1,5 @@
 {
-  "name": "@aztec-hwwallet-poc/core",
+  "name": "@alejoamiras/aztec-ledger-core",
   "version": "0.0.1",
   "private": true,
   "description": "Shared types for the Aztec HW-wallet PoC. Extends AuthWitnessProvider with createAuthWitFromIntent (Option A from clear-signing design).",
