@@ -25,6 +25,7 @@ import { LedgerProvider } from './provider.ts';
 import { toggleBlindSigning } from './speculos-settings.ts';
 import type { AutoConfirmContext } from './speculos-transport.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
+import { unsafeSignOuterHash } from './unsafe.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
 const PATH = defaultAztecPath(0);
@@ -57,14 +58,16 @@ describe.skipIf(!SPECULOS_URL)('P3 — blind_signing NVM toggle (FRESH emulator:
 
   test('default OFF → SIGN_OUTER_HASH refused with SW_BLIND_SIGN_DISABLED (0x6F13)', async () => {
     await expect(
-      provider.signOuterHash(PATH, OUTER, { autoConfirm: async () => {} }),
+      unsafeSignOuterHash(transport, PATH, OUTER, { autoConfirm: async () => {} }),
     ).rejects.toThrow('SW=0x6f13');
     await settleHome();
   });
 
   test('toggle ON in Settings → SIGN_OUTER_HASH reaches the ⚠ blind-sign review + signs', async () => {
     await toggleBlindSigning(transport);
-    const sig = await provider.signOuterHash(PATH, OUTER, { autoConfirm: approveBlindSign });
+    const sig = await unsafeSignOuterHash(transport, PATH, OUTER, {
+      autoConfirm: approveBlindSign,
+    });
     expect(sig.r.length).toBe(32);
     expect(sig.s.length).toBe(32);
     await settleHome();
@@ -73,7 +76,7 @@ describe.skipIf(!SPECULOS_URL)('P3 — blind_signing NVM toggle (FRESH emulator:
   test('toggle OFF again → SIGN_OUTER_HASH refused once more (reversible + sticky)', async () => {
     await toggleBlindSigning(transport);
     await expect(
-      provider.signOuterHash(PATH, OUTER, { autoConfirm: async () => {} }),
+      unsafeSignOuterHash(transport, PATH, OUTER, { autoConfirm: async () => {} }),
     ).rejects.toThrow('SW=0x6f13');
     await settleHome();
   });

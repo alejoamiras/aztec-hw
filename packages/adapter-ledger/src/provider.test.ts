@@ -22,6 +22,7 @@ import { LedgerProvider } from './provider.ts';
 import { toggleBlindSigning } from './speculos-settings.ts';
 import type { AutoConfirmContext } from './speculos-transport.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
+import { unsafeSignOuterHash } from './unsafe.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
 // Single source of truth for the Aztec derivation path — derived from
@@ -102,7 +103,7 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
     // Fixed outer_hash chosen so the test is reproducible.
     const outerHash = new Uint8Array(32).fill(0x42);
 
-    const sig = await provider.signOuterHash(AZTEC_PATH, outerHash, {
+    const sig = await unsafeSignOuterHash(transport, AZTEC_PATH, outerHash, {
       autoConfirm: approveReview,
     });
     expect(sig.r.length).toBe(32);
@@ -132,7 +133,7 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
     const pubKeyXY = Buffer.concat([Buffer.from(pk.x), Buffer.from(pk.y)]); // 64-byte x||y, no SEC1 prefix
     const outerHash = new Uint8Array(32).fill(0x42);
 
-    const sig = await provider.signOuterHash(AZTEC_PATH, outerHash, {
+    const sig = await unsafeSignOuterHash(transport, AZTEC_PATH, outerHash, {
       autoConfirm: approveReview,
     });
 
@@ -159,7 +160,7 @@ describe.skipIf(!SPECULOS_URL)('Ledger app — Speculos integration', () => {
       await ctx.press('both');
     };
     await expect(
-      provider.signOuterHash(AZTEC_PATH, outerHash, { autoConfirm: rejectFlow }),
+      unsafeSignOuterHash(transport, AZTEC_PATH, outerHash, { autoConfirm: rejectFlow }),
     ).rejects.toThrow('SW=0x6985');
   });
 

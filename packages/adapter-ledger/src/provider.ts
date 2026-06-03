@@ -211,29 +211,12 @@ export class LedgerProvider {
     return { r: r.data.slice(0, 32), s: r.data.slice(32, 64) };
   }
 
-  async signOuterHash(
-    bip32Path: readonly number[],
-    outerHash: Uint8Array,
-    opts: SignOuterHashOptions = {},
-  ): Promise<LedgerSignature> {
-    if (outerHash.length !== 32) {
-      throw new Error(`outerHash must be 32 bytes, got ${outerHash.length}`);
-    }
-    const pathBytes = this.encodePath(bip32Path);
-    const body = new Uint8Array(pathBytes.length + outerHash.length);
-    body.set(pathBytes, 0);
-    body.set(outerHash, pathBytes.length);
-
-    const r = await this.transport.send({ ins: INS.SIGN_OUTER_HASH, data: body }, opts.autoConfirm);
-    this.requireOk(r.sw, 'SIGN_OUTER_HASH');
-    if (r.data.length !== 64) {
-      throw new Error(`SIGN_OUTER_HASH: expected 64 bytes (r||s), got ${r.data.length}`);
-    }
-    return {
-      r: r.data.slice(0, 32),
-      s: r.data.slice(32, 64),
-    };
-  }
+  // AHW-097: the raw blind-sign primitive (`signOuterHash`) was moved OFF this
+  // public driver to `unsafe.ts` (`@aztec/adapter-ledger/unsafe`) — it signs an
+  // arbitrary digest with no manifest review, so it must be a deliberate opt-in
+  // import, not a method every root consumer gets. Clear-signing goes through
+  // `LedgerClearSigningEntrypoint`; `finalize{,Deploy}AndSign` above are the
+  // reviewed paths (device recomputes + compares before signing).
 
   /**
    * Strict BIP-32 path encoder (codex L2 BLOCKER #1).

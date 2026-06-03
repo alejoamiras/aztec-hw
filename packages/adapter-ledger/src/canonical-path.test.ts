@@ -15,6 +15,7 @@ import { describe, expect, test } from 'bun:test';
 import { AZTEC_COIN_TYPE_HARDENED, hardened } from './apdu.ts';
 import { LedgerProvider } from './provider.ts';
 import { SpeculosTransport } from './speculos-transport.ts';
+import { unsafeSignOuterHash } from './unsafe.ts';
 
 const SPECULOS_URL = process.env.SPECULOS_URL;
 
@@ -35,7 +36,7 @@ describe.skipIf(!SPECULOS_URL)('AHW-064 — canonical-path gate on key-using sur
 
   test('SIGN_OUTER_HASH rejects a non-canonical path (before the blind-signing gate)', async () => {
     await expect(
-      provider.signOuterHash(NON_CANONICAL, new Uint8Array(32).fill(0x42), {
+      unsafeSignOuterHash(transport, NON_CANONICAL, new Uint8Array(32).fill(0x42), {
         autoConfirm: async () => {},
       }),
     ).rejects.toThrow('SW=0x6f03');

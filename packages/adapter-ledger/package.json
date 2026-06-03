@@ -5,7 +5,8 @@
   "description": "Ledger BOLOS app adapter for Aztec. Talks to the device via Speculos (test) or @ledgerhq/hw-transport (real hardware). Mirrors @aztec-hwwallet-poc/adapter-trezor.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./unsafe": "./src/unsafe.ts"
   },
   "scripts": {
     "gen:clear-signing-v0": "bun scripts/gen-clear-signing-v0.ts",
