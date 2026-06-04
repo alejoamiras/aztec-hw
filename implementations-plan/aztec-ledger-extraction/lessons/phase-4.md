@@ -1,9 +1,9 @@
-# Phase 4 — production API + version handshake (IN PROGRESS)
+# Phase 4 — production API + version handshake → DONE (green)
 
-P4 has three parts; doing them as separate validated commits:
+P4 had three parts, each a separate validated commit:
 1. **version+caps connect handshake** — DONE
 2. **`connectLedger` factory + convenience flow** — DONE
-3. `@aztec/*` → `peerDependencies` — pending (workspace-resolution-risky, do last)
+3. **`@aztec/*` → `peerDependencies`** — DONE
 
 ## Part 2 — `connectLedger` convenience factory → DONE (green)
 New `src/connect.ts`:
@@ -26,5 +26,14 @@ The shipped device is **0.1.0** with caps **0x1D** (`K1|CLEAR_SIGN|GRUMPKIN|ATTE
 ## Validation (green)
 `lint:all` 0 · `bun test packages/` **129 pass** / 0 fail (+5 handshake tests: per-curve caps, happy, version-too-low, version-too-high, missing-cap) · SDK `tsc` clean · demo `tsc` clean · `bun test apps/demo-browser` 21 pass · demo `vite build` ✓.
 
-## Next (P4 cont.)
-`connectLedger` factory (+ `LedgerConnection`/convenience account flow), then `@aztec/*` → peerDeps (move deps→peers + ensure the demo provides ALL of them incl. `@aztec/accounts`; the SDK likely needs them as devDeps too so its own tests/build resolve — verify empirically).
+## Part 3 — `@aztec/*` → peerDependencies → DONE (green)
+Moved the 5 `@aztec/*` (`accounts`, `aztec.js`, `entrypoints`, `foundation`, `stdlib`) out of the SDK's `dependencies`:
+- → **`peerDependencies`** (pinned `4.2.1`) — the consumer controls the framework version (no duplicate installs / version skew).
+- → **also `devDependencies`** (`4.2.1`) — REQUIRED so the SDK's own `bun test` / `tsc` resolve them; bun does NOT auto-resolve a workspace package's peers from a sibling.
+- Demo gained `@aztec/accounts` (it already provided the other 4) so it satisfies every peer.
+- `@ledgerhq/hw-transport*` + `@noble/secp256k1` + `core` stay regular deps; node-hid stays the optional peer.
+
+Validation: `bun install` no-changes (same installed set, recategorized) · `lint:all` 0 · `bun test packages/` 134 pass · demo `tsc` clean · demo `vite build` ✓ · SDK `dependencies` has **no `@aztec/*`**; `peerDependencies` = the 5 + node-hid.
+
+## Next — P5 (build + docs)
+Add **tsup** (ESM + `.d.ts`) — the plan's flagged SPIKE: 150 `.ts`-extension imports, `verbatimModuleSyntax`, 29 `@aztec/*` deep-subpath externals + the node-hid optional-peer external; the `exports` map must mirror the build outputs. Then README (install, dev-firmware caveat, a connect example per transport, the honest spend-vs-viewing-key disclosure) + a firmware↔SDK co-versioning doc. Same for `core`.

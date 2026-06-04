@@ -19,16 +19,23 @@
   },
   "dependencies": {
     "@alejoamiras/aztec-ledger-core": "workspace:*",
+    "@ledgerhq/hw-transport": "^6.35.2",
+    "@ledgerhq/hw-transport-webhid": "^6.35.2",
+    "@noble/secp256k1": "^3.1.0"
+  },
+  "devDependencies": {
+    "@aztec/accounts": "4.2.1",
+    "@aztec/aztec.js": "4.2.1",
+    "@aztec/entrypoints": "4.2.1",
+    "@aztec/foundation": "4.2.1",
+    "@aztec/stdlib": "4.2.1"
+  },
+  "peerDependencies": {
     "@aztec/accounts": "4.2.1",
     "@aztec/aztec.js": "4.2.1",
     "@aztec/entrypoints": "4.2.1",
     "@aztec/foundation": "4.2.1",
     "@aztec/stdlib": "4.2.1",
-    "@ledgerhq/hw-transport": "^6.35.2",
-    "@ledgerhq/hw-transport-webhid": "^6.35.2",
-    "@noble/secp256k1": "^3.1.0"
-  },
-  "peerDependencies": {
     "@ledgerhq/hw-transport-node-hid": "^6.33.2"
   },
   "peerDependenciesMeta": {

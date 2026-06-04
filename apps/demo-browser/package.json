@@ -13,6 +13,7 @@
   "dependencies": {
     "@alejoamiras/aztec-ledger-core": "workspace:*",
     "@alejoamiras/aztec-ledger-sdk": "workspace:*",
+    "@aztec/accounts": "4.2.1",
     "@aztec/aztec.js": "4.2.1",
     "@aztec/bb-prover": "4.2.1",
     "@aztec/entrypoints": "4.2.1",
