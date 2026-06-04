@@ -80,7 +80,13 @@
     "packages/core": {
       "name": "@alejoamiras/aztec-ledger-core",
       "version": "0.0.1",
-      "dependencies": {
+      "devDependencies": {
+        "@aztec/aztec.js": "4.2.1",
+        "@aztec/entrypoints": "4.2.1",
+        "@aztec/foundation": "4.2.1",
+        "@aztec/stdlib": "4.2.1",
+      },
+      "peerDependencies": {
         "@aztec/aztec.js": "4.2.1",
         "@aztec/entrypoints": "4.2.1",
         "@aztec/foundation": "4.2.1",

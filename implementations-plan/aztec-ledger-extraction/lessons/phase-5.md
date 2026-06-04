@@ -1,6 +1,6 @@
-# Phase 5 — build (tsup) + docs (IN PROGRESS)
+# Phase 5 — build (tsup) + docs → DONE (green)
 
-Two parts: 1. SDK tsup build + README — DONE (this commit). 2. same for `core` — pending.
+Two parts: 1. SDK tsup build + README — DONE. 2. same for `core` — DONE.
 
 ## Part 1 — SDK build + docs → DONE (green). The flagged SPIKE PASSED.
 `tsup.config.ts`: 6 entries (root barrel + each subpath), `format: ['esm']`, `dts: true`, `splitting: true`, `treeshake`, `clean`, `sourcemap`.
@@ -22,5 +22,8 @@ Two parts: 1. SDK tsup build + README — DONE (this commit). 2. same for `core`
 ## Validation (green)
 `lint:all` 0 · `bun test packages/` 134 pass · `bun run build` (tsup) exit 0, ESM+`.d.ts` for all 6 entries · demo unaffected (workspace exports still source).
 
-## Next
-Same tsup build + README for `@alejoamiras/aztec-ledger-core`. Then **P6**: standalone consumer-smoke against the BUILT `dist/` (derive an address) + the boundary git-grep; the Speculos matrix "from the package" + demo e2e are MANUAL (no emulator here).
+## Part 2 — core build + docs → DONE (green)
+`@alejoamiras/aztec-ledger-core` got the same: single-entry `tsup.config.ts` (ESM+`.d.ts`, `/^@aztec\//` external), `build` script, `files`, `publishConfig` → `dist/`, a short README, and its 4 `@aztec/*` moved deps→peers+devDeps (consistent with the SDK; the consumer's single `@aztec/*` install satisfies both). `bun run build` exit 0 (ESM + `dist/index.d.ts`).
+
+## Next — P6 (validation)
+Standalone consumer-smoke against the BUILT `dist/` (import + a transport → derive an address) + the boundary git-grep. The Speculos matrix "from the package" + the demo onboard/smoke e2e are MANUAL (no emulator/network here).

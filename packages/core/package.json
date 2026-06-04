@@ -2,19 +2,39 @@
   "name": "@alejoamiras/aztec-ledger-core",
   "version": "0.0.1",
   "private": true,
-  "description": "Shared types for the Aztec HW-wallet PoC. Extends AuthWitnessProvider with createAuthWitFromIntent (Option A from clear-signing design).",
+  "description": "Framework-agnostic shared types for the Aztec Ledger SDK (AuthWitnessProvider extensions + call-intent types).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
   "scripts": {
+    "build": "tsup",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
     "@aztec/aztec.js": "4.2.1",
     "@aztec/entrypoints": "4.2.1",
     "@aztec/foundation": "4.2.1",
     "@aztec/stdlib": "4.2.1"
+  },
+  "peerDependencies": {
+    "@aztec/aztec.js": "4.2.1",
+    "@aztec/entrypoints": "4.2.1",
+    "@aztec/foundation": "4.2.1",
+    "@aztec/stdlib": "4.2.1"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
   }
 }
