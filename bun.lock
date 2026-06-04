@@ -61,6 +61,12 @@
         "@ledgerhq/hw-transport-webhid": "^6.35.2",
         "@noble/secp256k1": "^3.1.0",
       },
+      "peerDependencies": {
+        "@ledgerhq/hw-transport-node-hid": "^6.33.2",
+      },
+      "optionalPeers": [
+        "@ledgerhq/hw-transport-node-hid",
+      ],
     },
     "packages/core": {
       "name": "@alejoamiras/aztec-ledger-core",

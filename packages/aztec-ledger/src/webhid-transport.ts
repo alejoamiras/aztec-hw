@@ -17,7 +17,7 @@
  */
 import TransportWebHID from '@ledgerhq/hw-transport-webhid';
 
-import { CLA, type Ins } from './apdu.ts';
+import { encodeApduBytes } from './hid-apdu.ts';
 import type {
   ApduRequest,
   ApduResponse,
@@ -113,25 +113,4 @@ export class WebHidLedgerTransport implements LedgerTransport {
     await this.inner.close();
     this.disconnected = true;
   }
-}
-
-/**
- * Build the canonical 5+ byte APDU header + body. WebHID transports want raw
- * bytes (the underlying USB HID layer handles fragmentation).
- *
- *   CLA(1) | INS(1) | P1(1) | P2(1) | LC(1) | DATA(LC)
- */
-function encodeApduBytes(req: ApduRequest): Uint8Array {
-  const data = req.data ?? new Uint8Array();
-  if (data.length > 255) {
-    throw new Error(`APDU data too long for short-form Lc: ${data.length} bytes`);
-  }
-  const out = new Uint8Array(5 + data.length);
-  out[0] = CLA;
-  out[1] = req.ins as Ins as number;
-  out[2] = req.p1 ?? 0;
-  out[3] = req.p2 ?? 0;
-  out[4] = data.length;
-  out.set(data, 5);
-  return out;
 }
