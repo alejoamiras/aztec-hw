@@ -28,6 +28,14 @@ export {
   defaultAztecPath,
 } from './apdu.ts';
 export type { ClearSignPreflight } from './clear-signing-entrypoint.ts';
+export {
+  assertDeviceCompatible,
+  LedgerIncompatibleVersionError,
+  LedgerMissingCapabilityError,
+  REQUIRED_CAPS_BASE,
+  requiredCapsForCurve,
+  SUPPORTED_APP_VERSION,
+} from './connect-handshake.ts';
 export type { DeployContext } from './deploy-context.ts';
 export type { VersionInfo } from './provider.ts';
 export {

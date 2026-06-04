@@ -37,6 +37,7 @@ import {
   type ClearSignPreflight,
   LedgerClearSigningEntrypoint,
 } from './clear-signing-entrypoint.ts';
+import { assertDeviceCompatible, requiredCapsForCurve } from './connect-handshake.ts';
 import { LedgerProvider, type SignOuterHashOptions } from './provider.ts';
 import type { LedgerTransport } from './transport.ts';
 
@@ -73,6 +74,7 @@ export interface LedgerProviderOptions {
 export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
   private readonly inner: LedgerProvider;
   private cachedXY?: { x: Uint8Array; y: Uint8Array };
+  private compatChecked = false;
 
   constructor(
     transport: LedgerTransport,
@@ -82,10 +84,23 @@ export class LedgerEcdsaKAuthWitnessProvider implements AuthWitnessProvider {
   }
 
   /**
+   * Mandatory connect handshake (version compat-range + required caps), run once
+   * and cached. It gates the SAFE account path: the first device op below awaits
+   * it, so no account is built or signed against an incompatible device. The raw
+   * `./advanced` `LedgerProvider` deliberately bypasses this (expert surface).
+   */
+  private async ensureCompatible(): Promise<void> {
+    if (this.compatChecked) return;
+    await assertDeviceCompatible(this.inner, requiredCapsForCurve(this.options.curveId));
+    this.compatChecked = true;
+  }
+
+  /**
    * 64-byte `X || Y` shape that Aztec's `EcdsaKAccount` constructor expects.
    * Caches across calls so subsequent createAuthWit calls don't re-probe.
    */
   async getPublicKeyXY(): Promise<{ x: Uint8Array; y: Uint8Array }> {
+    await this.ensureCompatible();
     if (this.cachedXY) return this.cachedXY;
     /* M10: Schnorr accounts derive a Grumpkin pubkey via GET_SCHNORR_PUBKEY;
      * ECDSA-K uses the secp256k1 GET_PUBLIC_KEY. Both return 64B X||Y. */
