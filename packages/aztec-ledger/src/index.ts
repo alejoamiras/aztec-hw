@@ -8,13 +8,13 @@
  *
  * It deliberately exports NO concrete transport, NO raw APDU signer, and NO
  * key-reveal / onboarding flow:
- *   - concrete transports  → `./webhid`, `./speculos` (and `./node-hid`, P3)
+ *   - concrete transports  → `./webhid`, `./node-hid`, `./speculos`
  *   - raw signer           → `./unsafe`  (AHW-097, loud + gated)
  *   - raw `LedgerProvider`, reveal, onboarding, low-level APDU → `./advanced`
  *     (the expert surface, OUTSIDE the fail-closed guarantees)
  *
- * (`connectLedger` / `LedgerConnection` / typed errors land here in P4 of the
- * extraction plan; the `ClearSignPreflight` hook type is exported below, P1.)
+ * `connectLedger` is the convenience entry point; `LedgerConnection`, the typed
+ * version/caps errors, and the `ClearSignPreflight` hook type are all exported here.
  */
 
 export {
@@ -28,6 +28,13 @@ export {
   defaultAztecPath,
 } from './apdu.ts';
 export type { ClearSignPreflight } from './clear-signing-entrypoint.ts';
+export {
+  type AccountScheme,
+  type ConnectLedgerOptions,
+  type CreateAccountOptions,
+  connectLedger,
+  LedgerConnection,
+} from './connect.ts';
 export {
   assertDeviceCompatible,
   LedgerIncompatibleVersionError,

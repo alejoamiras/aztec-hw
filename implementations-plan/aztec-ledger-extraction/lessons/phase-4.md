@@ -1,9 +1,17 @@
 # Phase 4 — production API + version handshake (IN PROGRESS)
 
 P4 has three parts; doing them as separate validated commits:
-1. **version+caps connect handshake** — DONE (this commit)
-2. `connectLedger` factory + convenience flow — pending
+1. **version+caps connect handshake** — DONE
+2. **`connectLedger` factory + convenience flow** — DONE
 3. `@aztec/*` → `peerDependencies` — pending (workspace-resolution-risky, do last)
+
+## Part 2 — `connectLedger` convenience factory → DONE (green)
+New `src/connect.ts`:
+- `connectLedger({ transport, signOptions?, preflight? })` runs the MANDATORY handshake (version range + **base** caps) eagerly and FAILS CLOSED — so a returned `LedgerConnection` is known-good ("fails closed at connect", as the ELI5 promised).
+- `LedgerConnection.createAccount({ scheme?, accountIndex?, salt?, … })` picks the contract class (`LedgerEcdsaKAccountContract` / `LedgerSchnorrAccountContract`) and threads `defaultAztecPath(accountIndex)` + the connection defaults. It does NOT pass `curveId` — the Schnorr contract sets `GRUMPKIN`+`profileId:1` itself, ECDSA-K defaults to secp256k1.
+- The per-account curve cap is still checked on first device use (the `getPublicKeyXY` handshake, P4-part1) — `connectLedger` only checks version + base caps because the scheme isn't known until `createAccount`.
+- Exported `connectLedger` / `LedgerConnection` / `AccountScheme` / option types at root; updated the barrel header (these were the "lands in P4" placeholders).
+- Tests (hardware-free): mock transport answering GET_VERSION/GET_CAPS → connect happy path + fail-closed-on-bad-version; `createAccount` class selection via a stub transport (construction touches no device).
 
 ## Part 1 — mandatory connect handshake → DONE (green)
 New `src/connect-handshake.ts`:
