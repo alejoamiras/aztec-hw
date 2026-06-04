@@ -12,7 +12,13 @@
     "./unsafe": "./src/unsafe.ts",
     "./webhid": "./src/webhid.ts"
   },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
   "scripts": {
+    "build": "tsup",
     "gen:golden-vectors": "bun scripts/gen-golden-vectors.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
@@ -41,6 +47,34 @@
   "peerDependenciesMeta": {
     "@ledgerhq/hw-transport-node-hid": {
       "optional": true
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./advanced": {
+        "types": "./dist/advanced.d.ts",
+        "import": "./dist/advanced.js"
+      },
+      "./node-hid": {
+        "types": "./dist/node-hid.d.ts",
+        "import": "./dist/node-hid.js"
+      },
+      "./speculos": {
+        "types": "./dist/speculos.d.ts",
+        "import": "./dist/speculos.js"
+      },
+      "./unsafe": {
+        "types": "./dist/unsafe.d.ts",
+        "import": "./dist/unsafe.js"
+      },
+      "./webhid": {
+        "types": "./dist/webhid.d.ts",
+        "import": "./dist/webhid.js"
+      }
     }
   }
 }
