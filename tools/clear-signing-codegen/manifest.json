@@ -1,10 +1,10 @@
 {
-  "_comment": "Clear-signing v0 manifest — single source of truth for the on-device contract registry and FT selector table. The codegen script (scripts/gen-clear-signing-v0.ts) reads this file and emits both C tables (ledger-app/src/clear_signing_v0/*.gen.{h,c}) and TS tables (packages/aztec-ledger/src/clear_signing_v0/*.generated.ts). Both must agree.\n\nSecurity model (codex final-review BLOCKER #2): this manifest is the reviewed authority. The codegen script verifies that the pinned @defi-wonderland/aztec-standards artifact and @aztec/noir-contracts.js SponsoredFPC artifact produce the SAME (selector, arg_count, visibility) tuple for every verb. CI fails on shape mismatch.",
+  "_comment": "Clear-signing v0 manifest — single source of truth for the on-device contract registry and FT selector table. The codegen (tools/clear-signing-codegen/) reads this file and emits C tables (ledger-app/src/clear_signing_v0/*.gen.{h,c}), the demo TS preflight registry (apps/demo-browser/src/clear-signing/{registry,selectors}.generated.ts), and the SDK TS deploy table (packages/aztec-ledger/src/clear_signing_v0/deploy_profiles.generated.ts). All must agree.\n\nSecurity model (codex final-review BLOCKER #2): this manifest is the reviewed authority. The codegen script verifies that the pinned @defi-wonderland/aztec-standards artifact and @aztec/noir-contracts.js SponsoredFPC artifact produce the SAME (selector, arg_count, visibility) tuple for every verb. CI fails on shape mismatch.",
   "_meta": {
     "version": 1,
     "aztec_packages_pin": "2770bcb82d40323060c2f9c71aaf293b640efbef",
     "aztec_standards_npm_pin": "@defi-wonderland/aztec-standards@4.2.0-aztecnr-rc.2",
-    "noir_contracts_js_pin": "see package.json @aztec/noir-contracts.js",
+    "noir_contracts_js_pin": "see tools/clear-signing-codegen/package.json @aztec/noir-contracts.js",
     "deployments_source_METADATA_ONLY": "../../../nulo-2/packages/faucet/src/contracts/deployments.json (used at codegen-time for human cross-check ONLY; NOT a build dependency — values below are committed)"
   },
   "registry": [

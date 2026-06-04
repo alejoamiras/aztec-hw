@@ -6,13 +6,14 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "tools/*"
   ],
   "scripts": {
-    "lint": "biome check . && sort-package-json --check package.json packages/*/package.json apps/*/package.json",
+    "lint": "biome check . && sort-package-json --check package.json packages/*/package.json apps/*/package.json tools/*/package.json",
     "lint:actions": "actionlint",
     "lint:all": "bun run lint && bun run lint:actions",
-    "lint:fix": "biome check --write . && sort-package-json package.json packages/*/package.json apps/*/package.json",
+    "lint:fix": "biome check --write . && sort-package-json package.json packages/*/package.json apps/*/package.json tools/*/package.json",
     "lint:shell": "shellcheck scripts/*.sh",
     "prepare": "husky",
     "test": "bun test",

@@ -1,0 +1,17 @@
+{
+  "name": "@alejoamiras/clear-signing-codegen",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Clear-signing v0 codegen. Reads manifest.json and emits the firmware C tables + the host TS registry (demo) + the SDK deploy-profile table. NOT part of the published SDK.",
+  "type": "module",
+  "scripts": {
+    "check": "bun run gen-clear-signing-v0.ts --check",
+    "gen": "bun run gen-clear-signing-v0.ts"
+  },
+  "dependencies": {
+    "@aztec/accounts": "4.2.1",
+    "@aztec/noir-contracts.js": "4.2.1",
+    "@aztec/stdlib": "4.2.1",
+    "@defi-wonderland/aztec-standards": "4.2.0-aztecnr-rc.2"
+  }
+}
